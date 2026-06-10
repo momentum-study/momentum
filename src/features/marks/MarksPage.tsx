@@ -1,0 +1,459 @@
+import { useMemo, useState } from 'react'
+import { useData } from '../../app/providers'
+import { db } from '../../db/app-db'
+import { cn, gradeColor, isoNow, pctToGrade } from '../../lib/utils'
+import { Button } from '../../components/ui/Button'
+import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
+import { EmptyState } from '../../components/ui/EmptyState'
+import { Modal } from '../../components/ui/Modal'
+import { PageSpinner } from '../../components/ui/Spinner'
+import { v4 as uuid } from 'uuid'
+import type { Mark } from '../../domain/types'
+
+interface MarkForm {
+  name: string
+  subjectId: string
+  score: string
+  total: string
+  averageMark: string
+  weight: string
+  letterGrade: string
+  date: string
+  note: string
+}
+
+const emptyForm = (): MarkForm => ({
+  name: '',
+  subjectId: '',
+  score: '',
+  total: '100',
+  averageMark: '',
+  weight: '',
+  letterGrade: '',
+  date: new Date().toISOString().slice(0, 10),
+  note: '',
+})
+
+const toForm = (m: Mark): MarkForm => ({
+  name: m.name,
+  subjectId: m.subjectId,
+  score: String(m.score),
+  total: String(m.total),
+  averageMark: m.averageMark != null ? String(m.averageMark) : '',
+  weight: String(m.weight),
+  letterGrade: m.letterGrade ?? '',
+  date: m.date,
+  note: '',
+})
+
+const weightedPct = (m: Mark) => (m.total > 0 ? (m.score / m.total) * 100 : 0)
+
+const getGrade = (m: Mark): string => m.letterGrade || pctToGrade(weightedPct(m))
+
+type SortKey = 'name' | 'subject' | 'score' | 'date'
+type SortOrder = 'asc' | 'desc'
+
+export default function MarksPage() {
+  const { data, isLoading, loadData } = useData()
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<Mark | null>(null)
+  const [form, setForm] = useState<MarkForm>(emptyForm)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [filterSubject, setFilterSubject] = useState('')
+  const [filterName, setFilterName] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('date')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+
+  const marks = data.marks.filter((m) => !m.deletedAt)
+  const subjects = data.subjects
+  const categories = data.categories
+
+  const subjectName = (id: string) =>
+    subjects.find((s) => s.id === id)?.name ?? 'Unknown'
+
+  const subjectOptions = useMemo(() => {
+    return [...subjects].sort((a, b) => {
+      const aA = categories.find((c) => c.id === a.categoryId)?.scope === 'academic' ? 0 : 1
+      const bA = categories.find((c) => c.id === b.categoryId)?.scope === 'academic' ? 0 : 1
+      if (aA !== bA) return aA - bA
+      return a.name.localeCompare(b.name)
+    })
+  }, [subjects, categories])
+
+  const subjectStats = useMemo(() => {
+    const stats: Record<string, { weightedPct: number; totalWeight: number; markCount: number; avgWeightedPct: number; vsClass: number; classCount: number }> = {}
+    for (const m of marks) {
+      if (!stats[m.subjectId]) {
+        stats[m.subjectId] = { weightedPct: 0, totalWeight: 0, markCount: 0, avgWeightedPct: 0, vsClass: 0, classCount: 0 }
+      }
+      const s = stats[m.subjectId]
+      s.markCount++
+      s.totalWeight += m.weight
+      s.weightedPct += weightedPct(m) * m.weight
+    }
+    for (const sid of Object.keys(stats)) {
+      const s = stats[sid]
+      if (s.totalWeight > 0) s.weightedPct /= s.totalWeight
+    }
+    // Class avg per subject (weighted)
+    const bySub: Record<string, Mark[]> = {}
+    for (const m of marks) {
+      if (m.averageMark == null || m.total <= 0) continue
+      ;(bySub[m.subjectId] ??= []).push(m)
+    }
+    for (const sid of Object.keys(bySub)) {
+      const ms = bySub[sid]
+      const sumW = ms.reduce((s, m) => s + m.weight, 0)
+      const sumAvg = ms.reduce((s, m) => s + (m.averageMark! / m.total) * 100 * m.weight, 0)
+
+      const sumMy = ms.reduce((s, m) => s + weightedPct(m) * m.weight, 0)
+      const s = stats[sid]
+      if (s && sumW > 0) {
+        s.avgWeightedPct = sumAvg / sumW
+        s.vsClass = sumMy / sumW - sumAvg / sumW
+        s.classCount = ms.length
+      }
+    }
+    return stats
+  }, [marks])
+
+  const filteredMarks = useMemo(() => {
+    let result = [...marks]
+    if (filterSubject) {
+      result = result.filter((m) => m.subjectId === filterSubject)
+    }
+    if (filterName) {
+      const q = filterName.toLowerCase()
+      result = result.filter((m) => m.name.toLowerCase().includes(q))
+    }
+    result.sort((a, b) => {
+      let cmp = 0
+      if (sortKey === 'name') {
+        cmp = a.name.localeCompare(b.name)
+      } else if (sortKey === 'subject') {
+        cmp = subjectName(a.subjectId).localeCompare(subjectName(b.subjectId))
+      } else if (sortKey === 'score') {
+        cmp = weightedPct(a) - weightedPct(b)
+      } else {
+        cmp = a.date.localeCompare(b.date)
+      }
+      return sortOrder === 'asc' ? cmp : -cmp
+    })
+    return result
+  }, [marks, filterSubject, filterName, sortKey, sortOrder, subjectName])
+
+  const overallWeighted = useMemo(() => {
+    if (marks.length === 0) return 0
+    const sumWeighted = marks.reduce((s, m) => s + weightedPct(m) * m.weight, 0)
+    const sumWeight = marks.reduce((s, m) => s + m.weight, 0)
+    return sumWeight > 0 ? sumWeighted / sumWeight : 0
+  }, [marks])
+
+  const classStats = useMemo(() => {
+    const withAvg = marks.filter((m) => m.averageMark != null && m.total > 0)
+    if (withAvg.length === 0) return null
+    const sumWeight = withAvg.reduce((s, m) => s + m.weight, 0)
+    const myWeightedPct = sumWeight > 0
+      ? withAvg.reduce((s, m) => s + weightedPct(m) * m.weight, 0) / sumWeight
+      : 0
+    const avgWeightedPct = sumWeight > 0
+      ? withAvg.reduce((s, m) => s + (m.averageMark! / m.total) * 100 * m.weight, 0) / sumWeight
+      : 0
+    const avgDiff = withAvg.reduce((s, m) => s + (weightedPct(m) - (m.averageMark! / m.total) * 100), 0) / withAvg.length
+    return { myWeightedPct, avgWeightedPct, avgDiff, count: withAvg.length }
+  }, [marks])
+
+  // Early return AFTER all hooks
+  if (isLoading) return <PageSpinner />
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortOrder('desc')
+    }
+  }
+
+  const openAdd = () => { setEditing(null); setForm(emptyForm()); setModalOpen(true) }
+  const openEdit = (m: Mark) => { setEditing(m); setForm(toForm(m)); setModalOpen(true) }
+  const closeModal = () => { setModalOpen(false); setEditing(null) }
+
+  const updateField = <K extends keyof MarkForm>(k: K, v: MarkForm[K]) =>
+    setForm((prev) => ({ ...prev, [k]: v }))
+
+  const save = async () => {
+    const name = form.name.trim()
+    const subjectId = form.subjectId
+    const score = Number(form.score)
+    const total = Number(form.total) || 100
+    const weight = Number(form.weight)
+    const letterGrade = form.letterGrade.trim() || null
+    const date = form.date
+    const averageMarkRaw = form.averageMark.trim()
+    const averageMark = averageMarkRaw === '' ? null : Number(averageMarkRaw)
+    if (
+      !name || !subjectId || isNaN(score) || isNaN(total) || isNaN(weight) ||
+      weight < 0 || weight > 100 || !date
+    ) return
+    if (averageMark != null && isNaN(averageMark)) return
+
+    setSaving(true)
+    const now = isoNow()
+    if (editing) {
+      await db.marks.update(editing.id, { name, subjectId, score, total, averageMark, weight, letterGrade, date, updatedAt: now })
+    } else {
+      await db.marks.add({ id: uuid(), name, subjectId, score, total, averageMark, weight, letterGrade, date, createdAt: now, updatedAt: now, deletedAt: null })
+    }
+    await loadData()
+    setSaving(false)
+    closeModal()
+  }
+
+  const confirmDelete = async (id: string) => {
+    setDeleting(null)
+    await db.marks.update(id, { deletedAt: isoNow(), updatedAt: isoNow() })
+    await loadData()
+  }
+
+  const formValid =
+    form.name.trim() !== '' &&
+    form.subjectId !== '' &&
+    !isNaN(Number(form.score)) &&
+    !isNaN(Number(form.total)) &&
+    !isNaN(Number(form.weight)) &&
+    Number(form.weight) >= 0 &&
+    Number(form.weight) <= 100 &&
+    form.date !== '' &&
+    (form.averageMark.trim() === '' || !isNaN(Number(form.averageMark)))
+
+  const SortIcon = ({ column }: { column: SortKey }) => (
+    <span className="ml-1 text-xs">{sortKey === column ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</span>
+  )
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Marks</h2>
+        <Button variant="primary" size="sm" onClick={openAdd}>Add Mark</Button>
+      </div>
+
+      {/* Filters */}
+      {marks.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <select className="input text-sm" value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)}>
+            <option value="">All subjects</option>
+            {subjectOptions.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+          <input className="input text-sm" placeholder="Filter by name..." value={filterName} onChange={(e) => setFilterName(e.target.value)} />
+        </div>
+      )}
+
+      {/* Per-subject summary cards */}
+      {Object.keys(subjectStats).length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+          {Object.entries(subjectStats).map(([sid, stat]) => {
+            if (stat.markCount === 0) return null
+            const grade = pctToGrade(stat.weightedPct)
+            const subj = subjects.find((s) => s.id === sid)
+            const color = subj?.color ?? '#94a3b8'
+            return (
+              <Card key={sid} className="p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                    <div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{subjectName(sid)}</div>
+                      <div className="text-xs text-slate-400 dark:text-slate-500">{stat.markCount} mark{stat.markCount !== 1 ? 's' : ''}</div>
+                    </div>
+                  </div>
+                  <div className={cn('text-sm font-medium', gradeColor(grade))}>{grade}</div>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{stat.weightedPct.toFixed(1)}%</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Total weight: {stat.totalWeight}%</div>
+                </div>
+                {stat.classCount > 0 && (
+                  <div className="mt-1 flex items-baseline justify-between text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">vs class</span>
+                    <span className={cn('font-medium', stat.vsClass >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+                      {stat.vsClass >= 0 ? '+' : ''}{stat.vsClass.toFixed(1)}%
+                    </span>
+                  </div>
+                )}
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Overall summary */}
+      {marks.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Overall</CardTitle></CardHeader>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-slate-500 dark:text-slate-400">Total marks</span>
+              <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{marks.length}</div>
+            </div>
+            <div>
+              <span className="text-slate-500 dark:text-slate-400">Weighted average</span>
+              <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{overallWeighted.toFixed(1)}%</div>
+              <div className={cn('text-sm font-medium', gradeColor(pctToGrade(overallWeighted)))}>{pctToGrade(overallWeighted)}</div>
+            </div>
+            {classStats && (
+              <>
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400">Class Avg (graded)</span>
+                  <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{classStats.avgWeightedPct.toFixed(1)}%</div>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-slate-400">vs Class Avg</span>
+                  <div className={cn('text-lg font-semibold', classStats.avgDiff >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+                    {classStats.avgDiff >= 0 ? '+' : ''}{classStats.avgDiff.toFixed(1)}%
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">({classStats.count} marks)</div>
+                </div>
+              </>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Mark list */}
+      {marks.length === 0 ? (
+        <EmptyState
+          title="No marks yet"
+          description="Add a mark to start tracking your academic results."
+          action={<Button variant="primary" size="sm" onClick={openAdd}>Add Mark</Button>}
+        />
+      ) : filteredMarks.length === 0 ? (
+        <EmptyState title="No matches" description="Try adjusting your filters." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-slate-700 text-left text-slate-500 dark:text-slate-400">
+                <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('name')}>Name<SortIcon column="name" /></th>
+                <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('subject')}>Subject<SortIcon column="subject" /></th>
+                <th className="pb-2 pr-4 font-medium">Score</th>
+                <th className="pb-2 pr-4 font-medium">Weight</th>
+                <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('score')}>%<SortIcon column="score" /></th>
+                <th className="pb-2 pr-4 font-medium">Grade</th>
+                <th className="pb-2 pr-4 font-medium">Class Avg</th>
+                <th className="pb-2 pr-4 font-medium">Avg %</th>
+                <th className="pb-2 pr-4 font-medium">Avg Grade</th>
+                <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('date')}>Date<SortIcon column="date" /></th>
+                <th className="pb-2 font-medium" />
+              </tr>
+            </thead>
+            <tbody>
+              {filteredMarks.map((m) => {
+                const pct = weightedPct(m)
+                const grade = getGrade(m)
+                const pctColor = pct >= 80 ? 'text-green-600 dark:text-green-400' : pct >= 50 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
+                const hasAvg = m.averageMark != null
+                const avgPct = hasAvg ? (m.total > 0 ? (m.averageMark! / m.total) * 100 : 0) : null
+                const avgGrade = avgPct != null ? pctToGrade(avgPct) : null
+                const vsAvg = hasAvg ? pct - (avgPct as number) : null
+                return (
+                  <tr key={m.id} className="border-b border-slate-100 dark:border-slate-700/50">
+                    <td className="py-2.5 pr-4 font-medium text-slate-800 dark:text-slate-100">{m.name}</td>
+                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{subjectName(m.subjectId)}</td>
+                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{m.score}/{m.total}</td>
+                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{m.weight}%</td>
+                    <td className={cn('py-2.5 pr-4 font-medium', pctColor)}>{pct.toFixed(1)}%</td>
+                    <td className={cn('py-2.5 pr-4 font-medium', gradeColor(grade))}>{grade}</td>
+                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{hasAvg ? m.averageMark!.toFixed(1) : '—'}</td>
+                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">
+                      {avgPct != null ? (
+                        <span>
+                          {avgPct.toFixed(1)}%
+                          {vsAvg != null && (
+                            <span className={cn('ml-1 text-xs font-medium', vsAvg >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+                              {vsAvg >= 0 ? '+' : ''}{vsAvg.toFixed(1)}
+                            </span>
+                          )}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className={cn('py-2.5 pr-4 font-medium', avgGrade ? gradeColor(avgGrade) : '')}>{avgGrade ?? '—'}</td>
+                    <td className="py-2.5 pr-4 text-slate-500 dark:text-slate-400">{m.date}</td>
+                    <td className="py-2.5 whitespace-nowrap text-right">
+                      <Button variant="secondary" size="sm" className="mr-1" onClick={() => openEdit(m)}>Edit</Button>
+                      <Button variant="danger" size="sm" onClick={() => setDeleting(m.id)}>Delete</Button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {deleting && (
+        <Modal open={!!deleting} onClose={() => setDeleting(null)} title="Delete Mark">
+          <p className="mb-4 text-slate-600 dark:text-slate-300">Are you sure you want to delete this mark? This cannot be undone.</p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" onClick={() => setDeleting(null)}>Cancel</Button>
+            <Button variant="danger" onClick={() => confirmDelete(deleting)}>Delete</Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Add / Edit modal */}
+      <Modal open={modalOpen} onClose={closeModal} title={editing ? 'Edit Mark' : 'Add Mark'}>
+        <div className="space-y-3">
+          <div>
+            <label className="label" htmlFor="mark-name">Name</label>
+            <input id="mark-name" className="input" value={form.name} onChange={(e) => updateField('name', e.target.value)} placeholder="e.g. Midterm" />
+          </div>
+          <div>
+            <label className="label" htmlFor="mark-subject">Subject</label>
+            <select id="mark-subject" className="input" value={form.subjectId} onChange={(e) => updateField('subjectId', e.target.value)}>
+              <option value="">Select subject</option>
+              {subjectOptions.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label" htmlFor="mark-score">Score</label>
+              <input id="mark-score" className="input" type="number" value={form.score} onChange={(e) => updateField('score', e.target.value)} placeholder="85" />
+            </div>
+            <div>
+              <label className="label" htmlFor="mark-total">Total</label>
+              <input id="mark-total" className="input" type="number" value={form.total} onChange={(e) => updateField('total', e.target.value)} placeholder="100" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label" htmlFor="mark-weight">Weight (%)</label>
+              <input id="mark-weight" className="input" type="number" min="0" max="100" value={form.weight} onChange={(e) => updateField('weight', e.target.value)} placeholder="20" />
+            </div>
+            <div>
+              <label className="label" htmlFor="mark-grade">Letter Grade (optional)</label>
+              <input id="mark-grade" className="input" value={form.letterGrade} onChange={(e) => updateField('letterGrade', e.target.value)} placeholder="Auto from %" />
+            </div>
+          </div>
+          <div>
+            <label className="label" htmlFor="mark-average">Grade Average (optional)</label>
+            <input id="mark-average" className="input" type="number" value={form.averageMark} onChange={(e) => updateField('averageMark', e.target.value)} placeholder="e.g. 72" />
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Used to compare your mark against the grade average.</p>
+          </div>
+          <div>
+            <label className="label" htmlFor="mark-date">Date</label>
+            <input id="mark-date" className="input" type="date" value={form.date} onChange={(e) => updateField('date', e.target.value)} />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={closeModal}>Cancel</Button>
+            <Button variant="primary" onClick={save} disabled={!formValid || saving}>{saving ? 'Saving...' : editing ? 'Update' : 'Add'}</Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}

@@ -3,8 +3,11 @@
 Local-first PWA study tracker with timer, assignments, marks, habits, and reports.
 
 All data is stored in your browser — no accounts, no server, no cloud. Works offline.
+
 ## Live
+
 Use it now at **https://leightonmascord.github.io/momentum/**
+
 Works on desktop and mobile. Installable as a PWA from your browser's address bar.
 
 ## Features
@@ -37,6 +40,8 @@ npm run dev
 
 Opens at `http://localhost:5173`.
 
+**Note:** Momentum uses hash-based routing (e.g. `http://localhost:5173/#/subjects`) so it works correctly on static hosts like GitHub Pages without server-side configuration.
+
 ## Build
 
 ```bash
@@ -45,6 +50,11 @@ npm run preview
 ```
 
 Produces a production build in `dist/` with a PWA service worker for offline use.
+
+To deploy to GitHub Pages:
+```bash
+npm run deploy
+```
 
 ## Tech Stack
 

@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { HashRouter, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '../components/layout/AppLayout'
 import { DataProvider } from './providers'
 import Dashboard from '../features/dashboard/Dashboard'
@@ -13,7 +13,7 @@ import CategoriesPage from '../features/categories/CategoriesPage'
 
 export function AppRouter() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <DataProvider>
         <AppLayout>
           <Routes>
@@ -29,6 +29,6 @@ export function AppRouter() {
           </Routes>
         </AppLayout>
       </DataProvider>
-    </BrowserRouter>
+    </HashRouter>
   )
 }

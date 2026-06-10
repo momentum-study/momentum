@@ -8,6 +8,9 @@ export default defineConfig(({ command }) => ({
     VitePWA({
       registerType: 'prompt',
       injectRegister: 'react',
+      workbox: {
+        navigateFallback: '/momentum/index.html',
+      },
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'Momentum — Study Tracker',
@@ -16,8 +19,8 @@ export default defineConfig(({ command }) => ({
         theme_color: '#ffffff',
         background_color: '#ffffff',
         icons: [
-          { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' },
-          { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+          { src: '/momentum/favicon.svg', sizes: 'any', type: 'image/svg+xml' },
+          { src: '/momentum/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
         ],
       },
     }),

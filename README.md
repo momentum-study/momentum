@@ -3,6 +3,9 @@
 Local-first PWA study tracker with timer, assignments, marks, habits, and reports.
 
 All data is stored in your browser — no accounts, no server, no cloud. Works offline.
+## Live
+Use it now at **https://leightonmascord.github.io/momentum/**
+Works on desktop and mobile. Installable as a PWA from your browser's address bar.
 
 ## Features
 

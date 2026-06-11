@@ -90,7 +90,7 @@ export interface Mark {
 }
 
 // Task tracker — simple tasks with category & weighting for grade tracking
-export type TaskCategory = 'hw' | 'assignments' | 'misc'
+export type TaskCategory = 'homework' | 'assignments' | 'miscellaneous'
 
 export interface Assignment {
   id: string
@@ -99,7 +99,7 @@ export interface Assignment {
   title: string
   description?: string
   dueDate: string // ISO date
-  category: TaskCategory // hw | assignments | misc
+  category: TaskCategory // homework | assignments | miscellaneous
   weight: number // percentage weight (0-100) of the final grade; 0 if not graded
   completed: boolean
   createdAt: string
@@ -108,9 +108,9 @@ export interface Assignment {
 }
 
 export const TASK_CATEGORIES: { value: TaskCategory; label: string; color: string }[] = [
-  { value: 'hw', label: 'HW', color: '#3b82f6' },
+  { value: 'homework', label: 'Homework', color: '#3b82f6' },
   { value: 'assignments', label: 'Assignments', color: '#a855f7' },
-  { value: 'misc', label: 'Misc', color: '#64748b' },
+  { value: 'miscellaneous', label: 'Miscellaneous', color: '#64748b' },
 ]
 
 // Habit tracker
@@ -130,6 +130,7 @@ export interface HabitLog {
   id: string
   habitId: string
   date: string // ISO date (YYYY-MM-DD)
+  time?: string // HH:MM time of day
   note?: string
   createdAt: string
   updatedAt: string

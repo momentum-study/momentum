@@ -39,7 +39,7 @@ const emptyForm = (subjects: Subject[]): TaskForm => ({
   subjectId: subjects[0]?.id ?? '',
   projectId: '',
   dueDate: new Date().toISOString().slice(0, 10),
-  category: 'hw',
+  category: 'homework',
   weight: '',
   description: '',
 })

@@ -1,14 +1,16 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { format, subDays } from 'date-fns'
+import { v4 as uuid } from 'uuid'
 import { PomodoroTimer } from '../../components/widgets/PomodoroTimer'
 import { useData } from '../../app/providers'
+import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
-import { cn, formatMinutes } from '../../lib/utils'
+import { cn, formatMinutes, isoNow } from '../../lib/utils'
 import { loadSettings } from '../settings/SettingsPage'
-
+import { db } from '../../db/app-db'
 export default function Dashboard() {
-  const { data, isLoading } = useData()
+  const { data, isLoading, loadData } = useData()
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
@@ -50,6 +52,31 @@ export default function Dashboard() {
     })
     return days
   }, [data.sessions])
+
+  // Log Study Time form state
+  const [logSubjectId, setLogSubjectId] = useState('')
+  const [logDuration, setLogDuration] = useState(30)
+  const [logDate, setLogDate] = useState(todayStr)
+
+  async function handleLogTime() {
+    if (!logSubjectId) return
+    const dateAtMidnight = new Date(`${logDate}T00:00:00`)
+    const endAt = new Date(dateAtMidnight.getTime() + logDuration * 60_000)
+    await db.sessions.add({
+      id: uuid(),
+      subjectId: logSubjectId,
+      startAt: dateAtMidnight.toISOString(),
+      endAt: endAt.toISOString(),
+      durationMinutes: logDuration,
+      source: 'manual',
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
+    })
+    await loadData()
+    setLogSubjectId('')
+    setLogDuration(30)
+    setLogDate(todayStr)
+  }
 
   if (isLoading) return <PageSpinner />
 
@@ -182,6 +209,52 @@ export default function Dashboard() {
       </div>
       {/* Pomodoro Timer */}
       <PomodoroTimer />
+
+      {/* Log Study Time */}
+      <Card>
+        <CardHeader>
+          <CardTitle>📝 Log Study Time</CardTitle>
+        </CardHeader>
+        <div className="mt-2 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label">Subject</label>
+            <select
+              className="input"
+              value={logSubjectId}
+              onChange={(e) => setLogSubjectId(e.target.value)}
+            >
+              <option value="">Select subject…</option>
+              {data.subjects.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Minutes</label>
+            <input
+              type="number"
+              className="input w-24"
+              min={1}
+              value={logDuration}
+              onChange={(e) => setLogDuration(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label className="label">Date</label>
+            <input
+              type="date"
+              className="input"
+              value={logDate}
+              onChange={(e) => setLogDate(e.target.value)}
+            />
+          </div>
+          <Button disabled={!logSubjectId} onClick={handleLogTime}>
+            Log Time
+          </Button>
+        </div>
+      </Card>
 
       {/* Study Heatmap */}
       <Card>

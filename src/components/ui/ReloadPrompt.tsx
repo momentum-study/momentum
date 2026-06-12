@@ -1,4 +1,5 @@
 import { useRegisterSW } from 'virtual:pwa-register/react'
+import { useEffect } from 'react'
 
 export function ReloadPrompt() {
   const {
@@ -18,6 +19,18 @@ export function ReloadPrompt() {
     setOfflineReady(false)
     setNeedRefresh(false)
   }
+
+  // Periodically force an update check every 60s to detect new versions.
+  // HashRouter means no real page navigations occur, so SW won't auto-check.
+  useEffect(() => {
+    const id = setInterval(() => {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then(regs => regs.forEach(r => r.update().catch(() => {})))
+        .catch(() => {})
+    }, 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   if (!offlineReady && !needRefresh) return null
 

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, parseISO } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
+import { loadSettings } from '../settings/SettingsPage'
 import { cn, isoNow } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
@@ -17,13 +18,18 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function HabitsPage() {
   const { data, isLoading, loadData } = useData()
+  const settings = loadSettings()
   const [showModal, setShowModal] = useState(false)
   const [editHabit, setEditHabit] = useState<Habit | null>(null)
   const [name, setName] = useState('')
   const [kind, setKind] = useState<Habit['kind']>('good')
   const [color, setColor] = useState(DEFAULT_COLOR)
+  const [archivedAfterDays, setArchivedAfterDays] = useState<number | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const [dayDetailDate, setDayDetailDate] = useState<string | null>(null)
   
   const [showAddLog, setShowAddLog] = useState(false)
   const [logDate, setLogDate] = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -34,11 +40,17 @@ export default function HabitsPage() {
   const [calendarMonth, setCalendarMonth] = useState(new Date())
 
   if (isLoading) return <PageSpinner />
-
-  const goodHabits = data.habits.filter((h) => h.kind === 'good')
-  const badHabits = data.habits.filter((h) => h.kind === 'bad')
+  const activeHabits = data.habits.filter((h) => !h.archivedAt)
+  const archivedHabits = data.habits.filter((h) => !!h.archivedAt)
+  const goodHabits = activeHabits.filter((h) => h.kind === 'good')
+  const badHabits = activeHabits.filter((h) => h.kind === 'bad')
   const selectedHabit = data.habits.find((h) => h.id === selectedId) ?? null
   const todayStr = format(new Date(), 'yyyy-MM-dd')
+
+  // Soft limit check: only count active (non-archived) habits toward limit
+  const habitLimit = settings.maxActiveHabits
+  const activeCount = activeHabits.length
+  const overLimit = activeCount >= habitLimit
 
   const selectedHabitLogs = useMemo(() => {
     if (!selectedId) return []
@@ -86,6 +98,18 @@ export default function HabitsPage() {
     return data.habitLogs.filter((l) => l.habitId === habitId && l.date === todayStr).length
   }
 
+  function getDaysLogged(habitId: string): number {
+    const uniqueDays = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
+    return uniqueDays.size
+  }
+
+
+  function isReadyToArchive(habit: Habit): boolean {
+    const daysThreshold = habit.archivedAfterDays ?? settings.defaultArchiveDays
+    const days = getDaysLogged(habit.id)
+    return days >= daysThreshold
+  }
+
   async function quickLogToday(habitId: string) {
     try {
       await db.habitLogs.add({
@@ -126,13 +150,6 @@ export default function HabitsPage() {
     } catch (e) { console.error('Failed to save log', e) }
   }
 
-  async function deleteLog(logId: string) {
-    try {
-      await db.habitLogs.delete(logId)
-      await loadData()
-    } catch (e) { console.error('Failed to delete log', e) }
-  }
-
   function openAddLog(log?: HabitLog) {
     setEditLog(log || null)
     setLogDate(log ? log.date : todayStr)
@@ -146,6 +163,7 @@ export default function HabitsPage() {
     setName('')
     setKind('good')
     setColor(DEFAULT_COLOR)
+    setArchivedAfterDays(settings.defaultArchiveDays)
     setShowModal(true)
   }
 
@@ -154,6 +172,7 @@ export default function HabitsPage() {
     setName(habit.name)
     setKind(habit.kind)
     setColor(habit.color)
+    setArchivedAfterDays(habit.archivedAfterDays ?? null)
     setShowModal(true)
   }
 
@@ -161,13 +180,29 @@ export default function HabitsPage() {
     if (!name.trim()) return
     try {
       if (editHabit) {
-        await db.habits.update(editHabit.id, { name: name.trim(), kind, color, updatedAt: isoNow() })
+        await db.habits.update(editHabit.id, { name: name.trim(), kind, color, archivedAfterDays, updatedAt: isoNow() })
       } else {
-        await db.habits.add({ id: uuid(), name: name.trim(), kind, color, createdAt: isoNow(), updatedAt: isoNow() })
+        await db.habits.add({ id: uuid(), name: name.trim(), kind, color, archivedAfterDays, createdAt: isoNow(), updatedAt: isoNow() })
       }
       setShowModal(false)
       await loadData()
     } catch (e) { console.error('Failed to save habit', e) }
+  }
+
+  async function archiveHabitFn(id: string) {
+    try {
+      await db.habits.update(id, { archivedAt: isoNow(), updatedAt: isoNow() })
+      if (selectedId === id) setSelectedId(null)
+      setArchiveConfirm(null)
+      await loadData()
+    } catch (e) { console.error('Failed to archive habit', e) }
+  }
+
+  async function unarchiveHabitFn(id: string) {
+    try {
+      await db.habits.update(id, { archivedAt: null, updatedAt: isoNow() })
+      await loadData()
+    } catch (e) { console.error('Failed to unarchive habit', e) }
   }
 
   async function deleteHabitFn(id: string) {
@@ -191,6 +226,9 @@ export default function HabitsPage() {
   function HabitCard({ habit }: { habit: Habit }) {
     const streak = getStreak(habit.id)
     const todayCount = getTodayCount(habit.id)
+    const daysLogged = getDaysLogged(habit.id)
+    const archiveThreshold = habit.archivedAfterDays ?? settings.defaultArchiveDays
+    const readyToArchive = isReadyToArchive(habit)
     const last7 = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(new Date(), 6 - i)
       const ds = format(d, 'yyyy-MM-dd')
@@ -206,7 +244,11 @@ export default function HabitsPage() {
           <div className="h-3 w-3 rounded-full" style={{ backgroundColor: habit.color }} />
           <div className="flex-1">
             <div className="font-medium text-slate-800 dark:text-slate-100">{habit.name}</div>
-            <div className="mt-0.5 text-xs text-slate-500">{streak > 0 ? `🔥 ${streak} day streak` : 'No streak yet'}</div>
+            <div className="mt-0.5 text-xs text-slate-500">
+              {streak > 0 ? `🔥 ${streak} day streak` : 'No streak yet'}
+              <span className="mx-1">·</span>
+              {daysLogged}/{archiveThreshold} days logged
+            </div>
           </div>
           {todayCount > 0 && (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{todayCount} today</span>
@@ -220,8 +262,23 @@ export default function HabitsPage() {
           </div>
           <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); quickLogToday(habit.id) }}>+ Log</Button>
         </div>
+        {/* Progress bar toward archive threshold */}
+        <div className="mt-2">
+          <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700">
+            <div
+              className={cn('h-1.5 rounded-full transition-all', readyToArchive ? 'bg-green-500' : 'bg-primary-500')}
+              style={{ width: `${Math.min(100, (daysLogged / archiveThreshold) * 100)}%` }}
+            />
+          </div>
+          {readyToArchive && (
+            <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+              ✓ Ready to archive — {archiveThreshold}+ days logged!
+            </p>
+          )}
+        </div>
         <div className="mt-2 flex gap-1">
           <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); openEditHabit(habit) }}>Edit</Button>
+          <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setArchiveConfirm(habit.id) }}>Archive</Button>
           <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(habit.id) }}>Delete</Button>
         </div>
       </Card>
@@ -232,7 +289,14 @@ export default function HabitsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Habits</h2>
-        <Button variant="primary" size="sm" onClick={openAddHabit}>Add Habit</Button>
+        <div className="flex items-center gap-2">
+          {overLimit && (
+            <span className="text-xs text-orange-600 dark:text-orange-400">
+              ⚠️ Too many active habits ({'>'}{habitLimit})
+            </span>
+          )}
+          <Button variant="primary" size="sm" onClick={openAddHabit}>Add Habit</Button>
+        </div>
       </div>
 
       <div>
@@ -248,6 +312,26 @@ export default function HabitsPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{badHabits.map((h) => <HabitCard key={h.id} habit={h} />)}</div>
         )}
       </div>
+
+      {archivedHabits.length > 0 && (
+        <div>
+          <button className="text-sm font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400" onClick={() => setShowArchived(!showArchived)}>
+            {showArchived ? 'Hide' : 'Show'} Archived Habits ({archivedHabits.length})
+          </button>
+          {showArchived && (
+            <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {archivedHabits.map((h) => (
+                <Card key={h.id} className="opacity-75">
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium text-slate-700 dark:text-slate-300">{h.name} (Archived)</div>
+                    <Button variant="secondary" size="sm" onClick={() => unarchiveHabitFn(h.id)}>Restore</Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {selectedHabit && (
         <Card>
@@ -283,8 +367,13 @@ export default function HabitsPage() {
                 const dateStr = format(day, 'yyyy-MM-dd')
                 const count = logsPerDay[dateStr] || 0
                 return (
-                  <div key={dateStr} className="flex h-7 w-7 items-center justify-center rounded text-xs" style={{ backgroundColor: count > 0 ? selectedHabit.color : undefined, opacity: count > 0 ? (count === 1 ? 0.4 : count === 2 ? 0.7 : 1) : undefined }}>
-                    <span className={cn(count > 0 ? 'text-white' : 'text-slate-500')}>{format(day, 'd')}</span>
+                  <div
+                    key={dateStr}
+                    onClick={() => setDayDetailDate(dateStr)}
+                    className={cn('flex h-7 w-7 items-center justify-center rounded text-xs cursor-pointer hover:ring-2', count > 0 ? 'text-white' : 'text-slate-500 hover:bg-slate-200')}
+                    style={{ backgroundColor: count > 0 ? selectedHabit.color : undefined, opacity: count > 0 ? (count === 1 ? 0.4 : count === 2 ? 0.7 : 1) : undefined }}
+                  >
+                    {format(day, 'd')}
                   </div>
                 )
               })}
@@ -294,27 +383,6 @@ export default function HabitsPage() {
           <div className="mb-4">
             <Button variant="secondary" onClick={() => openAddLog()}>+ Add Log</Button>
           </div>
-
-          {selectedHabitLogs.length === 0 ? <p className="text-sm text-slate-500">No logs yet.</p> : (
-            <div className="space-y-3">
-              {Object.entries(logsByDate).map(([date, logs]) => (
-                <div key={date}>
-                  <div className="mb-1 text-sm font-medium text-slate-600">{format(parseISO(date), 'EEEE, MMM d')} — {logs.length} log(s)</div>
-                  <div className="space-y-1">
-                    {logs.map((log) => (
-                      <div key={log.id} className="flex items-center justify-between rounded bg-slate-50 p-2">
-                        <div className="flex-1 text-sm">{log.time && <span className="mr-2 font-mono">{log.time}</span>}{log.note || '(no note)'}</div>
-                        <div className="flex gap-1">
-                          <Button variant="secondary" size="sm" onClick={() => openAddLog(log)}>Edit</Button>
-                          <Button variant="danger" size="sm" onClick={() => deleteLog(log.id)}>×</Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </Card>
       )}
 
@@ -325,6 +393,10 @@ export default function HabitsPage() {
             <option value="good">Good</option><option value="bad">Bad</option>
           </select>
           <ColorPicker value={color} onChange={setColor} />
+          <div className="space-y-1">
+            <label className="text-xs text-slate-500">Auto-archive after (days)</label>
+            <input type="number" className="input" value={archivedAfterDays ?? settings.defaultArchiveDays} onChange={(e) => setArchivedAfterDays(Number(e.target.value))} />
+          </div>
           <Button variant="primary" className="w-full" onClick={saveHabit}>{editHabit ? 'Save' : 'Add'}</Button>
         </div>
       </Modal>
@@ -338,8 +410,25 @@ export default function HabitsPage() {
         </div>
       </Modal>
 
+      <Modal open={dayDetailDate !== null} onClose={() => setDayDetailDate(null)} title={dayDetailDate ? format(parseISO(dayDetailDate), 'EEEE, MMM d, yyyy') : ''}>
+        <div className="space-y-3">
+          {dayDetailDate && logsByDate[dayDetailDate]?.map(log => (
+             <div key={log.id} className="rounded bg-slate-50 p-2 text-sm dark:bg-slate-700">
+               {log.time && <span className="mr-2 font-mono">{log.time}</span>}{log.note || '(no note)'}
+             </div>
+          )) || <p className="text-sm text-slate-500">No logs for this day.</p>}
+        </div>
+      </Modal>
+
       <Modal open={deleteConfirm !== null} onClose={() => setDeleteConfirm(null)} title="Delete?">
         <Button variant="danger" onClick={() => deleteConfirm && deleteHabitFn(deleteConfirm)}>Confirm Delete</Button>
+      </Modal>
+
+      <Modal open={archiveConfirm !== null} onClose={() => setArchiveConfirm(null)} title="Archive?">
+        <div className="space-y-3">
+          <p className="text-sm">Archive this habit? You can always restore it later.</p>
+          <Button variant="secondary" className="w-full" onClick={() => archiveConfirm && archiveHabitFn(archiveConfirm)}>Confirm Archive</Button>
+        </div>
       </Modal>
     </div>
   )

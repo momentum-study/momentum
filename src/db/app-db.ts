@@ -56,6 +56,9 @@ export class AppDB extends Dexie {
       marks: 'id, subjectId, date, letterGrade',
       assignments: 'id, subjectId, dueDate, completed, category',
     })
+    this.version(5).stores({
+      habits: 'id, kind, archivedAt',
+    })
   }
 }
 

@@ -124,6 +124,8 @@ export interface Habit {
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
+  archivedAt?: string | null
+  archivedAfterDays?: number | null
 }
 
 export interface HabitLog {

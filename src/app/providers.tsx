@@ -60,12 +60,11 @@ const DataContext = createContext<DataContextValue | null>(null)
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(emptyData)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [scope, setScope] = useState<ScopeFilter>('all')
   const [rangePreset, setRangePreset] = useState<RangePreset>('week')
 
   const loadData = useCallback(async () => {
-    setIsLoading(true)
     const [
       categories, subjects, projects, tasks, sessions, progressLogs,
       marks, assignments, habits, habitLogs, streakDays,
@@ -96,14 +95,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       habitLogs: [...habitLogs].sort((a, b) => b.date.localeCompare(a.date)),
       streakDays: [...streakDays].sort((a, b) => b.id.localeCompare(a.id)),
     })
-    setIsLoading(false)
+    setIsInitialLoad(false)
   }, [])
 
   useEffect(() => { void loadData() }, [loadData])
 
   const value = useMemo(
-    () => ({ data, isLoading, scope, rangePreset, setScope, setRangePreset, loadData }),
-    [data, isLoading, scope, rangePreset, loadData],
+    () => ({ data, isLoading: isInitialLoad, scope, rangePreset, setScope, setRangePreset, loadData }),
+    [data, isInitialLoad, scope, rangePreset, loadData],
   )
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>

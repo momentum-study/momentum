@@ -38,7 +38,7 @@ const emptyForm = (subjects: Subject[]): TaskForm => ({
   title: '',
   subjectId: subjects[0]?.id ?? '',
   projectId: '',
-  dueDate: new Date().toISOString().slice(0, 10),
+  dueDate: format(new Date(), 'yyyy-MM-dd'),
   category: 'homework',
   weight: '',
   description: '',
@@ -356,7 +356,7 @@ export default function CalendarPage() {
                   return <div key={ci} className="min-h-[80px] border p-2 bg-slate-50 dark:bg-slate-900" />
                 }
                 const date = cell.date
-                const key = date.toISOString().slice(0, 10)
+                const key = format(date, 'yyyy-MM-dd')
                 const items = tasksByDate.get(key) ?? []
                 const projects = projectsByDate.get(key) ?? []
                 const muted = !isSameMonth(date, monthStart)

@@ -8,6 +8,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { v4 as uuid } from 'uuid'
+import { format } from 'date-fns'
 import type { Mark } from '../../domain/types'
 
 interface MarkForm {
@@ -30,7 +31,7 @@ const emptyForm = (): MarkForm => ({
   averageMark: '',
   weight: '',
   letterGrade: '',
-  date: new Date().toISOString().slice(0, 10),
+  date: format(new Date(), 'yyyy-MM-dd'),
   note: '',
 })
 
@@ -82,10 +83,10 @@ export default function MarksPage() {
   }, [subjects, categories])
 
   const subjectStats = useMemo(() => {
-    const stats: Record<string, { weightedPct: number; totalWeight: number; markCount: number; avgWeightedPct: number; vsClass: number; classCount: number }> = {}
+    const stats: Record<string, { weightedPct: number; totalWeight: number; markCount: number }> = {}
     for (const m of marks) {
       if (!stats[m.subjectId]) {
-        stats[m.subjectId] = { weightedPct: 0, totalWeight: 0, markCount: 0, avgWeightedPct: 0, vsClass: 0, classCount: 0 }
+        stats[m.subjectId] = { weightedPct: 0, totalWeight: 0, markCount: 0 }
       }
       const s = stats[m.subjectId]
       s.markCount++
@@ -95,25 +96,6 @@ export default function MarksPage() {
     for (const sid of Object.keys(stats)) {
       const s = stats[sid]
       if (s.totalWeight > 0) s.weightedPct /= s.totalWeight
-    }
-    // Class avg per subject (weighted)
-    const bySub: Record<string, Mark[]> = {}
-    for (const m of marks) {
-      if (m.averageMark == null || m.total <= 0) continue
-      ;(bySub[m.subjectId] ??= []).push(m)
-    }
-    for (const sid of Object.keys(bySub)) {
-      const ms = bySub[sid]
-      const sumW = ms.reduce((s, m) => s + m.weight, 0)
-      const sumAvg = ms.reduce((s, m) => s + (m.averageMark! / m.total) * 100 * m.weight, 0)
-
-      const sumMy = ms.reduce((s, m) => s + weightedPct(m) * m.weight, 0)
-      const s = stats[sid]
-      if (s && sumW > 0) {
-        s.avgWeightedPct = sumAvg / sumW
-        s.vsClass = sumMy / sumW - sumAvg / sumW
-        s.classCount = ms.length
-      }
     }
     return stats
   }, [marks])
@@ -149,21 +131,6 @@ export default function MarksPage() {
     const sumWeight = marks.reduce((s, m) => s + m.weight, 0)
     return sumWeight > 0 ? sumWeighted / sumWeight : 0
   }, [marks])
-
-  const classStats = useMemo(() => {
-    const withAvg = marks.filter((m) => m.averageMark != null && m.total > 0)
-    if (withAvg.length === 0) return null
-    const sumWeight = withAvg.reduce((s, m) => s + m.weight, 0)
-    const myWeightedPct = sumWeight > 0
-      ? withAvg.reduce((s, m) => s + weightedPct(m) * m.weight, 0) / sumWeight
-      : 0
-    const avgWeightedPct = sumWeight > 0
-      ? withAvg.reduce((s, m) => s + (m.averageMark! / m.total) * 100 * m.weight, 0) / sumWeight
-      : 0
-    const avgDiff = withAvg.reduce((s, m) => s + (weightedPct(m) - (m.averageMark! / m.total) * 100), 0) / withAvg.length
-    return { myWeightedPct, avgWeightedPct, avgDiff, count: withAvg.length }
-  }, [marks])
-
   // Early return AFTER all hooks
   if (isLoading) return <PageSpinner />
 
@@ -252,8 +219,8 @@ export default function MarksPage() {
         </div>
       )}
 
-      {/* Per-subject summary cards */}
-      {Object.keys(subjectStats).length > 0 && (
+      {/* Per-subject summary cards — hidden when filtering by subject */}
+      {!filterSubject && Object.keys(subjectStats).length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
           {Object.entries(subjectStats).map(([sid, stat]) => {
             if (stat.markCount === 0) return null
@@ -276,22 +243,14 @@ export default function MarksPage() {
                   <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{stat.weightedPct.toFixed(1)}%</div>
                   <div className="text-xs text-slate-500 dark:text-slate-400">Total weight: {stat.totalWeight}%</div>
                 </div>
-                {stat.classCount > 0 && (
-                  <div className="mt-1 flex items-baseline justify-between text-xs">
-                    <span className="text-slate-500 dark:text-slate-400">vs class</span>
-                    <span className={cn('font-medium', stat.vsClass >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
-                      {stat.vsClass >= 0 ? '+' : ''}{stat.vsClass.toFixed(1)}%
-                    </span>
-                  </div>
-                )}
               </Card>
             )
           })}
         </div>
       )}
 
-      {/* Overall summary */}
-      {marks.length > 0 && (
+      {/* Overall summary — hidden when filtering by subject */}
+      {!filterSubject && marks.length > 0 && (
         <Card>
           <CardHeader><CardTitle>Overall</CardTitle></CardHeader>
           <div className="grid grid-cols-2 gap-4 text-sm">
@@ -304,21 +263,6 @@ export default function MarksPage() {
               <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{overallWeighted.toFixed(1)}%</div>
               <div className={cn('text-sm font-medium', gradeColor(pctToGrade(overallWeighted)))}>{pctToGrade(overallWeighted)}</div>
             </div>
-            {classStats && (
-              <>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Class Avg (graded)</span>
-                  <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{classStats.avgWeightedPct.toFixed(1)}%</div>
-                </div>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">vs Class Avg</span>
-                  <div className={cn('text-lg font-semibold', classStats.avgDiff >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
-                    {classStats.avgDiff >= 0 ? '+' : ''}{classStats.avgDiff.toFixed(1)}%
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">({classStats.count} marks)</div>
-                </div>
-              </>
-            )}
           </div>
         </Card>
       )}

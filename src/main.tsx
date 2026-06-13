@@ -17,9 +17,14 @@ if ('serviceWorker' in navigator) {
           </div>
         `
         toast.querySelector('button')!.onclick = () => {
-          void updateSW(true)
-          window.location.reload()
           toast.remove()
+          // Wait for the new service worker to take control, then reload
+          const reloadOnControl = () => {
+            navigator.serviceWorker.removeEventListener('controllerchange', reloadOnControl)
+            window.location.reload()
+          }
+          navigator.serviceWorker.addEventListener('controllerchange', reloadOnControl)
+          void updateSW(true)
         }
         document.body.appendChild(toast)
         setTimeout(() => toast.remove(), 10000)

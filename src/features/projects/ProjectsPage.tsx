@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { isoNow } from '../../lib/utils'
+import { cn, formatMinutes, isoNow } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -129,52 +130,67 @@ export default function ProjectsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.projects.map((project) => {
             const subject = data.subjects.find((s) => s.id === project.subjectId)
+            const totalMinutes = data.sessions
+              .filter((s) => s.projectId === project.id)
+              .reduce((sum, s) => sum + s.durationMinutes, 0)
+            const openTasks = data.assignments.filter((a) => a.projectId === project.id && !a.completed && !a.deletedAt).length
+            const goalPct = project.goalMinutes && project.goalMinutes > 0 ? Math.min(100, Math.round((totalMinutes / project.goalMinutes) * 100)) : 0
             return (
-              <Card key={project.id}>
-                <div className="flex flex-col h-full">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-slate-800 dark:text-slate-100 truncate">
-                        {project.name}
+              <Link key={project.id} to={`/projects/${project.id}`} className="block">
+                <Card className="h-full cursor-pointer transition-shadow hover:shadow-md">
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-slate-800 dark:text-slate-100 truncate">
+                          {project.name}
+                        </div>
+                        <div className="mt-1 text-sm text-slate-500">{subject?.name ?? 'No focus area'}</div>
                       </div>
-                      <div className="mt-1 text-sm text-slate-500">{subject?.name ?? 'No focus area'}</div>
+                      <div className="flex gap-1 ml-2" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleOpenModal(project)}
+                          className="px-2 py-1"
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => setDeleteProject(project)}
+                          className="px-2 py-1"
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex gap-1 ml-2" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleOpenModal(project)}
-                        className="px-2 py-1"
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => setDeleteProject(project)}
-                        className="px-2 py-1"
-                      >
-                        Delete
-                      </Button>
+                    {project.description && (
+                      <div className="mt-2 text-sm text-slate-600 dark:text-slate-400 line-clamp-2">
+                        {project.description}
+                      </div>
+                    )}
+                    <div className="mt-3 flex items-center gap-3 text-sm">
+                      <span className="font-semibold text-slate-800 dark:text-slate-100">{formatMinutes(totalMinutes)}</span>
+                      <span className="text-xs text-slate-500">logged</span>
+                      {openTasks > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{openTasks} task{openTasks !== 1 ? 's' : ''}</span>}
                     </div>
+                    {project.goalMinutes !== undefined && project.goalMinutes > 0 && (
+                      <div className="mt-2">
+                        <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700">
+                          <div className={cn('h-1.5 rounded-full transition-all', goalPct >= 100 ? 'bg-green-500' : 'bg-primary-500')} style={{ width: `${goalPct}%` }} />
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">{formatMinutes(totalMinutes)} / {formatMinutes(project.goalMinutes)} · {goalPct}%</div>
+                      </div>
+                    )}
+                    {project.dueDate && (
+                      <div className="mt-2 text-sm text-slate-500">
+                        Deadline: {format(parseISO(project.dueDate), 'MMM d, yyyy')}
+                      </div>
+                    )}
                   </div>
-                  {project.description && (
-                    <div className="mt-2 text-sm text-slate-600 dark:text-slate-400 line-clamp-2">
-                      {project.description}
-                    </div>
-                  )}
-                  {project.goalMinutes !== undefined && project.goalMinutes > 0 && (
-                    <div className="mt-2 text-sm text-slate-500">
-                      Goal: {project.goalMinutes} min
-                    </div>
-                  )}
-                  {project.dueDate && (
-                    <div className="mt-2 text-sm text-slate-500">
-                      Deadline: {format(parseISO(project.dueDate), 'MMM d, yyyy')}
-                    </div>
-                  )}
-                </div>
-              </Card>
+                </Card>
+              </Link>
             )
           })}
         </div>

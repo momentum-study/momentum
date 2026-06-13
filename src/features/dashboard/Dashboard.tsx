@@ -191,8 +191,7 @@ export default function Dashboard() {
               })
               return (
                 <div key={i} className="flex flex-col items-center gap-1">
-                  <div className={cn('h-6 w-6 rounded-full text-xs flex items-center justify-center font-medium', hasStudy ? 'bg-orange-400 text-white' : 'bg-slate-200 text-slate-400', ds === todayStr && 'ring-2 ring-orange-500')}>{label}</div>
-                  {hasStudy && <span className="text-xs text-orange-500">*</span>}
+                  <div className={cn('h-6 w-6 rounded-full text-xs flex items-center justify-center font-medium', hasStudy ? 'bg-orange-500 text-orange-50' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500', ds === todayStr && 'ring-2 ring-orange-400')}>{label}</div>
                 </div>
               )
             })}

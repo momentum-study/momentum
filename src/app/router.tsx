@@ -6,6 +6,7 @@ import { UndoProvider } from '../lib/use-undo'
 import Dashboard from '../features/dashboard/Dashboard'
 import SubjectsPage from '../features/subjects/SubjectsPage'
 import ProjectsPage from '../features/projects/ProjectsPage'
+import ProjectDetailPage from '../features/projects/ProjectDetailPage'
 import ReportsPage from '../features/reports/ReportsPage'
 import SettingsPage from '../features/settings/SettingsPage'
 import MarksPage from '../features/marks/MarksPage'
@@ -34,6 +35,7 @@ export function AppRouter() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/groups" element={<GroupsPage />} />
                 <Route path="/groups/:id" element={<GroupDetailPage />} />
+                <Route path="/projects/:id" element={<ProjectDetailPage />} />
               </Routes>
             </AppLayout>
           </DataProvider>

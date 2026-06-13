@@ -1,10 +1,6 @@
-// Global undo stack with Ctrl+Z / Cmd+Z support.
-// Operations register themselves before mutating the database; the user can
-// revert the most recent action via Ctrl+Z. A toast confirms the undo.
-//
-// Scope: small-scale per-user data (hundreds of records). Each undo snapshots
-// the previous state of the affected record(s) — this is fine for a personal
-// study app, but would need a real change-log for larger data sets.
+// Global undo/redo stack with Ctrl+Z / Ctrl+Shift+Z support.
+// Operations register themselves with an undo action; when undone, the action
+// is pushed to the redo stack. Redo replays the original mutation.
 import {
   createContext,
   useCallback,
@@ -19,37 +15,39 @@ import {
 interface UndoAction {
   description: string
   undo: () => Promise<void>
+  redo: () => Promise<void>
   timestamp: number
 }
 
 interface UndoContextValue {
-  /** Push a new action onto the stack. The undo function is called on Ctrl+Z. */
   push: (action: Omit<UndoAction, 'timestamp'>) => void
-  /** Trigger the most recent undo. No-op if stack is empty. */
   undo: () => Promise<void>
-  /** True if there is anything to undo. */
+  redo: () => Promise<void>
   canUndo: boolean
-  /** Most recent action description, for the toast. */
+  canRedo: boolean
   lastDescription: string | null
-  /** Manually dismiss the current toast. */
   dismiss: () => void
 }
 
 const UndoContext = createContext<UndoContextValue | null>(null)
 
-const MAX_UNDO_DEPTH = 50
+const MAX_DEPTH = 50
 
 export function UndoProvider({ children }: { children: ReactNode }) {
-  const stack = useRef<UndoAction[]>([])
-  const [version, setVersion] = useState(0) // bump to trigger re-renders
+  const undoStack = useRef<UndoAction[]>([])
+  const redoStack = useRef<UndoAction[]>([])
+  const [, setVersion] = useState(0)
   const [toast, setToast] = useState<UndoAction | null>(null)
-  const toastTimer = useRef<number | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toastTimer = useRef<any>(null)
 
   const push = useCallback((action: Omit<UndoAction, 'timestamp'>) => {
+    // Pushing a new action clears the redo stack (new branch)
+    redoStack.current = []
     const full: UndoAction = { ...action, timestamp: Date.now() }
-    stack.current.push(full)
-    if (stack.current.length > MAX_UNDO_DEPTH) {
-      stack.current.shift()
+    undoStack.current.push(full)
+    if (undoStack.current.length > MAX_DEPTH) {
+      undoStack.current.shift()
     }
     setToast(full)
     setVersion((v) => v + 1)
@@ -66,10 +64,11 @@ export function UndoProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const undo = useCallback(async () => {
-    const action = stack.current.pop()
+    const action = undoStack.current.pop()
     if (!action) return
     try {
       await action.undo()
+      redoStack.current.push(action)
     } catch (e) {
       console.error('Undo failed:', e)
     }
@@ -77,37 +76,48 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     setVersion((v) => v + 1)
   }, [dismiss])
 
-  // Global Ctrl+Z / Cmd+Z listener. Ignore when the user is typing in an
-  // input/textarea — let the browser handle its own text-field undo.
+  const redo = useCallback(async () => {
+    const action = redoStack.current.pop()
+    if (!action) return
+    try {
+      await action.redo()
+      undoStack.current.push(action)
+    } catch (e) {
+      console.error('Redo failed:', e)
+    }
+    dismiss()
+    setVersion((v) => v + 1)
+  }, [dismiss])
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      const isUndoCombo = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z'
-      if (!isUndoCombo) return
+      const isCtrlZ = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z'
+      const isCtrlShiftZ = (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z'
       const target = e.target as HTMLElement | null
-      if (target) {
-        const tag = target.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) {
-          return
-        }
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      if (isCtrlZ) {
+        e.preventDefault()
+        void undo()
+      } else if (isCtrlShiftZ) {
+        e.preventDefault()
+        void redo()
       }
-      e.preventDefault()
-      void undo()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [undo])
+  }, [undo, redo])
 
   const value = useMemo<UndoContextValue>(
     () => ({
       push,
       undo,
+      redo,
       dismiss,
-      canUndo: stack.current.length > 0,
+      canUndo: undoStack.current.length > 0,
+      canRedo: redoStack.current.length > 0,
       lastDescription: toast?.description ?? null,
     }),
-    // version is referenced to re-compute canUndo
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [push, undo, dismiss, toast, version]
+    [push, undo, redo, dismiss, toast, setVersion]
   )
 
   return <UndoContext.Provider value={value}>{children}</UndoContext.Provider>

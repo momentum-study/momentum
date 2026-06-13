@@ -133,10 +133,8 @@ export default function HabitsPage() {
         if (prevLog) {
           pushUndo({
             description: `Edited log for "${habit?.name ?? 'habit'}"`,
-            undo: async () => {
-              await db.habitLogs.update(editLog.id, prevLog)
-              await loadData()
-            },
+            undo: async () => { await db.habitLogs.update(editLog.id, prevLog); await loadData() },
+            redo: async () => { await db.habitLogs.update(editLog.id, { date: logDate, time: logTime || undefined, note: logNote.trim() || undefined, updatedAt: isoNow() }); await loadData() },
           })
         }
       } else {
@@ -155,15 +153,12 @@ export default function HabitsPage() {
         setEditLog(null)
         pushUndo({
           description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${habit?.name ?? 'habit'}`,
-          undo: async () => {
-            await db.habitLogs.delete(newLog.id)
-            await loadData()
-          },
+          undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
+          redo: async () => { await db.habitLogs.add(newLog); await loadData() },
         })
       }
     } catch (e) { console.error('Failed to save log', e) }
   }
-
 
   async function deleteLog(log: HabitLog) {
     try {
@@ -171,10 +166,8 @@ export default function HabitsPage() {
       await loadData()
       pushUndo({
         description: `Deleted log${log.note ? `: ${log.note}` : ''}`,
-        undo: async () => {
-          await db.habitLogs.add(log)
-          await loadData()
-        },
+        undo: async () => { await db.habitLogs.add(log); await loadData() },
+        redo: async () => { await db.habitLogs.delete(log.id); await loadData() },
       })
     } catch (e) { console.error('Failed to delete log', e) }
   }
@@ -253,11 +246,8 @@ export default function HabitsPage() {
     await loadData()
     pushUndo({
       description: `Deleted habit "${habit.name}"`,
-      undo: async () => {
-        await db.habits.put(habit)
-        if (logs.length > 0) await db.habitLogs.bulkPut(logs)
-        await loadData()
-      },
+      undo: async () => { await db.habits.put(habit); if (logs.length > 0) await db.habitLogs.bulkPut(logs); await loadData() },
+      redo: async () => { await db.habits.delete(id); await db.habitLogs.where('habitId').equals(id).delete(); await loadData() },
     })
   }
 
@@ -513,7 +503,7 @@ export default function HabitsPage() {
       <Modal open={deleteConfirm !== null} onClose={() => setDeleteConfirm(null)} title="Delete Habit?">
         <div className="space-y-3">
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            This will permanently delete the habit and all its logs. This cannot be undone.
+            This will delete the habit and all its logs. You can undo with Ctrl+Z.
           </p>
           <div className="flex gap-2">
             <Button variant="secondary" className="flex-1" onClick={() => setDeleteConfirm(null)}>Cancel</Button>

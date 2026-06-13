@@ -1,6 +1,5 @@
 // Toast that appears at the bottom of the screen after an action, offering
-// an Undo button. Click the toast or wait for the timer to dismiss it.
-// Pressing Ctrl+Z also triggers undo.
+// an Undo button. Pressing Ctrl+Z also triggers undo, Ctrl+Shift+Z for redo.
 import { useUndo } from '../../lib/use-undo'
 
 export function UndoToast() {

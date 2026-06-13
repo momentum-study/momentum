@@ -99,9 +99,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Debounce loadData so rapid mutations (e.g. spam-deleting logs) coalesce
   // into a single read instead of stacking 11-table scans on top of each other.
-  const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const loadTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const loadData = useCallback(async () => {
-    if (loadTimer.current) clearTimeout(loadTimer.current)
     loadTimer.current = setTimeout(async () => {
       loadTimer.current = null
       const next = await loadAllData()

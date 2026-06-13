@@ -3,6 +3,7 @@ import { format, subDays } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { PomodoroTimer } from '../../components/widgets/PomodoroTimer'
 import { useData } from '../../app/providers'
+import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
@@ -16,6 +17,7 @@ import type { Session } from '../../domain/types'
 export default function Dashboard() {
   const { data, isLoading, loadData } = useData()
   const { syncSession } = useSessionSync()
+  const { push } = useUndo()
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
   // Streak: only count timer/pomodoro sessions + manual sessions logged today
@@ -61,25 +63,26 @@ export default function Dashboard() {
   const [logDate, setLogDate] = useState(todayStr)
   async function handleLogTime() {
     if (!logSubjectId) return
-    try {
-      const dateAtMidnight = new Date(`${logDate}T00:00:00`)
-      const endAt = new Date(dateAtMidnight.getTime() + logDuration * 60_000)
-      const session = {
-        id: uuid(),
-        subjectId: logSubjectId,
-        startAt: dateAtMidnight.toISOString(),
-        endAt: endAt.toISOString(),
-        durationMinutes: logDuration,
-        source: 'manual' as const,
-        createdAt: isoNow(),
-        updatedAt: isoNow(),
-      }
-      await db.sessions.add(session)
-      const subjectName = data.subjects.find((s) => s.id === logSubjectId)?.name ?? 'Unknown Subject'
-      syncSession(session, subjectName)
-      await loadData()
-      setLogSubjectId('')
-    } catch (e) { console.error('Failed to log time', e) }
+    const session = {
+      id: uuid(),
+      subjectId: logSubjectId,
+      startAt: new Date(`${logDate}T00:00:00`).toISOString(),
+      endAt: new Date(new Date(`${logDate}T00:00:00`).getTime() + logDuration * 60_000).toISOString(),
+      durationMinutes: logDuration,
+      source: 'manual' as const,
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
+    }
+    await db.sessions.add(session)
+    const subjectName = data.subjects.find((s) => s.id === logSubjectId)?.name ?? 'Unknown Subject'
+    syncSession(session, subjectName)
+    await loadData()
+    push({
+      description: `Logged ${logDuration}m study for ${subjectName}`,
+      undo: async () => { await db.sessions.delete(session.id); await loadData() },
+      redo: async () => { await db.sessions.add(session); await loadData() },
+    })
+    setLogSubjectId('')
   }
 
   // Edit log state
@@ -89,25 +92,35 @@ export default function Dashboard() {
 
   async function saveEditLog() {
     if (!editLog) return
-    try {
-      const dateAtMidnight = new Date(`${editDate}T00:00:00`)
-      const endAt = new Date(dateAtMidnight.getTime() + editDuration * 60_000)
-      await db.sessions.update(editLog.id, {
-        startAt: dateAtMidnight.toISOString(),
-        endAt: endAt.toISOString(),
-        durationMinutes: editDuration,
-        updatedAt: isoNow(),
-      })
-      await loadData()
-      setEditLog(null)
-    } catch (e) { console.error('Failed to edit session', e) }
+    const prevSession = { ...editLog }
+    const dateAtMidnight = new Date(`${editDate}T00:00:00`)
+    const endAt = new Date(dateAtMidnight.getTime() + editDuration * 60_000)
+    const updated = {
+      startAt: dateAtMidnight.toISOString(),
+      endAt: endAt.toISOString(),
+      durationMinutes: editDuration,
+      updatedAt: isoNow(),
+    }
+    await db.sessions.update(editLog.id, updated)
+    await loadData()
+    setEditLog(null)
+    push({
+      description: `Edited session`,
+      undo: async () => { await db.sessions.update(editLog.id, { startAt: prevSession.startAt, endAt: prevSession.endAt, durationMinutes: prevSession.durationMinutes, updatedAt: prevSession.updatedAt }); await loadData() },
+      redo: async () => { await db.sessions.update(editLog.id, updated); await loadData() },
+    })
   }
 
   async function deleteSession(id: string) {
-    try {
-      await db.sessions.delete(id)
-      await loadData()
-    } catch (e) { console.error('Failed to delete session', e) }
+    const session = data.sessions.find((s) => s.id === id)
+    if (!session) return
+    await db.sessions.delete(id)
+    await loadData()
+    push({
+      description: `Deleted session (${session.durationMinutes}m)`,
+      undo: async () => { await db.sessions.add(session); await loadData() },
+      redo: async () => { await db.sessions.delete(id); await loadData() },
+    })
   }
 
   if (isLoading) return <PageSpinner />

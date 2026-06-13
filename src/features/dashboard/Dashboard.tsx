@@ -87,6 +87,7 @@ export default function Dashboard() {
       id: uuid(),
       subjectId: actualSubjectId,
       projectId: project?.id ?? null,
+      assignmentId: task?.id ?? null,
       startAt: new Date(`${logDate}T00:00:00`).toISOString(),
       endAt: new Date(new Date(`${logDate}T00:00:00`).getTime() + logDuration * 60_000).toISOString(),
       durationMinutes: logDuration,

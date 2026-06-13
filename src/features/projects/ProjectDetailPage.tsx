@@ -24,6 +24,7 @@ export default function ProjectDetailPage() {
   const [editTask, setEditTask] = useState<Assignment | null>(null)
   const [timeMinutes, setTimeMinutes] = useState(30)
   const [timeNote, setTimeNote] = useState('')
+  const [timeTaskId, setTimeTaskId] = useState<string>('')
 
   const project = useMemo(() => data.projects.find((p) => p.id === id), [data.projects, id])
   const subject = useMemo(() => data.subjects.find((s) => s.id === project?.subjectId), [data.subjects, project])
@@ -83,26 +84,29 @@ export default function ProjectDetailPage() {
 
   async function logTime() {
     if (!p) return
+    const timeTask = timeTaskId ? tasks.find((t) => t.id === timeTaskId) : undefined
     const now = new Date()
     const start = new Date(now.getTime() - timeMinutes * 60_000)
     const session: Session = {
       id: uuid(),
       subjectId: p.subjectId,
       projectId: p.id,
+      assignmentId: timeTask?.id ?? null,
       startAt: start.toISOString(),
       endAt: now.toISOString(),
       durationMinutes: timeMinutes,
-      note: timeNote.trim() || undefined,
+      note: timeNote.trim() || (timeTask ? `Task: ${timeTask.title}` : undefined),
       source: 'manual',
       createdAt: isoNow(),
       updatedAt: isoNow(),
     }
     await db.sessions.add(session)
     await loadData()
-    pushUndo({ description: `Logged ${timeMinutes}m for ${p.name}`, undo: async () => { await db.sessions.delete(session.id); await loadData() }, redo: async () => { await db.sessions.add(session); await loadData() } })
+    pushUndo({ description: `Logged ${timeMinutes}m for ${p.name}${timeTask ? ` (${timeTask.title})` : ''}`, undo: async () => { await db.sessions.delete(session.id); await loadData() }, redo: async () => { await db.sessions.add(session); await loadData() } })
     setShowTimeModal(false)
     setTimeMinutes(30)
     setTimeNote('')
+    setTimeTaskId('')
   }
 
   const goalPct = project.goalMinutes ? Math.min(100, Math.round((totalMinutes / project.goalMinutes) * 100)) : 0
@@ -144,8 +148,14 @@ export default function ProjectDetailPage() {
               <input type="checkbox" checked={false} onChange={() => toggleTask(t)} className="h-4 w-4 cursor-pointer" />
               <span className="text-sm text-slate-800 dark:text-slate-100">{t.title}</span>
               <span className="text-xs text-slate-400">{format(parseISO(t.dueDate), 'd MMM')}</span>
+              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                {formatMinutes(sessions.filter((s) => s.assignmentId === t.id).reduce((sum, s) => sum + s.durationMinutes, 0))}
+              </span>
             </div>
-            <Button variant="danger" size="sm" onClick={() => deleteTask(t)}>×</Button>
+            <div className="flex gap-1">
+              <Button variant="secondary" size="sm" onClick={() => { setTimeTaskId(t.id); setShowTimeModal(true) }}>+ Log</Button>
+              <Button variant="danger" size="sm" onClick={() => deleteTask(t)}>×</Button>
+            </div>
           </div>
         ))}
         {doneTasks.length > 0 && (
@@ -172,6 +182,11 @@ export default function ProjectDetailPage() {
             <div key={s.id} className="flex items-center justify-between rounded bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
               <div>
                 <span className="text-slate-600 dark:text-slate-300">{format(parseISO(s.startAt), 'MMM d, h:mm a')}</span>
+                {s.assignmentId && (
+                  <span className="ml-2 rounded bg-primary-100 px-1.5 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/50 dark:text-primary-300">
+                    {tasks.find((t) => t.id === s.assignmentId)?.title}
+                  </span>
+                )}
                 {s.note && <span className="ml-2 text-slate-500">— {s.note}</span>}
               </div>
               <span className="font-medium text-slate-800 dark:text-slate-100">{formatMinutes(s.durationMinutes)}</span>
@@ -188,8 +203,17 @@ export default function ProjectDetailPage() {
         </div>
       </Modal>
 
-      <Modal open={showTimeModal} onClose={() => setShowTimeModal(false)} title="Log Time">
+      <Modal open={showTimeModal} onClose={() => { setShowTimeModal(false); setTimeTaskId('') }} title="Log Time">
         <div className="space-y-3">
+          <div>
+            <label className="label">Task (optional)</label>
+            <select className="input" value={timeTaskId} onChange={(e) => setTimeTaskId(e.target.value)}>
+              <option value="">No task</option>
+              {tasks.filter((t) => !t.completed).map((t) => (
+                <option key={t.id} value={t.id}>{t.title}</option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="label">Minutes</label>
             <input type="number" className="input" min={1} value={timeMinutes} onChange={(e) => setTimeMinutes(Math.max(1, Number(e.target.value)))} />

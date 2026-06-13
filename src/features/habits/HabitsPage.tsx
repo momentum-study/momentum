@@ -108,38 +108,38 @@ export default function HabitsPage() {
     return uniqueDays.size
   }
 
-  async function quickLogToday(habitId: string) {
-    const habit = data.habits.find((h) => h.id === habitId)
-    const newLog = {
-      id: uuid(),
-      habitId,
-      date: todayStr,
-      createdAt: isoNow(),
-      updatedAt: isoNow(),
-    }
-    await db.habitLogs.add(newLog)
-    await loadData()
-    pushUndo({
-      description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${habit?.name ?? 'habit'}`,
-      undo: async () => {
-        await db.habitLogs.delete(newLog.id)
-        await loadData()
-      },
-    })
+  function quickLogToday(habitId: string) {
+    // Open the log modal so the user can add a note (and time defaults to now).
+    setSelectedId(habitId)
+    openAddLog()
   }
 
   async function saveLog() {
     if (!selectedId) return
+    const habit = data.habits.find((h) => h.id === selectedId)
     try {
       if (editLog) {
+        const prevLog = await db.habitLogs.get(editLog.id)
         await db.habitLogs.update(editLog.id, {
           date: logDate,
           time: logTime || undefined,
           note: logNote.trim() || undefined,
           updatedAt: isoNow(),
         })
+        await loadData()
+        setShowAddLog(false)
+        setEditLog(null)
+        if (prevLog) {
+          pushUndo({
+            description: `Edited log for "${habit?.name ?? 'habit'}"`,
+            undo: async () => {
+              await db.habitLogs.update(editLog.id, prevLog)
+              await loadData()
+            },
+          })
+        }
       } else {
-        await db.habitLogs.add({
+        const newLog = {
           id: uuid(),
           habitId: selectedId,
           date: logDate,
@@ -147,18 +147,26 @@ export default function HabitsPage() {
           note: logNote.trim() || undefined,
           createdAt: isoNow(),
           updatedAt: isoNow(),
+        }
+        await db.habitLogs.add(newLog)
+        await loadData()
+        setShowAddLog(false)
+        setEditLog(null)
+        pushUndo({
+          description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${habit?.name ?? 'habit'}`,
+          undo: async () => {
+            await db.habitLogs.delete(newLog.id)
+            await loadData()
+          },
         })
       }
-      await loadData()
-      setShowAddLog(false)
-      setEditLog(null)
     } catch (e) { console.error('Failed to save log', e) }
   }
 
   function openAddLog(log?: HabitLog) {
     setEditLog(log || null)
     setLogDate(log ? log.date : todayStr)
-    setLogTime(log?.time || '')
+    setLogTime(log?.time || format(new Date(), 'HH:mm'))
     setLogNote(log?.note || '')
     setShowAddLog(true)
   }
@@ -438,13 +446,10 @@ export default function HabitsPage() {
         <div className="space-y-3">
           <input className="input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <select className="input" value={kind} onChange={(e) => setKind(e.target.value as Habit['kind'])}>
-            <option value="good">Good</option><option value="bad">Bad</option>
+            <option value="good">Good</option>
+            <option value="bad">Bad</option>
           </select>
           <ColorPicker value={color} onChange={setColor} />
-          <div className="space-y-1">
-            <label className="text-xs text-slate-500">Auto-archive after (days)</label>
-            <input type="number" className="input" value={archivedAfterDays ?? settings.defaultArchiveDays} onChange={(e) => setArchivedAfterDays(Number(e.target.value))} />
-          </div>
           <Button variant="primary" className="w-full" onClick={saveHabit}>{editHabit ? 'Save' : 'Add'}</Button>
         </div>
       </Modal>

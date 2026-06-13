@@ -34,5 +34,21 @@ export function useSessionSync() {
     void syncService.flush()
   }
 
-  return { syncSession }
+  /** Sync a session deletion to the cloud. */
+  function syncSessionDelete(sessionId: string) {
+    if (!user) return
+    // Build a minimal placeholder for the delete record
+    const stub: SyncedSession = {
+      id: sessionId,
+      uid: user.uid,
+      subjectName: '',
+      minutes: 0,
+      startAt: '',
+      createdAt: '',
+    }
+    syncService.enqueueDelete(stub)
+    void syncService.flush()
+  }
+
+  return { syncSession, syncSessionDelete }
 }

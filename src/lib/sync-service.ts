@@ -192,3 +192,11 @@ export const syncService = {
     return stats
   },
 }
+
+/** Auto-flush on reconnect. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('[Sync] Back online, flushing pending ops...')
+    void syncService.flush()
+  })
+}

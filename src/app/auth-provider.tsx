@@ -19,7 +19,8 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db, googleProvider, isFirebaseConfigured } from '../lib/firebase'
 import { isoNow } from '../lib/utils'
 import type { UserProfile } from '../domain/cloud-types'
-
+import { syncService } from '../lib/sync-service'
+import { db as localDb } from '../db/app-db'
 interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
@@ -64,6 +65,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           await setDoc(ref, newProfile)
           setProfile(newProfile)
+
+          // Bulk sync existing sessions
+          const allLocalSessions = await localDb.sessions.toArray()
+          for (const s of allLocalSessions) {
+            const subjectName = (await localDb.subjects.get(s.subjectId))?.name ?? 'Unknown Subject'
+            syncService.enqueueUpsert({
+              id: s.id,
+              uid: u.uid,
+              subjectName,
+              minutes: s.durationMinutes,
+              startAt: s.startAt,
+              endAt: s.endAt,
+              createdAt: s.createdAt,
+            })
+          }
+          void syncService.flush()
         }
       } else {
         setProfile(null)

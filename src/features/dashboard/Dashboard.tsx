@@ -233,31 +233,31 @@ export default function Dashboard() {
         <div className="mt-2 space-y-3">
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="label">Subject</label>
-              <select className="input" value={logSubjectId} onChange={(e) => { setLogSubjectId(e.target.value); setLogProjectId(''); setLogTaskId('') }}>
-                <option value="">Select subject</option>
-                {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              <label className="label">Project (optional)</label>
+              <select className="input" value={logProjectId} onChange={(e) => { const pid = e.target.value; setLogProjectId(pid); setLogTaskId(''); if (pid) { const proj = data.projects.find((p) => p.id === pid); if (proj) setLogSubjectId(proj.subjectId) } }}>
+                <option value="">— Select project —</option>
+                {data.projects.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
               </select>
             </div>
-            {(logSubjectId || logProjectId) && (
-              <div>
-                <label className="label">Project (optional)</label>
-                <select className="input" value={logProjectId} onChange={(e) => { setLogProjectId(e.target.value); setLogTaskId('') }}>
-                  <option value="">No project</option>
-                  {data.projects.filter((p) => logProjectId || p.subjectId === logSubjectId).map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
             {logProjectId && (
               <div>
                 <label className="label">Task (optional)</label>
                 <select className="input" value={logTaskId} onChange={(e) => setLogTaskId(e.target.value)}>
-                  <option value="">No task</option>
+                  <option value="">— Select task —</option>
                   {data.assignments.filter((a) => a.projectId === logProjectId && !a.completed && !a.deletedAt).map((a) => (
                     <option key={a.id} value={a.id}>{a.title}</option>
                   ))}
+                </select>
+              </div>
+            )}
+            {!logProjectId && (
+              <div>
+                <label className="label">Subject</label>
+                <select className="input" value={logSubjectId} onChange={(e) => { setLogSubjectId(e.target.value); setLogProjectId(''); setLogTaskId('') }}>
+                  <option value="">Select subject</option>
+                  {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
             )}

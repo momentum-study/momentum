@@ -2,6 +2,7 @@ import { HashRouter, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '../components/layout/AppLayout'
 import { DataProvider } from './providers'
 import { AuthProvider } from './auth-provider'
+import { UndoProvider } from '../lib/use-undo'
 import Dashboard from '../features/dashboard/Dashboard'
 import SubjectsPage from '../features/subjects/SubjectsPage'
 import ProjectsPage from '../features/projects/ProjectsPage'
@@ -18,7 +19,8 @@ export function AppRouter() {
   return (
     <HashRouter>
       <AuthProvider>
-      <DataProvider>
+        <UndoProvider>
+          <DataProvider>
             <AppLayout>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
@@ -35,7 +37,8 @@ export function AppRouter() {
               </Routes>
             </AppLayout>
           </DataProvider>
-        </AuthProvider>
-      </HashRouter>
+        </UndoProvider>
+      </AuthProvider>
+    </HashRouter>
   )
 }

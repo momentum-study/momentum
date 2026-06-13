@@ -4,6 +4,7 @@ import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { loadSettings } from '../settings/SettingsPage'
 import { cn, isoNow } from '../../lib/utils'
+import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -18,6 +19,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function HabitsPage() {
   const { data, isLoading, loadData } = useData()
+  const { push: pushUndo } = useUndo()
   const settings = loadSettings()
   const [showModal, setShowModal] = useState(false)
   const [editHabit, setEditHabit] = useState<Habit | null>(null)
@@ -106,19 +108,24 @@ export default function HabitsPage() {
     return uniqueDays.size
   }
 
-
-
   async function quickLogToday(habitId: string) {
-    try {
-      await db.habitLogs.add({
-        id: uuid(),
-        habitId,
-        date: todayStr,
-        createdAt: isoNow(),
-        updatedAt: isoNow(),
-      })
-      await loadData()
-    } catch (e) { console.error('Failed to quick log', e) }
+    const habit = data.habits.find((h) => h.id === habitId)
+    const newLog = {
+      id: uuid(),
+      habitId,
+      date: todayStr,
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
+    }
+    await db.habitLogs.add(newLog)
+    await loadData()
+    pushUndo({
+      description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${habit?.name ?? 'habit'}`,
+      undo: async () => {
+        await db.habitLogs.delete(newLog.id)
+        await loadData()
+      },
+    })
   }
 
   async function saveLog() {
@@ -211,13 +218,23 @@ export default function HabitsPage() {
   }
 
   async function deleteHabitFn(id: string) {
-    try {
-      await db.habits.delete(id)
-      await db.habitLogs.where('habitId').equals(id).delete()
-      if (selectedId === id) setSelectedId(null)
-      setDeleteConfirm(null)
-      await loadData()
-    } catch (e) { console.error('Failed to delete habit', e) }
+    // Snapshot the habit and its logs before deleting
+    const habit = await db.habits.get(id)
+    const logs = await db.habitLogs.where('habitId').equals(id).toArray()
+    if (!habit) return
+    await db.habits.delete(id)
+    await db.habitLogs.where('habitId').equals(id).delete()
+    if (selectedId === id) setSelectedId(null)
+    setDeleteConfirm(null)
+    await loadData()
+    pushUndo({
+      description: `Deleted habit "${habit.name}"`,
+      undo: async () => {
+        await db.habits.put(habit)
+        if (logs.length > 0) await db.habitLogs.bulkPut(logs)
+        await loadData()
+      },
+    })
   }
 
   const calendarDays = useMemo(() => {

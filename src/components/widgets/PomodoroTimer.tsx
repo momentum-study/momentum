@@ -381,18 +381,33 @@ export function PomodoroTimer() {
       {/* Focus Area selectors */}
       <div className="mt-3 space-y-2">
         <div>
-          <label className="label">Project (optional)</label>
+          <label className="label">Focus Area</label>
           <select
             className="input"
-            value={projectId}
-            onChange={(e) => { setProjectId(e.target.value); setTaskId(''); if (e.target.value) { const proj = data.projects.find((p) => p.id === e.target.value); if (proj) setSubjectId(proj.subjectId) } }}
+            value={subjectId}
+            onChange={(e) => { setSubjectId(e.target.value); setProjectId(''); setTaskId('') }}
           >
-            <option value="">— Select project —</option>
-            {(subjectId ? data.projects.filter((p) => p.subjectId === subjectId) : data.projects).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+            <option value="">— Select focus area —</option>
+            {data.subjects.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
         </div>
+        {subjectId && (
+          <div>
+            <label className="label">Project (optional)</label>
+            <select
+              className="input"
+              value={projectId}
+              onChange={(e) => { setProjectId(e.target.value); setTaskId('') }}
+            >
+              <option value="">— Select project —</option>
+              {data.projects.filter((p) => p.subjectId === subjectId).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {projectId && (
           <div>
             <label className="label">Task (optional)</label>
@@ -404,21 +419,6 @@ export function PomodoroTimer() {
               <option value="">— Select task —</option>
               {data.assignments.filter((a) => a.projectId === projectId && !a.completed && !a.deletedAt).map((a) => (
                 <option key={a.id} value={a.id}>{a.title}</option>
-              ))}
-            </select>
-          </div>
-        )}
-        {!projectId && (
-          <div>
-            <label className="label">Focus Area</label>
-            <select
-              className="input"
-              value={subjectId}
-              onChange={(e) => setSubjectId(e.target.value)}
-            >
-              <option value="">— Select focus area —</option>
-              {data.subjects.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>

@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { parseISO } from 'date-fns'
 import { db } from '../db/app-db'
 import type {
@@ -58,44 +58,56 @@ const emptyData: AppData = {
 
 const DataContext = createContext<DataContextValue | null>(null)
 
+async function loadAllData(): Promise<AppData> {
+  const [
+    categories, subjects, projects, tasks, sessions, progressLogs,
+    marks, assignments, habits, habitLogs, streakDays,
+  ] = await Promise.all([
+    db.categories.toArray(),
+    db.subjects.toArray(),
+    db.projects.toArray(),
+    db.tasks.toArray(),
+    db.sessions.toArray(),
+    db.progressLogs.toArray(),
+    db.marks.toArray(),
+    db.assignments.toArray(),
+    db.habits.toArray(),
+    db.habitLogs.toArray(),
+    db.streakDays.toArray(),
+  ])
+
+  return {
+    categories: [...categories].sort((a, b) => a.name.localeCompare(b.name)),
+    subjects: [...subjects].sort((a, b) => a.name.localeCompare(b.name)),
+    projects: [...projects].sort((a, b) => a.name.localeCompare(b.name)),
+    tasks: [...tasks].sort((a, b) => a.orderIndex - b.orderIndex),
+    sessions: [...sessions].sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
+    progressLogs: [...progressLogs].sort((a, b) => parseISO(b.loggedAt).getTime() - parseISO(a.loggedAt).getTime()),
+    marks: [...marks].sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime()),
+    assignments: [...assignments].sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime()),
+    habits: [...habits],
+    habitLogs: [...habitLogs].sort((a, b) => b.date.localeCompare(a.date)),
+    streakDays: [...streakDays].sort((a, b) => b.id.localeCompare(a.id)),
+  }
+}
+
 export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(emptyData)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [scope, setScope] = useState<ScopeFilter>('all')
   const [rangePreset, setRangePreset] = useState<RangePreset>('week')
 
+  // Debounce loadData so rapid mutations (e.g. spam-deleting logs) coalesce
+  // into a single read instead of stacking 11-table scans on top of each other.
+  const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadData = useCallback(async () => {
-    const [
-      categories, subjects, projects, tasks, sessions, progressLogs,
-      marks, assignments, habits, habitLogs, streakDays,
-    ] = await Promise.all([
-      db.categories.toArray(),
-      db.subjects.toArray(),
-      db.projects.toArray(),
-      db.tasks.toArray(),
-      db.sessions.toArray(),
-      db.progressLogs.toArray(),
-      db.marks.toArray(),
-      db.assignments.toArray(),
-      db.habits.toArray(),
-      db.habitLogs.toArray(),
-      db.streakDays.toArray(),
-    ])
-
-    setData({
-      categories: [...categories].sort((a, b) => a.name.localeCompare(b.name)),
-      subjects: [...subjects].sort((a, b) => a.name.localeCompare(b.name)),
-      projects: [...projects].sort((a, b) => a.name.localeCompare(b.name)),
-      tasks: [...tasks].sort((a, b) => a.orderIndex - b.orderIndex),
-      sessions: [...sessions].sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
-      progressLogs: [...progressLogs].sort((a, b) => parseISO(b.loggedAt).getTime() - parseISO(a.loggedAt).getTime()),
-      marks: [...marks].sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime()),
-      assignments: [...assignments].sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime()),
-      habits: [...habits],
-      habitLogs: [...habitLogs].sort((a, b) => b.date.localeCompare(a.date)),
-      streakDays: [...streakDays].sort((a, b) => b.id.localeCompare(a.id)),
-    })
-    setIsInitialLoad(false)
+    if (loadTimer.current) clearTimeout(loadTimer.current)
+    loadTimer.current = setTimeout(async () => {
+      loadTimer.current = null
+      const next = await loadAllData()
+      setData(next)
+      setIsInitialLoad(false)
+    }, 80)
   }, [])
 
   useEffect(() => { void loadData() }, [loadData])

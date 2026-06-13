@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pomodoroCyclesBeforeLongBreak: 4,
   dailyTargetMinutes: 120,
   soundEnabled: true,
-  maxActiveHabits: 2,
+  maxActiveHabits: 3,
   defaultArchiveDays: 66,
 }
 
@@ -346,15 +346,15 @@ export default function SettingsPage() {
           <CardTitle>Habits</CardTitle>
         </CardHeader>
         <div className="divide-y divide-slate-100 dark:divide-slate-700">
-          <SettingsField label="Soft limit on active habits">
+          <SettingsField label="Habit limit">
             <NumberInput value={settings.maxActiveHabits} onChange={(v) => update({ maxActiveHabits: v })} min={1} />
           </SettingsField>
-          <SettingsField label="Default days to auto-archive">
+          <SettingsField label="Suggestion threshold (days)">
             <NumberInput value={settings.defaultArchiveDays} onChange={(v) => update({ defaultArchiveDays: v })} min={1} />
           </SettingsField>
         </div>
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          The soft limit suggests not adding more than this many active habits at once. Habits are auto-suggested for archiving after the default days of consistent logging.
+          Research suggests 1–3 habits is optimal for building consistency. The threshold shows a gentle suggestion to archive once a habit feels automatic.
         </p>
       </Card>
 

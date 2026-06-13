@@ -163,6 +163,20 @@ export default function HabitsPage() {
     } catch (e) { console.error('Failed to save log', e) }
   }
 
+
+  async function deleteLog(log: HabitLog) {
+    try {
+      await db.habitLogs.delete(log.id)
+      await loadData()
+      pushUndo({
+        description: `Deleted log${log.note ? `: ${log.note}` : ''}`,
+        undo: async () => {
+          await db.habitLogs.add(log)
+          await loadData()
+        },
+      })
+    } catch (e) { console.error('Failed to delete log', e) }
+  }
   function openAddLog(log?: HabitLog) {
     setEditLog(log || null)
     setLogDate(log ? log.date : todayStr)
@@ -175,7 +189,8 @@ export default function HabitsPage() {
     if (overLimit) {
       const ok = window.confirm(
         `You already have ${activeHabits.length} active habits. ` +
-        `The recommended limit is ${habitLimit} — focusing on fewer habits at a time increases success. ` +
+        `Research suggests 1–3 habits at a time is optimal — focusing on fewer habits ` +
+        `gives you a much better chance of sticking with them long-term.` +
         `\n\nAdd another anyway?`
       )
       if (!ok) return
@@ -472,12 +487,20 @@ export default function HabitsPage() {
                   {log.time && <span className="mr-2 font-mono font-medium text-slate-600 dark:text-slate-300">{log.time}</span>}
                   {log.note ? <span className="text-slate-800 dark:text-slate-100">{log.note}</span> : <span className="text-slate-400 italic dark:text-slate-500">(no note)</span>}
                 </div>
-                <button
-                  onClick={() => { setDayDetailDate(null); openAddLog(log) }}
-                  className="text-xs text-primary-600 hover:text-primary-800 dark:text-primary-400"
-                >
-                  Edit
-                </button>
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => { setDayDetailDate(null); openAddLog(log) }}
+                    className="text-xs text-primary-600 hover:text-primary-800 dark:text-primary-400"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => deleteLog(log)}
+                    className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             ))
           ) : (

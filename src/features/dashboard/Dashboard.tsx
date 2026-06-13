@@ -72,30 +72,44 @@ export default function Dashboard() {
 
   // Log Study Time form state
   const [logSubjectId, setLogSubjectId] = useState('')
+  const [logProjectId, setLogProjectId] = useState('')
+  const [logTaskId, setLogTaskId] = useState('')
   const [logDuration, setLogDuration] = useState(30)
   const [logDate, setLogDate] = useState(todayStr)
+  const [logNote, setLogNote] = useState('')
   async function handleLogTime() {
-    if (!logSubjectId) return
+    const project = logProjectId ? data.projects.find((p) => p.id === logProjectId) : undefined
+    const task = logTaskId ? data.assignments.find((a) => a.id === logTaskId) : undefined
+    const actualSubjectId = project ? project.subjectId : logSubjectId
+    if (!actualSubjectId) return
+    const note = logNote.trim() || (task ? `Task: ${task.title}` : undefined)
     const session = {
       id: uuid(),
-      subjectId: logSubjectId,
+      subjectId: actualSubjectId,
+      projectId: project?.id ?? null,
       startAt: new Date(`${logDate}T00:00:00`).toISOString(),
       endAt: new Date(new Date(`${logDate}T00:00:00`).getTime() + logDuration * 60_000).toISOString(),
       durationMinutes: logDuration,
-      source: 'manual' as const,
+      note: note || undefined,
+      source: 'quickLog' as const,
       createdAt: isoNow(),
       updatedAt: isoNow(),
     }
     await db.sessions.add(session)
-    const subjectName = data.subjects.find((s) => s.id === logSubjectId)?.name ?? 'Unknown Subject'
+    const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
     syncSession(session, subjectName)
     await loadData()
+    let description = `Logged ${logDuration}m${project ? ` for ${project.name}` : ` study for ${subjectName}`}`
+    if (task) description += ` (${task.title})`
     push({
-      description: `Logged ${logDuration}m study for ${subjectName}`,
+      description,
       undo: async () => { await db.sessions.delete(session.id); await loadData() },
       redo: async () => { await db.sessions.add(session); await loadData() },
     })
     setLogSubjectId('')
+    setLogProjectId('')
+    setLogTaskId('')
+    setLogNote('')
   }
 
   // Edit log state
@@ -215,23 +229,53 @@ export default function Dashboard() {
       {/* Log Study Time */}
       <Card>
         <CardHeader><CardTitle>Log Study Time</CardTitle></CardHeader>
-        <div className="mt-2 flex flex-wrap items-end gap-3">
-          <div>
-            <label className="label">Subject</label>
-            <select className="input" value={logSubjectId} onChange={(e) => setLogSubjectId(e.target.value)}>
-              <option value="">Select subject</option>
-              {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+        <div className="mt-2 space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="label">Subject</label>
+              <select className="input" value={logSubjectId} onChange={(e) => { setLogSubjectId(e.target.value); setLogProjectId(''); setLogTaskId('') }}>
+                <option value="">Select subject</option>
+                {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            {(logSubjectId || logProjectId) && (
+              <div>
+                <label className="label">Project (optional)</label>
+                <select className="input" value={logProjectId} onChange={(e) => { setLogProjectId(e.target.value); setLogTaskId('') }}>
+                  <option value="">No project</option>
+                  {data.projects.filter((p) => logProjectId || p.subjectId === logSubjectId).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {logProjectId && (
+              <div>
+                <label className="label">Task (optional)</label>
+                <select className="input" value={logTaskId} onChange={(e) => setLogTaskId(e.target.value)}>
+                  <option value="">No task</option>
+                  {data.assignments.filter((a) => a.projectId === logProjectId && !a.completed && !a.deletedAt).map((a) => (
+                    <option key={a.id} value={a.id}>{a.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
-          <div>
-            <label className="label">Minutes</label>
-            <input type="number" className="input w-24" min={1} value={logDuration} onChange={(e) => setLogDuration(Number(e.target.value))} />
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="label">Minutes</label>
+              <input type="number" className="input w-24" min={1} value={logDuration} onChange={(e) => setLogDuration(Number(e.target.value))} />
+            </div>
+            <div>
+              <label className="label">Date</label>
+              <input type="date" className="input" max={todayStr} value={logDate} onChange={(e) => setLogDate(e.target.value)} />
+            </div>
+            <div className="flex-1">
+              <label className="label">Note (optional)</label>
+              <input className="input w-full" placeholder="What did you work on?" value={logNote} onChange={(e) => setLogNote(e.target.value)} />
+            </div>
+            <Button disabled={!logSubjectId && !logProjectId} onClick={handleLogTime}>Log Time</Button>
           </div>
-          <div>
-            <label className="label">Date</label>
-            <input type="date" className="input" max={todayStr} value={logDate} onChange={(e) => setLogDate(e.target.value)} />
-          </div>
-          <Button disabled={!logSubjectId} onClick={handleLogTime}>Log Time</Button>
         </div>
       </Card>
 

@@ -49,8 +49,11 @@ export function PomodoroTimer() {
     soundEnabled: settings.soundEnabled,
   })
 
-  const [mode, setMode] = useState<Mode>('simple')
   const [subjectId, setSubjectId] = useState<string>('')
+  const [projectId, setProjectId] = useState<string>('')
+  const [taskId, setTaskId] = useState<string>('')
+
+  const [mode, setMode] = useState<Mode>('simple')
 
   // Simple timer
   const [simpleRunning, setSimpleRunning] = useState(false)
@@ -67,8 +70,9 @@ export function PomodoroTimer() {
   // Refs so the interval callback always sees latest values
   const configRef = useRef(config)
   configRef.current = config
-  const stateRef = useRef({ pomPhase, subjectId, pomCycles })
-  stateRef.current = { pomPhase, subjectId, pomCycles }
+
+  const stateRef = useRef({ pomPhase, subjectId, projectId, taskId, pomCycles })
+  stateRef.current = { pomPhase, subjectId, projectId, taskId, pomCycles }
 
   useEffect(() => {
     if (!subjectId && data.subjects[0]) setSubjectId(data.subjects[0].id)
@@ -111,21 +115,26 @@ export function PomodoroTimer() {
     simpleIntervalRef.current = null
     setSimpleRunning(false)
     const total = simpleSeconds
-    if (total >= 10 && subjectId) {
+    const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId)?.subjectId ?? subjectId) : subjectId
+    if (total >= 10 && actualSubjectId) {
+      const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
+      const project = projectId ? data.projects.find((p) => p.id === projectId) : undefined
       const now = new Date()
       const start = new Date(now.getTime() - total * 1000)
       const session = {
         id: uuid(),
-        subjectId,
+        subjectId: actualSubjectId,
+        projectId: project?.id ?? null,
         startAt: start.toISOString(),
         endAt: now.toISOString(),
         durationMinutes: Math.max(1, Math.round(total / 60)),
+        note: task ? `Task: ${task.title}` : undefined,
         source: 'timer' as const,
         createdAt: isoNow(),
         updatedAt: isoNow(),
       }
       await db.sessions.add(session)
-      const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown Subject'
+      const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
       syncSession(session, subjectName)
       await loadData()
     }
@@ -142,22 +151,26 @@ export function PomodoroTimer() {
           const st = stateRef.current
           const cfg = configRef.current
           if (st.pomPhase === 'focus') {
-            const subject = st.subjectId
-            if (subject) {
+            const actualSubjId = st.projectId ? (data.projects.find((p) => p.id === st.projectId)?.subjectId ?? st.subjectId) : st.subjectId
+            if (actualSubjId) {
+              const task = st.taskId ? data.assignments.find((a) => a.id === st.taskId) : undefined
+              const project = st.projectId ? data.projects.find((p) => p.id === st.projectId) : undefined
               const end = new Date()
               const start = new Date(end.getTime() - cfg.focusMinutes * 60 * 1000)
               const session = {
                 id: uuid(),
-                subjectId: subject,
+                subjectId: actualSubjId,
+                projectId: project?.id ?? null,
                 startAt: start.toISOString(),
                 endAt: end.toISOString(),
                 durationMinutes: cfg.focusMinutes,
+                note: task ? `Task: ${task.title}` : undefined,
                 source: 'pomodoro' as const,
                 createdAt: isoNow(),
                 updatedAt: isoNow(),
               }
               void db.sessions.add(session).then(async () => {
-                const subjectName = data.subjects.find((s) => s.id === subject)?.name ?? 'Unknown Subject'
+                const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
                 syncSession(session, subjectName)
                 await loadData()
               })
@@ -363,26 +376,58 @@ export function PomodoroTimer() {
         </div>
       )}
 
-      {/* Subject select */}
-      <div className="mt-3">
-        <label className="label">Focus Area</label>
-        <select
-          className="input"
-          value={subjectId}
-          onChange={(e) => setSubjectId(e.target.value)}
-        >
-          <option value="">— Select focus area —</option>
-          {data.subjects.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+      {/* Focus Area selectors */}
+      <div className="mt-3 space-y-2">
+        <div>
+          <label className="label">Project (optional)</label>
+          <select
+            className="input"
+            value={projectId}
+            onChange={(e) => { setProjectId(e.target.value); setTaskId(''); if (e.target.value) { const proj = data.projects.find((p) => p.id === e.target.value); if (proj) setSubjectId(proj.subjectId) } }}
+          >
+            <option value="">— Select project —</option>
+            {(subjectId ? data.projects.filter((p) => p.subjectId === subjectId) : data.projects).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+        {projectId && (
+          <div>
+            <label className="label">Task (optional)</label>
+            <select
+              className="input"
+              value={taskId}
+              onChange={(e) => setTaskId(e.target.value)}
+            >
+              <option value="">— Select task —</option>
+              {data.assignments.filter((a) => a.projectId === projectId && !a.completed && !a.deletedAt).map((a) => (
+                <option key={a.id} value={a.id}>{a.title}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {!projectId && (
+          <div>
+            <label className="label">Focus Area</label>
+            <select
+              className="input"
+              value={subjectId}
+              onChange={(e) => setSubjectId(e.target.value)}
+            >
+              <option value="">— Select focus area —</option>
+              {data.subjects.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
       <div className="mt-3 flex justify-center gap-2">
         {mode === 'simple' ? (
           !simpleRunning ? (
-            <Button variant="primary" onClick={startSimple} disabled={!subjectId}>
+            <Button variant="primary" onClick={startSimple} disabled={!subjectId && !projectId}>
               Start
             </Button>
           ) : (
@@ -393,7 +438,7 @@ export function PomodoroTimer() {
         ) : (
           <>
             {!pomRunning ? (
-              <Button variant="primary" onClick={startPomodoro} disabled={!subjectId}>
+              <Button variant="primary" onClick={startPomodoro} disabled={!subjectId && !projectId}>
                 Start
               </Button>
             ) : (

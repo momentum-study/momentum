@@ -18,6 +18,7 @@ if ('serviceWorker' in navigator) {
         `
         toast.querySelector('button')!.onclick = () => {
           void updateSW(true)
+          window.location.reload()
           toast.remove()
         }
         document.body.appendChild(toast)

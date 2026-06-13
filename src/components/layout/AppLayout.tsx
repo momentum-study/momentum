@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: '/projects', label: 'Projects', icon: '🎯' },
   { to: '/marks', label: 'Marks', icon: '📝' },
   { to: '/habits', label: 'Habits', icon: '🔥' },
+  { to: '/groups', label: 'Groups', icon: '👥' },
   { to: '/calendar', label: 'Tasks', icon: '📅' },
   { to: '/categories', label: 'Categories', icon: '🗂️' },
   { to: '/reports', label: 'Reports', icon: '📈' },

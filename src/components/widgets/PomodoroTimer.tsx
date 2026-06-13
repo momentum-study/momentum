@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { cn, isoNow } from '../../lib/utils'
 import { loadSettings, saveSettings } from '../../features/settings/SettingsPage'
 import type { Settings } from '../../features/settings/SettingsPage'
+import { useSessionSync } from '../../lib/use-session-sync'
 
 type Mode = 'pomodoro' | 'simple'
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
@@ -103,6 +104,7 @@ export function PomodoroTimer() {
       setSimpleSeconds((s) => s + 1)
     }, 1000)
   }
+  const { syncSession } = useSessionSync()
 
   async function stopSimple() {
     if (simpleIntervalRef.current) clearInterval(simpleIntervalRef.current)
@@ -112,16 +114,19 @@ export function PomodoroTimer() {
     if (total >= 10 && subjectId) {
       const now = new Date()
       const start = new Date(now.getTime() - total * 1000)
-      await db.sessions.add({
+      const session = {
         id: uuid(),
         subjectId,
         startAt: start.toISOString(),
         endAt: now.toISOString(),
         durationMinutes: Math.max(1, Math.round(total / 60)),
-        source: 'timer',
+        source: 'timer' as const,
         createdAt: isoNow(),
         updatedAt: isoNow(),
-      })
+      }
+      await db.sessions.add(session)
+      const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown Subject'
+      syncSession(session, subjectName)
       await loadData()
     }
     setSimpleSeconds(0)
@@ -141,16 +146,21 @@ export function PomodoroTimer() {
             if (subject) {
               const end = new Date()
               const start = new Date(end.getTime() - cfg.focusMinutes * 60 * 1000)
-              void db.sessions.add({
+              const session = {
                 id: uuid(),
                 subjectId: subject,
                 startAt: start.toISOString(),
                 endAt: end.toISOString(),
                 durationMinutes: cfg.focusMinutes,
-                source: 'pomodoro',
+                source: 'pomodoro' as const,
                 createdAt: isoNow(),
                 updatedAt: isoNow(),
-              }).then(() => loadData())
+              }
+              void db.sessions.add(session).then(async () => {
+                const subjectName = data.subjects.find((s) => s.id === subject)?.name ?? 'Unknown Subject'
+                syncSession(session, subjectName)
+                await loadData()
+              })
             }
             const newCycles = st.pomCycles + 1
             setPomCycles(newCycles)

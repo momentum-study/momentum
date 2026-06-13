@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { useData } from '../../app/providers'
+import { useAuth } from '../../app/auth-provider'
 import { downloadBackup, readBackupFile, importBackup, ImportMode } from '../../lib/backup'
 
 const STORAGE_KEY = 'momentum-settings'
@@ -233,6 +234,31 @@ function DataImport() {
 
 // ── Settings Page ──────────────────────────────────────────────────────────────
 
+function AccountSettings() {
+  const { user, profile, signIn, signOut } = useAuth()
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Account & Cloud</CardTitle>
+      </CardHeader>
+      {user ? (
+        <div className="space-y-3">
+          <div className="text-sm">
+            Signed in as <strong>{profile?.displayName ?? user.email}</strong>
+          </div>
+          <Button variant="danger" onClick={signOut}>Sign Out</Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500">Sign in to sync your study data and join groups.</p>
+          <Button variant="primary" onClick={signIn}>Sign In with Google</Button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>(loadSettings)
   const [saved, setSaved] = useState(false)
@@ -366,6 +392,8 @@ export default function SettingsPage() {
           </Button>
         </div>
       </Card>
+
+      <AccountSettings />
     </div>
   )
 }

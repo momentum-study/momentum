@@ -10,10 +10,12 @@ import { Modal } from '../../components/ui/Modal'
 import { cn, formatMinutes, isoNow } from '../../lib/utils'
 import { loadSettings } from '../settings/SettingsPage'
 import { db } from '../../db/app-db'
+import { useSessionSync } from '../../lib/use-session-sync'
 import type { Session } from '../../domain/types'
 
 export default function Dashboard() {
   const { data, isLoading, loadData } = useData()
+  const { syncSession } = useSessionSync()
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
   // Streak: only count timer/pomodoro sessions + manual sessions logged today
@@ -57,22 +59,24 @@ export default function Dashboard() {
   const [logSubjectId, setLogSubjectId] = useState('')
   const [logDuration, setLogDuration] = useState(30)
   const [logDate, setLogDate] = useState(todayStr)
-
   async function handleLogTime() {
     if (!logSubjectId) return
     try {
       const dateAtMidnight = new Date(`${logDate}T00:00:00`)
       const endAt = new Date(dateAtMidnight.getTime() + logDuration * 60_000)
-      await db.sessions.add({
+      const session = {
         id: uuid(),
         subjectId: logSubjectId,
         startAt: dateAtMidnight.toISOString(),
         endAt: endAt.toISOString(),
         durationMinutes: logDuration,
-        source: 'manual',
+        source: 'manual' as const,
         createdAt: isoNow(),
         updatedAt: isoNow(),
-      })
+      }
+      await db.sessions.add(session)
+      const subjectName = data.subjects.find((s) => s.id === logSubjectId)?.name ?? 'Unknown Subject'
+      syncSession(session, subjectName)
       await loadData()
       setLogSubjectId('')
     } catch (e) { console.error('Failed to log time', e) }

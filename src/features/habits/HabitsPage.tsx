@@ -47,10 +47,9 @@ export default function HabitsPage() {
   const selectedHabit = data.habits.find((h) => h.id === selectedId) ?? null
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
-  // Soft limit check: only count active (non-archived) habits toward limit
+  // Check if we are over the habit limit
   const habitLimit = settings.maxActiveHabits
-  const activeCount = activeHabits.length
-  const overLimit = activeCount >= habitLimit
+  const overLimit = activeHabits.length >= habitLimit
 
   const selectedHabitLogs = useMemo(() => {
     if (!selectedId) return []
@@ -81,19 +80,23 @@ export default function HabitsPage() {
   }, [selectedHabitLogs])
 
   function getStreak(habitId: string): number {
+    const habit = data.habits.find((h) => h.id === habitId)
+    const isBad = habit?.kind === 'bad'
     const logDates = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
     let streak = 0
     let d = new Date()
     while (true) {
       const ds = format(d, 'yyyy-MM-dd')
-      if (logDates.has(ds)) {
+      // For good habits, streak = consecutive days with a log.
+      // For bad habits, streak = consecutive days WITHOUT a log.
+      const countsAsStreak = isBad ? !logDates.has(ds) : logDates.has(ds)
+      if (countsAsStreak) {
         streak++
         d = subDays(d, 1)
       } else { break }
     }
     return streak
   }
-
   function getTodayCount(habitId: string): number {
     return data.habitLogs.filter((l) => l.habitId === habitId && l.date === todayStr).length
   }
@@ -104,11 +107,6 @@ export default function HabitsPage() {
   }
 
 
-  function isReadyToArchive(habit: Habit): boolean {
-    const daysThreshold = habit.archivedAfterDays ?? settings.defaultArchiveDays
-    const days = getDaysLogged(habit.id)
-    return days >= daysThreshold
-  }
 
   async function quickLogToday(habitId: string) {
     try {
@@ -159,6 +157,14 @@ export default function HabitsPage() {
   }
 
   function openAddHabit() {
+    if (overLimit) {
+      const ok = window.confirm(
+        `You already have ${activeHabits.length} active habits. ` +
+        `The recommended limit is ${habitLimit} — focusing on fewer habits at a time increases success. ` +
+        `\n\nAdd another anyway?`
+      )
+      if (!ok) return
+    }
     setEditHabit(null)
     setName('')
     setKind('good')
@@ -166,7 +172,6 @@ export default function HabitsPage() {
     setArchivedAfterDays(settings.defaultArchiveDays)
     setShowModal(true)
   }
-
   function openEditHabit(habit: Habit) {
     setEditHabit(habit)
     setName(habit.name)
@@ -224,17 +229,21 @@ export default function HabitsPage() {
   const calendarStartDay = getDay(startOfMonth(calendarMonth))
 
   function HabitCard({ habit }: { habit: Habit }) {
+    const isBad = habit.kind === 'bad'
     const streak = getStreak(habit.id)
     const todayCount = getTodayCount(habit.id)
     const daysLogged = getDaysLogged(habit.id)
     const archiveThreshold = habit.archivedAfterDays ?? settings.defaultArchiveDays
-    const readyToArchive = isReadyToArchive(habit)
+    const reachedThreshold = daysLogged >= archiveThreshold
     const last7 = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(new Date(), 6 - i)
       const ds = format(d, 'yyyy-MM-dd')
       const hasLog = data.habitLogs.some((l) => l.habitId === habit.id && l.date === ds)
       return { date: ds, hasLog }
     })
+    const streakLabel = isBad
+      ? (streak > 0 ? `✓ ${streak} day streak of avoiding` : 'No streak yet')
+      : (streak > 0 ? `🔥 ${streak} day streak` : 'No streak yet')
     return (
       <Card
         className={cn('cursor-pointer transition-shadow hover:shadow-md', selectedId === habit.id && 'ring-2 ring-primary-500')}
@@ -243,11 +252,20 @@ export default function HabitsPage() {
         <div className="flex items-center gap-3">
           <div className="h-3 w-3 rounded-full" style={{ backgroundColor: habit.color }} />
           <div className="flex-1">
-            <div className="font-medium text-slate-800 dark:text-slate-100">{habit.name}</div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-slate-800 dark:text-slate-100">{habit.name}</span>
+              {isBad && (
+                <span
+                  className="cursor-help text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  title="For bad habits, the streak counts days you DIDN'T do it. Logging a bad habit means logging that you did the bad thing. The goal is to keep the streak growing."
+                  aria-label="About bad habit streaks"
+                >ⓘ</span>
+              )}
+            </div>
             <div className="mt-0.5 text-xs text-slate-500">
-              {streak > 0 ? `🔥 ${streak} day streak` : 'No streak yet'}
+              {streakLabel}
               <span className="mx-1">·</span>
-              {daysLogged}/{archiveThreshold} days logged
+              {daysLogged} {isBad ? 'lapses' : 'days logged'}
             </div>
           </div>
           {todayCount > 0 && (
@@ -257,25 +275,29 @@ export default function HabitsPage() {
         <div className="mt-2 flex items-center justify-between">
           <div className="flex gap-1">
             {last7.map((d) => (
-              <div key={d.date} className={cn('h-2.5 w-2.5 rounded-full', d.hasLog ? '' : 'bg-slate-200 dark:bg-slate-700')} style={d.hasLog ? { backgroundColor: habit.color } : undefined} title={d.date} />
+              <div
+                key={d.date}
+                className={cn('h-2.5 w-2.5 rounded-full', d.hasLog ? '' : 'bg-slate-200 dark:bg-slate-700')}
+                style={d.hasLog ? { backgroundColor: habit.color } : undefined}
+                title={`${d.date}${isBad ? ' (lapse)' : ''}`}
+              />
             ))}
           </div>
-          <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); quickLogToday(habit.id) }}>+ Log</Button>
+          <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); quickLogToday(habit.id) }}>
+            {isBad ? '+ Log lapse' : '+ Log'}
+          </Button>
         </div>
-        {/* Progress bar toward archive threshold */}
-        <div className="mt-2">
-          <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700">
-            <div
-              className={cn('h-1.5 rounded-full transition-all', readyToArchive ? 'bg-green-500' : 'bg-primary-500')}
-              style={{ width: `${Math.min(100, (daysLogged / archiveThreshold) * 100)}%` }}
-            />
-          </div>
-          {readyToArchive && (
-            <p className="mt-1 text-xs text-green-600 dark:text-green-400">
-              ✓ Ready to archive — {archiveThreshold}+ days logged!
-            </p>
-          )}
-        </div>
+        {/* Suggestion to archive for good habits only */}
+        {!isBad && reachedThreshold && (
+          <p className="mt-2 text-xs text-green-600 dark:text-green-400">
+            🎉 {archiveThreshold} day{archiveThreshold === 1 ? '' : 's'} done — this habit may now be automatic. Consider{' '}
+            <button
+              onClick={(e) => { e.stopPropagation(); setArchiveConfirm(habit.id) }}
+              className="underline hover:text-green-800"
+            >archiving</button>.
+          </p>
+        )}
+
         <div className="mt-2 flex gap-1">
           <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); openEditHabit(habit) }}>Edit</Button>
           <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setArchiveConfirm(habit.id) }}>Archive</Button>
@@ -289,14 +311,7 @@ export default function HabitsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Habits</h2>
-        <div className="flex items-center gap-2">
-          {overLimit && (
-            <span className="text-xs text-orange-600 dark:text-orange-400">
-              ⚠️ Too many active habits ({'>'}{habitLimit})
-            </span>
-          )}
-          <Button variant="primary" size="sm" onClick={openAddHabit}>Add Habit</Button>
-        </div>
+        <Button variant="primary" size="sm" onClick={openAddHabit}>Add Habit</Button>
       </div>
 
       <div>
@@ -354,9 +369,9 @@ export default function HabitsPage() {
 
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between">
-              <button onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))} className="rounded p-1 hover:bg-slate-100">←</button>
+              <button onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">←</button>
               <span className="font-medium">{format(calendarMonth, 'MMMM yyyy')}</span>
-              <button onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))} className="rounded p-1 hover:bg-slate-100">→</button>
+              <button onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">→</button>
             </div>
             <div className="grid grid-cols-7 gap-1 text-center text-xs">
               {WEEKDAYS.map((day) => <div key={day} className="py-1 font-medium text-slate-500">{day}</div>)}
@@ -366,17 +381,32 @@ export default function HabitsPage() {
               {calendarDays.map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd')
                 const count = logsPerDay[dateStr] || 0
+                const intensity = count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : 3
                 return (
-                  <div
+                  <button
                     key={dateStr}
                     onClick={() => setDayDetailDate(dateStr)}
-                    className={cn('flex h-7 w-7 items-center justify-center rounded text-xs cursor-pointer hover:ring-2', count > 0 ? 'text-white' : 'text-slate-500 hover:bg-slate-200')}
-                    style={{ backgroundColor: count > 0 ? selectedHabit.color : undefined, opacity: count > 0 ? (count === 1 ? 0.4 : count === 2 ? 0.7 : 1) : undefined }}
+                    className={cn(
+                      'flex h-9 w-full items-center justify-center rounded text-xs font-medium transition-all hover:ring-2 hover:ring-primary-400',
+                      intensity === 0 && 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700',
+                      intensity > 0 && 'text-white shadow-sm'
+                    )}
+                    style={intensity > 0 ? { backgroundColor: selectedHabit.color, opacity: intensity === 1 ? 0.4 : intensity === 2 ? 0.7 : 1 } : undefined}
                   >
                     {format(day, 'd')}
-                  </div>
+                    {count > 0 && <span className="ml-0.5 text-[10px] opacity-80">×{count}</span>}
+                  </button>
                 )
               })}
+            </div>
+            {/* Heatmap legend */}
+            <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-500">
+              <span>less</span>
+              <div className="h-3 w-3 rounded bg-slate-100 dark:bg-slate-800" />
+              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.4 }} />
+              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.7 }} />
+              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color }} />
+              <span>more</span>
             </div>
           </div>
 
@@ -385,6 +415,7 @@ export default function HabitsPage() {
           </div>
         </Card>
       )}
+
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editHabit ? 'Edit Habit' : 'Add Habit'}>
         <div className="space-y-3">
@@ -420,14 +451,27 @@ export default function HabitsPage() {
         </div>
       </Modal>
 
-      <Modal open={deleteConfirm !== null} onClose={() => setDeleteConfirm(null)} title="Delete?">
-        <Button variant="danger" onClick={() => deleteConfirm && deleteHabitFn(deleteConfirm)}>Confirm Delete</Button>
+      <Modal open={deleteConfirm !== null} onClose={() => setDeleteConfirm(null)} title="Delete Habit?">
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            This will permanently delete the habit and all its logs. This cannot be undone.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="secondary" className="flex-1" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button variant="danger" className="flex-1" onClick={() => deleteConfirm && deleteHabitFn(deleteConfirm)}>Delete</Button>
+          </div>
+        </div>
       </Modal>
 
-      <Modal open={archiveConfirm !== null} onClose={() => setArchiveConfirm(null)} title="Archive?">
+      <Modal open={archiveConfirm !== null} onClose={() => setArchiveConfirm(null)} title="Archive Habit?">
         <div className="space-y-3">
-          <p className="text-sm">Archive this habit? You can always restore it later.</p>
-          <Button variant="secondary" className="w-full" onClick={() => archiveConfirm && archiveHabitFn(archiveConfirm)}>Confirm Archive</Button>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Archive this habit? You can always restore it later from the archived list.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="secondary" className="flex-1" onClick={() => setArchiveConfirm(null)}>Cancel</Button>
+            <Button variant="primary" className="flex-1" onClick={() => archiveConfirm && archiveHabitFn(archiveConfirm)}>Archive</Button>
+          </div>
         </div>
       </Modal>
     </div>

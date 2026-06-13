@@ -6,10 +6,11 @@ export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
-      injectRegister: 'react',
+      registerType: 'autoUpdate',
       workbox: {
         navigateFallback: '/momentum/index.html',
+        clientsClaim: true,
+        skipWaiting: true,
       },
       includeAssets: ['favicon.svg'],
       manifest: {

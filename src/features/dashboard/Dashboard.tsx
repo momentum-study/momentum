@@ -19,43 +19,56 @@ export default function Dashboard() {
   const { syncSession } = useSessionSync()
   const { push } = useUndo()
   const todayStr = format(new Date(), 'yyyy-MM-dd')
-
   // Streak: only count timer/pomodoro sessions + manual sessions logged today
+  // Safety net: allows 1 missed day before streak breaks (so a single off-day
+  // doesn't reset your momentum).
   const streak = useMemo(() => {
     const daySet = new Set<string>()
     for (const s of data.sessions) {
       const day = format(new Date(s.startAt), 'yyyy-MM-dd')
-      // Timer/pomodoro sessions always count.
-      // Manual sessions only count if logged for today (same-day entry).
       if (s.source === 'timer' || s.source === 'pomodoro' || day === todayStr) {
         daySet.add(day)
       }
     }
     let count = 0
+    let missed = 0
     let d = new Date()
     while (true) {
       const ds = format(d, 'yyyy-MM-dd')
       if (daySet.has(ds)) {
         count++
+        missed = 0
         d = subDays(d, 1)
-      } else { break }
+      } else {
+        missed++
+        if (missed > 1) break
+        d = subDays(d, 1)
+      }
     }
     return count
   }, [data.sessions, todayStr])
 
-  // Heatmap: last 90 days of study time
-  const heatmap = useMemo(() => {
-    const dayMinutes: Record<string, number> = {}
+  // Heatmap: minutes per day for the displayed calendar month
+  const [calendarMonth, setCalendarMonth] = useState(new Date())
+  const minutesByDay = useMemo(() => {
+    const map: Record<string, number> = {}
     for (const s of data.sessions) {
       const day = format(new Date(s.startAt), 'yyyy-MM-dd')
-      dayMinutes[day] = (dayMinutes[day] ?? 0) + s.durationMinutes
+      map[day] = (map[day] ?? 0) + s.durationMinutes
     }
-    return Array.from({ length: 90 }, (_, i) => {
-      const d = subDays(new Date(), 89 - i)
-      const ds = format(d, 'yyyy-MM-dd')
-      return { date: ds, minutes: dayMinutes[ds] ?? 0 }
-    })
+    return map
   }, [data.sessions])
+  const calendarDays = useMemo(() => {
+    const start = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1)
+    const daysInMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate()
+    const pad = start.getDay()
+    return { daysInMonth, pad }
+  }, [calendarMonth])
+  const heatMax = useMemo(() => {
+    const prefix = format(calendarMonth, 'yyyy-MM-')
+    const vals = Object.entries(minutesByDay).filter(([k]) => k.startsWith(prefix)).map(([, v]) => v)
+    return Math.max(1, ...vals)
+  }, [minutesByDay, calendarMonth])
 
   // Log Study Time form state
   const [logSubjectId, setLogSubjectId] = useState('')
@@ -140,7 +153,7 @@ export default function Dashboard() {
 
   const totalMinutes = data.sessions.reduce((sum, s) => sum + s.durationMinutes, 0)
   const goalPct = Math.min(100, Math.round((todayMinutes / settings.dailyTargetMinutes) * 100))
-  const heatMax = Math.max(1, ...heatmap.map((d) => d.minutes))
+  // heatMax is now defined via useMemo above
   const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
   const recentSessions = data.sessions.slice(0, 8).map((s) => ({
@@ -223,30 +236,54 @@ export default function Dashboard() {
         </div>
       </Card>
 
-      {/* Study Heatmap */}
+      {/* Study Calendar */}
       <Card>
-        <CardHeader><CardTitle>Study Heatmap — Last 90 Days</CardTitle></CardHeader>
-        <div className="flex flex-wrap gap-1">
-          {heatmap.map((d) => {
-            const intensity = d.minutes / heatMax
-            let bg = 'bg-slate-200'
-            if (d.minutes > 0) {
-              if (intensity > 0.75) bg = 'bg-green-600'
-              else if (intensity > 0.5) bg = 'bg-green-500'
-              else if (intensity > 0.25) bg = 'bg-green-400'
-              else bg = 'bg-green-300'
-            }
-            return <div key={d.date} className={cn('h-3 w-3 rounded-sm', bg)} title={`${d.date}: ${formatMinutes(d.minutes)}`} />
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Study Calendar</CardTitle>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">←</button>
+              <span className="text-sm font-medium">{format(calendarMonth, 'MMMM yyyy')}</span>
+              <button onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">→</button>
+            </div>
+          </div>
+        </CardHeader>
+        <div className="grid grid-cols-7 gap-1 text-center text-xs">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => <div key={d} className="py-1 font-medium text-slate-500">{d}</div>)}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {Array.from({ length: calendarDays.pad }).map((_, i) => <div key={`pad-${i}`} />)}
+          {Array.from({ length: calendarDays.daysInMonth }, (_, i) => {
+            const dayNum = i + 1
+            const dateStr = `${format(calendarMonth, 'yyyy-MM')}-${String(dayNum).padStart(2, '0')}`
+            const mins = minutesByDay[dateStr] ?? 0
+            const intensity = mins / heatMax
+            const isToday = dateStr === todayStr
+            return (
+              <div
+                key={dayNum}
+                title={`${dateStr}: ${formatMinutes(mins)}`}
+                className={cn(
+                  'flex h-9 flex-col items-center justify-center rounded text-xs transition-all',
+                  isToday && 'ring-2 ring-primary-500',
+                  mins === 0 && 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                  mins > 0 && 'text-white font-medium',
+                )}
+                style={mins > 0 ? { backgroundColor: `rgba(34, 197, 94, ${0.3 + intensity * 0.7})` } : undefined}
+              >
+                <span>{dayNum}</span>
+                {mins > 0 && <span className="text-[10px] opacity-80">{formatMinutes(mins)}</span>}
+              </div>
+            )
           })}
         </div>
-        <div className="mt-2 flex items-center gap-1 text-xs text-slate-500">
-          <span>Less</span>
-          <div className="h-3 w-3 rounded-sm bg-slate-200" />
-          <div className="h-3 w-3 rounded-sm bg-green-300" />
-          <div className="h-3 w-3 rounded-sm bg-green-400" />
-          <div className="h-3 w-3 rounded-sm bg-green-500" />
-          <div className="h-3 w-3 rounded-sm bg-green-600" />
-          <span>More</span>
+        <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-500">
+          <span>No study</span>
+          <div className="h-3 w-3 rounded-sm bg-slate-100 dark:bg-slate-800" />
+          <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.3)' }} />
+          <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.65)' }} />
+          <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 1)' }} />
+          <span>Full</span>
         </div>
       </Card>
 

@@ -88,18 +88,26 @@ export default function HabitsPage() {
     const maxDays = habit?.createdAt
       ? Math.min(365, Math.ceil((Date.now() - new Date(habit.createdAt).getTime()) / 86400000))
       : 365
+    // Safety net: allow 1 missed day per week without breaking the streak.
     let streak = 0
+    let missed = 0
     let d = new Date()
     while (streak < maxDays) {
       const ds = format(d, 'yyyy-MM-dd')
       const countsAsStreak = isBad ? !logDates.has(ds) : logDates.has(ds)
       if (countsAsStreak) {
         streak++
+        missed = 0
         d = subDays(d, 1)
-      } else { break }
+      } else {
+        missed++
+        if (missed > 1) break
+        d = subDays(d, 1)
+      }
     }
     return streak
   }
+
   function getTodayCount(habitId: string): number {
     return data.habitLogs.filter((l) => l.habitId === habitId && l.date === todayStr).length
   }

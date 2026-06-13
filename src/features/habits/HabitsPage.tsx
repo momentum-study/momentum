@@ -9,7 +9,6 @@ import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
-import { PageSpinner } from '../../components/ui/Spinner'
 import { ColorPicker } from '../../components/ui/ColorPicker'
 import { v4 as uuid } from 'uuid'
 import type { Habit, HabitLog } from '../../domain/types'
@@ -18,7 +17,7 @@ const DEFAULT_COLOR = '#6366f1'
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function HabitsPage() {
-  const { data, isLoading, loadData } = useData()
+  const { data, loadData } = useData()
   const { push: pushUndo } = useUndo()
   const settings = loadSettings()
   const [showModal, setShowModal] = useState(false)
@@ -41,18 +40,7 @@ export default function HabitsPage() {
   
   const [calendarMonth, setCalendarMonth] = useState(new Date())
 
-  if (isLoading) return <PageSpinner />
-  const activeHabits = data.habits.filter((h) => !h.archivedAt)
-  const archivedHabits = data.habits.filter((h) => !!h.archivedAt)
-  const goodHabits = activeHabits.filter((h) => h.kind === 'good')
-  const badHabits = activeHabits.filter((h) => h.kind === 'bad')
-  const selectedHabit = data.habits.find((h) => h.id === selectedId) ?? null
-  const todayStr = format(new Date(), 'yyyy-MM-dd')
-
-  // Check if we are over the habit limit
-  const habitLimit = settings.maxActiveHabits
-  const overLimit = activeHabits.length >= habitLimit
-
+  // NOTE: hooks must be called unconditionally on every render — do NOT early-return before them.
   const selectedHabitLogs = useMemo(() => {
     if (!selectedId) return []
     return data.habitLogs
@@ -63,6 +51,16 @@ export default function HabitsPage() {
         return (b.time || '').localeCompare(a.time || '')
       })
   }, [data.habitLogs, selectedId])
+  const activeHabits = data.habits.filter((h) => !h.archivedAt)
+  const archivedHabits = data.habits.filter((h) => !!h.archivedAt)
+  const goodHabits = activeHabits.filter((h) => h.kind === 'good')
+  const badHabits = activeHabits.filter((h) => h.kind === 'bad')
+  const selectedHabit = data.habits.find((h) => h.id === selectedId) ?? null
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
+
+  // Check if we are over the habit limit
+  const habitLimit = settings.maxActiveHabits
+  const overLimit = activeHabits.length >= habitLimit
 
   const logsByDate = useMemo(() => {
     const groups: Record<string, HabitLog[]> = {}
@@ -85,12 +83,15 @@ export default function HabitsPage() {
     const habit = data.habits.find((h) => h.id === habitId)
     const isBad = habit?.kind === 'bad'
     const logDates = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
+    // For bad habits with no logs, every day "counts" as a streak day → infinite loop without a cap.
+    // Cap at the habit's age or 365 days, whichever is smaller.
+    const maxDays = habit?.createdAt
+      ? Math.min(365, Math.ceil((Date.now() - new Date(habit.createdAt).getTime()) / 86400000))
+      : 365
     let streak = 0
     let d = new Date()
-    while (true) {
+    while (streak < maxDays) {
       const ds = format(d, 'yyyy-MM-dd')
-      // For good habits, streak = consecutive days with a log.
-      // For bad habits, streak = consecutive days WITHOUT a log.
       const countsAsStreak = isBad ? !logDates.has(ds) : logDates.has(ds)
       if (countsAsStreak) {
         streak++

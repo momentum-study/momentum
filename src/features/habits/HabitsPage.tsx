@@ -436,18 +436,31 @@ export default function HabitsPage() {
         <div className="space-y-3">
           <input type="date" className="input" max={todayStr} value={logDate} onChange={(e) => setLogDate(e.target.value)} />
           <input type="time" className="input" value={logTime} onChange={(e) => setLogTime(e.target.value)} />
-          <textarea className="input" placeholder="Note" value={logNote} onChange={(e) => setLogNote(e.target.value)} />
+          <textarea className="input" placeholder="Note (e.g. what happened, how you felt)" rows={3} value={logNote} onChange={(e) => setLogNote(e.target.value)} />
           <Button variant="primary" className="w-full" onClick={saveLog}>Save</Button>
         </div>
       </Modal>
 
       <Modal open={dayDetailDate !== null} onClose={() => setDayDetailDate(null)} title={dayDetailDate ? format(parseISO(dayDetailDate), 'EEEE, MMM d, yyyy') : ''}>
         <div className="space-y-3">
-          {dayDetailDate && logsByDate[dayDetailDate]?.map(log => (
-             <div key={log.id} className="rounded bg-slate-50 p-2 text-sm dark:bg-slate-700">
-               {log.time && <span className="mr-2 font-mono">{log.time}</span>}{log.note || '(no note)'}
-             </div>
-          )) || <p className="text-sm text-slate-500">No logs for this day.</p>}
+          {dayDetailDate && logsByDate[dayDetailDate]?.length > 0 ? (
+            logsByDate[dayDetailDate].map(log => (
+              <div key={log.id} className="flex items-start justify-between gap-2 rounded bg-slate-50 p-2 text-sm dark:bg-slate-700">
+                <div className="flex-1">
+                  {log.time && <span className="mr-2 font-mono font-medium text-slate-600 dark:text-slate-300">{log.time}</span>}
+                  {log.note ? <span className="text-slate-800 dark:text-slate-100">{log.note}</span> : <span className="text-slate-400 italic dark:text-slate-500">(no note)</span>}
+                </div>
+                <button
+                  onClick={() => { setDayDetailDate(null); openAddLog(log) }}
+                  className="text-xs text-primary-600 hover:text-primary-800 dark:text-primary-400"
+                >
+                  Edit
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No logs for this day.</p>
+          )}
         </div>
       </Modal>
 

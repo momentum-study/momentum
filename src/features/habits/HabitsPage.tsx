@@ -357,7 +357,7 @@ export default function HabitsPage() {
               {isBad ? '+ Log lapse' : '+ Log'}
             </Button>
             <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
-              + Note
+              Quick Log
             </Button>
           </div>
         </div>

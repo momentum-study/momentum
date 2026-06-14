@@ -10,9 +10,10 @@ import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { cn } from '../../lib/utils'
-import type { Group, GroupMember, MemberStats as MemberStatsType } from '../../domain/cloud-types'
+import type { Group, GroupMember, SyncedSession, MemberStats as MemberStatsType } from '../../domain/cloud-types'
 import { doc, getDoc } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '../../lib/firebase'
+import { db as localDb } from '../../db/app-db'
 
 export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -24,26 +25,49 @@ export default function GroupDetailPage() {
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
   const [sortBy, setSortBy] = useState<'week' | 'month' | 'total' | 'streak'>('week')
-
   const fetchStats = useCallback(async (groupId: string, memberList: GroupMember[]) => {
     if (!isFirebaseConfigured || !db) return
     const results: MemberStatsType[] = []
+    const currentUid = user?.uid
     for (const m of memberList) {
-      const ref = doc(db, 'groupStats', `${groupId}_${m.uid}`)
-      const snap = await getDoc(ref)
-      if (snap.exists()) {
-        results.push(snap.data() as MemberStatsType)
-      } else {
-        // No stats yet — compute from sessions
-        const sessions = await syncService.fetchUserSessions(m.uid)
+      let sessions = await syncService.fetchUserSessions(m.uid)
+      // For the current user, always merge local sessions for accuracy
+      if (m.uid === currentUid) {
+        const localSessions = await localDb.sessions.toArray()
+        const localSynced: SyncedSession[] = localSessions.map((s) => ({
+          id: s.id,
+          uid: currentUid!,
+          subjectName: s.note ?? 'Unknown Subject',
+          minutes: s.durationMinutes,
+          startAt: s.startAt,
+          endAt: s.endAt,
+          createdAt: s.createdAt,
+        }))
+        const cloudIds = new Set(sessions.map((s) => s.id))
+        for (const ls of localSynced) {
+          if (!cloudIds.has(ls.id)) sessions.push(ls)
+        }
+        // Always recompute own stats from fresh data (local + cloud)
         const s = await syncService.refreshMemberStats(
           groupId, m.uid, m.displayName, m.photoURL ?? null, sessions
         )
         if (s) results.push(s)
+      } else {
+        // For other users, use cached groupStats if available
+        const ref = doc(db, 'groupStats', `${groupId}_${m.uid}`)
+        const snap = await getDoc(ref)
+        if (snap.exists()) {
+          results.push(snap.data() as MemberStatsType)
+        } else {
+          const s = await syncService.refreshMemberStats(
+            groupId, m.uid, m.displayName, m.photoURL ?? null, sessions
+          )
+          if (s) results.push(s)
+        }
       }
     }
     setStats(results)
-  }, [])
+  }, [user])
 
   useEffect(() => {
     if (!id || !user) return

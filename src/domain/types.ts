@@ -102,7 +102,7 @@ export interface Assignment {
   projectId?: string | null
   title: string
   description?: string
-  dueDate: string // ISO date
+  dueDate: string // ISO date; empty string = no due date
   category: TaskCategory // homework | assignments | miscellaneous
   weight: number // percentage weight (0-100) of the final grade; 0 if not graded
   completed: boolean

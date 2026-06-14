@@ -25,6 +25,7 @@ export default function ProjectDetailPage() {
   const [timeMinutes, setTimeMinutes] = useState(30)
   const [timeNote, setTimeNote] = useState('')
   const [timeTaskId, setTimeTaskId] = useState<string>('')
+  const [sortMode, setSortMode] = useState<'manual' | 'alpha' | 'due'>('manual')
 
   const project = useMemo(() => data.projects.find((p) => p.id === id), [data.projects, id])
   const subject = useMemo(() => data.subjects.find((s) => s.id === project?.subjectId), [data.subjects, project])
@@ -41,15 +42,17 @@ export default function ProjectDetailPage() {
     [sessions]
   )
   const openTasks = useMemo(() => {
-    const sorted = [...tasks.filter((t) => !t.completed)]
-    sorted.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
-    return sorted
-  }, [tasks])
-  const doneTasks = useMemo(() => {
-    const sorted = [...tasks.filter((t) => t.completed)]
-    sorted.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
-    return sorted
-  }, [tasks])
+    const filtered = [...tasks.filter((t) => !t.completed)]
+    if (sortMode === 'alpha') filtered.sort((a, b) => a.title.localeCompare(b.title))
+    else if (sortMode === 'due') filtered.sort((a, b) => {
+      const aDate = a.dueDate || '9999-12-31'
+      const bDate = b.dueDate || '9999-12-31'
+      return aDate.localeCompare(bDate)
+    })
+    else filtered.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+    return filtered
+  }, [tasks, sortMode])
+  const doneTasks = useMemo(() => [...tasks.filter((t) => t.completed)].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)), [tasks])
 
   if (isLoading) return <PageSpinner />
   if (!project) return <div className="space-y-4"><p className="text-red-600 dark:text-red-400">Project not found.</p><Link to="/projects" className="text-primary-500 underline">Back to projects</Link></div>
@@ -58,15 +61,16 @@ export default function ProjectDetailPage() {
   async function saveTask() {
     if (!taskTitle.trim() || !p) return
     const now = isoNow()
+    const finalDueDate = taskDue || ''
     if (editTask) {
       const prev = { ...editTask }
       await db.assignments.update(editTask.id, {
         title: taskTitle.trim(),
-        dueDate: taskDue || editTask.dueDate,
+        dueDate: finalDueDate,
         updatedAt: now,
       })
       await loadData()
-      pushUndo({ description: `Edited task "${taskTitle.trim()}"`, undo: async () => { await db.assignments.update(editTask.id, prev); await loadData() }, redo: async () => { await db.assignments.update(editTask.id, { title: taskTitle.trim(), dueDate: taskDue || editTask.dueDate, updatedAt: now }); await loadData() } })
+      pushUndo({ description: `Edited task "${taskTitle.trim()}"`, undo: async () => { await db.assignments.update(editTask.id, prev); await loadData() }, redo: async () => { await db.assignments.update(editTask.id, { title: taskTitle.trim(), dueDate: finalDueDate, updatedAt: now }); await loadData() } })
     } else {
       const maxIndex = tasks.reduce((max, t) => Math.max(max, t.orderIndex ?? 0), -1)
       const a: Assignment = {
@@ -74,7 +78,7 @@ export default function ProjectDetailPage() {
         subjectId: p.subjectId,
         projectId: p.id,
         title: taskTitle.trim(),
-        dueDate: taskDue || format(new Date(), 'yyyy-MM-dd'),
+        dueDate: finalDueDate,
         category: 'homework',
         weight: 0,
         completed: false,
@@ -93,9 +97,9 @@ export default function ProjectDetailPage() {
   }
 
   function openEditTask(task: Assignment) {
+    setTaskDue(task.dueDate.slice(0, 10))
     setEditTask(task)
     setTaskTitle(task.title)
-    setTaskDue(task.dueDate.slice(0, 10))
     setShowTaskModal(true)
   }
 
@@ -167,7 +171,6 @@ export default function ProjectDetailPage() {
           <Button variant="primary" size="sm" onClick={() => setShowTimeModal(true)}>Log Time</Button>
         </div>
       </div>
-
       {project.goalMinutes && project.goalMinutes > 0 && (
         <Card>
           <div className="flex items-center justify-between">
@@ -182,29 +185,48 @@ export default function ProjectDetailPage() {
 
       {/* Tasks */}
       <div>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Tasks ({tasks.length})</h3>
-        {tasks.length === 0 && <EmptyState title="No tasks yet" description="Add tasks to break this project into smaller pieces." />}
-        {openTasks.length > 0 && openTasks.map((t, idx) => (
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Tasks ({tasks.length})</h3>
+          <div className="flex gap-1 text-xs">
+            {(['manual', 'alpha', 'due'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setSortMode(s)}
+                className={cn(
+                  'rounded px-2 py-0.5 font-medium transition-colors',
+                  sortMode === s
+                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
+                    : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+                )}
+              >
+                {s === 'manual' ? 'Manual' : s === 'alpha' ? 'A-Z' : 'Due'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {tasks.length === 0 ? <EmptyState title="No tasks yet" description="Add tasks to break this project into smaller pieces." /> : (
+          openTasks.map((t, idx) => (
           <div key={t.id} className="flex items-center justify-between border-b border-slate-100 py-2 dark:border-slate-700">
             <div className="flex items-center gap-2">
               <input type="checkbox" checked={false} onChange={() => toggleTask(t)} className="h-4 w-4 cursor-pointer" />
               <span className="text-sm text-slate-800 dark:text-slate-100">{t.title}</span>
-              <span className="text-xs text-slate-400">{format(parseISO(t.dueDate), 'd MMM')}</span>
+              <span className="text-xs text-slate-400">{t.dueDate ? format(parseISO(t.dueDate), 'd MMM') : 'No due date'}</span>
               <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                 {formatMinutes(sessions.filter((s) => s.assignmentId === t.id).reduce((sum, s) => sum + s.durationMinutes, 0))}
               </span>
             </div>
             <div className="flex items-center gap-1">
               <div className="flex flex-col">
-                <button onClick={() => moveTask(t, -1)} disabled={idx === 0} className="rounded p-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-slate-700" title="Move up">▲</button>
-                <button onClick={() => moveTask(t, 1)} disabled={idx === openTasks.length - 1} className="rounded p-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-slate-700" title="Move down">▼</button>
+                <button onClick={() => moveTask(t, -1)} disabled={idx === 0 || sortMode !== 'manual'} className="rounded p-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-slate-700" title="Move up">▲</button>
+                <button onClick={() => moveTask(t, 1)} disabled={idx === openTasks.length - 1 || sortMode !== 'manual'} className="rounded p-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-slate-700" title="Move down">▼</button>
               </div>
               <Button variant="secondary" size="sm" onClick={() => { setTimeTaskId(t.id); setShowTimeModal(true) }}>+ Log</Button>
               <Button variant="secondary" size="sm" onClick={() => openEditTask(t)}>Edit</Button>
               <Button variant="danger" size="sm" onClick={() => deleteTask(t)}>×</Button>
             </div>
           </div>
-        ))}
+          ))
+        )}
         {doneTasks.length > 0 && (
           <details className="mt-2">
             <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700">{doneTasks.length} completed</summary>

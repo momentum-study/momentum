@@ -16,6 +16,7 @@ interface ProjectFormData {
   name: string
   subjectId: string
   description: string
+  goalType: 'daily' | 'weekly' | 'total'
   goalMinutes: number
   dueDate: string
 }
@@ -24,6 +25,7 @@ const emptyFormData: ProjectFormData = {
   name: '',
   subjectId: '',
   description: '',
+  goalType: 'total',
   goalMinutes: 60,
   dueDate: '',
 }
@@ -39,11 +41,14 @@ export default function ProjectsPage() {
   const handleOpenModal = (project?: Project) => {
     if (project) {
       setEditingProject(project)
+      const goalType = project.dailyTargetMinutes ? 'daily' : project.weeklyTargetMinutes ? 'weekly' : 'total'
+      const goalMinutes = project.dailyTargetMinutes ?? project.weeklyTargetMinutes ?? project.totalTargetMinutes ?? 60
       setFormData({
         name: project.name,
         subjectId: project.subjectId,
         description: project.description || '',
-        goalMinutes: project.goalMinutes || 60,
+        goalType,
+        goalMinutes,
         dueDate: project.dueDate ?? '',
       })
     } else {
@@ -69,12 +74,18 @@ export default function ProjectsPage() {
     try {
       const now = isoNow()
       const dueDate = formData.dueDate || undefined
+      const targetPatch = formData.goalType === 'daily'
+        ? { dailyTargetMinutes: formData.goalMinutes, weeklyTargetMinutes: undefined, totalTargetMinutes: undefined }
+        : formData.goalType === 'weekly'
+          ? { dailyTargetMinutes: undefined, weeklyTargetMinutes: formData.goalMinutes, totalTargetMinutes: undefined }
+          : { dailyTargetMinutes: undefined, weeklyTargetMinutes: undefined, totalTargetMinutes: formData.goalMinutes }
+
       if (editingProject) {
         await db.projects.update(editingProject.id, {
           name: formData.name.trim(),
           subjectId: formData.subjectId,
           description: formData.description.trim() || undefined,
-          goalMinutes: formData.goalMinutes,
+          ...targetPatch,
           dueDate,
           updatedAt: now,
         })
@@ -84,13 +95,15 @@ export default function ProjectsPage() {
           name: formData.name.trim(),
           subjectId: formData.subjectId,
           description: formData.description.trim() || undefined,
-          goalMinutes: formData.goalMinutes,
+          ...targetPatch,
           dueDate,
           createdAt: now,
           updatedAt: now,
         }
         await db.projects.add(newProject)
       }
+      await loadData()
+      handleCloseModal()
       await loadData()
       handleCloseModal()
     } finally {
@@ -130,63 +143,54 @@ export default function ProjectsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.projects.map((project) => {
             const subject = data.subjects.find((s) => s.id === project.subjectId)
-            const totalMinutes = data.sessions
-              .filter((s) => s.projectId === project.id)
-              .reduce((sum, s) => sum + s.durationMinutes, 0)
+            const totalMinutes = data.sessions.filter((s) => s.projectId === project.id).reduce((sum, s) => sum + s.durationMinutes, 0)
             const openTasks = data.assignments.filter((a) => a.projectId === project.id && !a.completed && !a.deletedAt).length
-            const goalPct = project.goalMinutes && project.goalMinutes > 0 ? Math.min(100, Math.round((totalMinutes / project.goalMinutes) * 100)) : 0
+            const goalTarget = project.dailyTargetMinutes ?? project.weeklyTargetMinutes ?? project.totalTargetMinutes ?? 0
+            const todayStr = format(new Date(), 'yyyy-MM-dd')
+            const weekStartDate = new Date()
+            weekStartDate.setDate(weekStartDate.getDate() - weekStartDate.getDay())
+            weekStartDate.setHours(0, 0, 0, 0)
+            const effectiveMinutes = project.dailyTargetMinutes
+              ? data.sessions.filter((s) => s.projectId === project.id && format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr).reduce((sum, s) => sum + s.durationMinutes, 0)
+              : project.weeklyTargetMinutes
+                ? data.sessions.filter((s) => s.projectId === project.id && new Date(s.startAt) >= weekStartDate).reduce((sum, s) => sum + s.durationMinutes, 0)
+                : totalMinutes
+            const goalLabel = project.dailyTargetMinutes ? 'daily' : project.weeklyTargetMinutes ? 'weekly' : 'total'
+            const goalPct = goalTarget > 0 ? Math.min(100, Math.round((effectiveMinutes / goalTarget) * 100)) : 0
             return (
               <Link key={project.id} to={`/projects/${project.id}`} className="block">
                 <Card className="h-full cursor-pointer transition-shadow hover:shadow-md">
                   <div className="flex flex-col h-full">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-slate-800 dark:text-slate-100 truncate">
-                          {project.name}
-                        </div>
+                        <div className="font-medium text-slate-800 dark:text-slate-100 truncate">{project.name}</div>
                         <div className="mt-1 text-sm text-slate-500">{subject?.name ?? 'No focus area'}</div>
                       </div>
                       <div className="flex gap-1 ml-2" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleOpenModal(project)}
-                          className="px-2 py-1"
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => setDeleteProject(project)}
-                          className="px-2 py-1"
-                        >
-                          Delete
-                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => handleOpenModal(project)} className="px-2 py-1">Edit</Button>
+                        <Button variant="danger" size="sm" onClick={() => setDeleteProject(project)} className="px-2 py-1">Delete</Button>
                       </div>
                     </div>
                     {project.description && (
-                      <div className="mt-2 text-sm text-slate-600 dark:text-slate-400 line-clamp-2">
-                        {project.description}
-                      </div>
+                      <div className="mt-2 text-sm text-slate-600 dark:text-slate-400 line-clamp-2">{project.description}</div>
                     )}
                     <div className="mt-3 flex items-center gap-3 text-sm">
                       <span className="font-semibold text-slate-800 dark:text-slate-100">{formatMinutes(totalMinutes)}</span>
                       <span className="text-xs text-slate-500">logged</span>
                       {openTasks > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{openTasks} task{openTasks !== 1 ? 's' : ''}</span>}
                     </div>
-                    {project.goalMinutes !== undefined && project.goalMinutes > 0 && (
+                    {goalTarget > 0 && (
                       <div className="mt-2">
                         <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700">
                           <div className={cn('h-1.5 rounded-full transition-all', goalPct >= 100 ? 'bg-green-500' : 'bg-primary-500')} style={{ width: `${goalPct}%` }} />
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">{formatMinutes(totalMinutes)} / {formatMinutes(project.goalMinutes)} · {goalPct}%</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {formatMinutes(effectiveMinutes)} / {formatMinutes(goalTarget)} · {goalLabel} goal · {goalPct}%
+                        </div>
                       </div>
                     )}
                     {project.dueDate && (
-                      <div className="mt-2 text-sm text-slate-500">
-                        Deadline: {format(parseISO(project.dueDate), 'MMM d, yyyy')}
-                      </div>
+                      <div className="mt-2 text-sm text-slate-500">Deadline: {format(parseISO(project.dueDate), 'MMM d, yyyy')}</div>
                     )}
                   </div>
                 </Card>
@@ -248,21 +252,35 @@ export default function ProjectsPage() {
               className="input w-full"
             />
           </div>
-          <div>
-            <label className="label">Goal Minutes</label>
-            <input
-              type="number"
-              value={formData.goalMinutes}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  goalMinutes: Math.max(0, parseInt(e.target.value) || 0),
-                }))
-              }
-              className="input"
-              min="0"
-              placeholder="Target minutes"
-            />
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="label">Goal Type</label>
+              <select
+                value={formData.goalType}
+                onChange={(e) => setFormData((prev) => ({ ...prev, goalType: e.target.value as 'daily' | 'weekly' | 'total' }))}
+                className="input"
+              >
+                <option value="daily">Daily Target</option>
+                <option value="weekly">Weekly Target</option>
+                <option value="total">Total Project Target</option>
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="label">Goal Minutes</label>
+              <input
+                type="number"
+                value={formData.goalMinutes}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    goalMinutes: Math.max(0, parseInt(e.target.value) || 0),
+                  }))
+                }
+                className="input"
+                min="0"
+                placeholder="Target minutes"
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={handleCloseModal}>

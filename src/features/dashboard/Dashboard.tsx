@@ -155,14 +155,13 @@ export default function Dashboard() {
   if (isLoading) return <PageSpinner />
   const settings = loadSettings()
   const todayMinutes = data.sessions
-    .filter((s) => s.startAt.startsWith(todayStr))
+    .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
     .reduce((sum, s) => sum + s.durationMinutes, 0)
+  const weekStart = new Date()
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+  weekStart.setHours(0, 0, 0, 0)
   const weekMinutes = data.sessions
-    .filter((s) => {
-       const start = new Date()
-       start.setDate(start.getDate() - start.getDay())
-       return s.startAt >= format(start, 'yyyy-MM-dd')
-    })
+    .filter((s) => new Date(s.startAt) >= weekStart)
     .reduce((sum, s) => sum + s.durationMinutes, 0)
   const goalPct = Math.min(100, Math.round((todayMinutes / settings.dailyTargetMinutes) * 100))
   const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']

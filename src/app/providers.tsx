@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { parseISO } from 'date-fns'
 import { db } from '../db/app-db'
-import { pushAllData } from '../lib/data-sync'
+
 import type {
   Assignment,
   Category,
@@ -118,12 +118,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       loadTimer.current = null
       const next = await loadAllData()
       setData(next)
-      // Cloud sync: push to Firestore after local changes, but skip the very first load
-      // (initial pull happens in auth-provider on sign-in).
-      const uid = typeof localStorage !== 'undefined' ? localStorage.getItem('momentum-cloud-uid') : null
-      if (uid && hasLoadedOnce.current) void pushAllData(uid)
       hasLoadedOnce.current = true
       setIsInitialLoad(false)
+      // Cloud push is no longer done on every loadData — the real-time
+      // onSnapshot listener in AuthProvider handles cross-device sync.
     }, 80)
   }, [])
   useEffect(() => { void loadData() }, [loadData])

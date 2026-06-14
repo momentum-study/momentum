@@ -29,7 +29,10 @@ export interface Project {
   subjectId: string
   name: string
   description?: string
+  dailyTargetMinutes?: number
+  weeklyTargetMinutes?: number
   goalMinutes?: number
+  totalTargetMinutes?: number
   dueDate?: string
   createdAt: string
   updatedAt: string

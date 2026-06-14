@@ -83,12 +83,11 @@ export async function pushTable(uid: string, tableKey: TableKey): Promise<void> 
     console.warn(`Failed to push table ${tableKey}:`, e)
   }
 }
-
-/** Push all tables to Firestore. Used on bulk import or sign-out snapshot. */
 export async function pushAllData(uid: string): Promise<void> {
   for (const tableKey of SYNC_TABLES) {
     await pushTable(uid, tableKey)
   }
+  console.log(`[sync] Pushed ${SYNC_TABLES.length} tables to cloud`)
 }
 
 /** Push a single record to its table in Firestore (incremental sync). */
@@ -152,8 +151,10 @@ export async function pushFullBackup(uid: string): Promise<void> {
  */
 export function subscribeToUserData(uid: string): Unsubscribe {
   if (!isFirebaseConfigured || !firestore) {
+    console.warn('[sync] Firebase not configured, skipping subscription')
     return () => {}
   }
+  console.log(`[sync] Subscribing to ${SYNC_TABLES.length} tables for ${uid}`)
   const unsubscribers: Unsubscribe[] = []
   for (const tableKey of SYNC_TABLES) {
     const docRef = doc(firestore, DATA_COLLECTION, `${uid}_${tableKey}`)
@@ -163,16 +164,17 @@ export function subscribeToUserData(uid: string): Unsubscribe {
         if (!snap.exists()) return
         const cloudDoc = snap.data() as CloudTableDoc
         if (!Array.isArray(cloudDoc.records) || cloudDoc.records.length === 0) return
+        console.log(`[sync] ${tableKey}: ${cloudDoc.records.length} records`)
         try {
           const table = localDb.table(tableKey)
           await table.bulkPut(cloudDoc.records as { id: string }[])
           window.dispatchEvent(new CustomEvent('momentum-data-synced', { detail: { source: 'cloud' } }))
         } catch (e) {
-          console.warn(`[sync] Failed to apply remote update for ${tableKey}:`, e)
+          console.warn(`[sync] Failed to apply ${tableKey}:`, e)
         }
       },
       (err) => {
-        console.warn(`[sync] Snapshot error for ${tableKey}:`, err)
+        console.warn(`[sync] Snapshot error ${tableKey}:`, err)
       }
     )
     unsubscribers.push(unsub)

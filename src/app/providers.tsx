@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { parseISO } from 'date-fns'
 import { db } from '../db/app-db'
+import { pullAllData } from '../lib/data-sync'
 
 import type {
   Assignment,
@@ -62,7 +63,6 @@ const emptyData: AppData = {
   routines: [],
   routineLogs: [],
 }
-
 async function loadAllData(): Promise<AppData> {
   const [
     categories, subjects, projects, tasks, sessions, progressLogs,
@@ -84,24 +84,28 @@ async function loadAllData(): Promise<AppData> {
     db.routineLogs.toArray(),
   ])
 
+  // Filter out records with invalid/missing required date fields so sort() and format() don't crash.
+  // (Safeguard: cloud data from older app versions may lack these fields.)
   return {
     categories: [...categories].sort((a, b) => a.name.localeCompare(b.name)),
     subjects: [...subjects].sort((a, b) => a.name.localeCompare(b.name)),
     projects: [...projects].sort((a, b) => a.name.localeCompare(b.name)),
-    tasks: [...tasks].sort((a, b) => a.orderIndex - b.orderIndex),
-    sessions: [...sessions].sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
-    progressLogs: [...progressLogs].sort((a, b) => parseISO(b.loggedAt).getTime() - parseISO(a.loggedAt).getTime()),
-    marks: [...marks].sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime()),
-    assignments: [...assignments].sort((a, b) => {
-      const aDate = a.dueDate ? parseISO(a.dueDate).getTime() : 0
-      const bDate = b.dueDate ? parseISO(b.dueDate).getTime() : 0
-      return aDate - bDate
-    }),
+    tasks: [...tasks],
+    sessions: [...sessions]
+      .filter((s) => s.startAt && !isNaN(new Date(s.startAt).getTime()))
+      .sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
+    progressLogs: [...progressLogs]
+      .filter((l) => l.loggedAt && !isNaN(new Date(l.loggedAt).getTime()))
+      .sort((a, b) => parseISO(b.loggedAt).getTime() - parseISO(a.loggedAt).getTime()),
+    marks: [...marks]
+      .filter((m) => m.date && !isNaN(new Date(m.date).getTime()))
+      .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime()),
+    assignments: [...assignments],
     habits: [...habits],
-    habitLogs: [...habitLogs].sort((a, b) => b.date.localeCompare(a.date)),
-    streakDays: [...streakDays].sort((a, b) => b.id.localeCompare(a.id)),
+    habitLogs: [...habitLogs].filter((l) => l.date),
+    streakDays: [...streakDays],
     routines: [...routines].sort((a, b) => a.name.localeCompare(b.name)),
-    routineLogs: [...routineLogs].sort((a, b) => b.date.localeCompare(a.date)),
+    routineLogs: [...routineLogs].filter((l) => l.date),
   }
 }
 
@@ -142,14 +146,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const uid = localStorage.getItem('momentum-cloud-uid')
     if (!uid) return
-    void (async () => {
-      const { pullAllData } = await import('../lib/data-sync')
-      await pullAllData(uid)
-      void loadData()
-    })()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    void pullAllData(uid).then(() => void loadData())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
   const value = useMemo(
     () => ({ data, isLoading: isInitialLoad, scope, rangePreset, setScope, setRangePreset, loadData }),
     [data, isInitialLoad, scope, rangePreset, loadData],

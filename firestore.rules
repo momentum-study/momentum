@@ -47,5 +47,15 @@ service cloud.firestore {
       allow read, write: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
     }
+    // userData/{uid_tableName} — per-user data sync (focus areas, marks, etc.)
+    // Doc IDs are formatted as `${uid}_${tableName}`.
+    // Only the owning user can read or write their own data.
+    match /userData/{docId} {
+      allow read, write: if isSignedIn() && docId.matches('^' + request.auth.uid + '_.*');
+    }
+    // userSettings/{uid} — per-user settings/widget/nav prefs
+    match /userSettings/{uid} {
+      allow read, write: if isOwner(uid);
+    }
   }
 }

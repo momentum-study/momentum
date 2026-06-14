@@ -125,6 +125,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }, 80)
   }, [])
   useEffect(() => { void loadData() }, [loadData])
+  useEffect(() => {
+    function onSynced() { void loadData() }
+    window.addEventListener('momentum-data-synced', onSynced)
+    return () => window.removeEventListener('momentum-data-synced', onSynced)
+  }, [loadData])
+  // On mount, if already signed in, pull fresh cloud data so this device
+  // shows whatever changes happened on other devices.
+  useEffect(() => {
+    const uid = localStorage.getItem('momentum-cloud-uid')
+    if (!uid) return
+    void (async () => {
+      const { pullAllData } = await import('../lib/data-sync')
+      await pullAllData(uid)
+      void loadData()
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const value = useMemo(
     () => ({ data, isLoading: isInitialLoad, scope, rangePreset, setScope, setRangePreset, loadData }),

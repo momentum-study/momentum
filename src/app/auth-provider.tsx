@@ -66,6 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           // Pull all user data (focus areas, marks, habits, etc.) from cloud
           await pullAllData(u.uid)
+          // Force UI to re-read local data after the cloud pull.
+          window.dispatchEvent(new CustomEvent('momentum-data-synced'))
         } else {
           // First sign-in — create a profile doc
           const now = isoNow()

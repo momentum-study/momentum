@@ -29,10 +29,7 @@ export default function Dashboard() {
   const streak = useMemo(() => {
     const daySet = new Set<string>()
     for (const s of data.sessions) {
-      const day = format(new Date(s.startAt), 'yyyy-MM-dd')
-      if (s.source === 'timer' || s.source === 'pomodoro' || day === todayStr) {
-        daySet.add(day)
-      }
+      daySet.add(format(new Date(s.startAt), 'yyyy-MM-dd'))
     }
     let count = 0
     let missed = 0
@@ -50,7 +47,7 @@ export default function Dashboard() {
       }
     }
     return count
-  }, [data.sessions, todayStr])
+  }, [data.sessions])
 
   const [calendarMonth, setCalendarMonth] = useState(new Date())
   const minutesByDay = useMemo(() => {

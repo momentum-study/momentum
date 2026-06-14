@@ -58,49 +58,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (unsubSyncRef.current) { unsubSyncRef.current(); unsubSyncRef.current = null }
       if (u) unsubSyncRef.current = subscribeToUserData(u.uid)
       if (u && db) {
-        const ref = doc(db, 'users', u.uid)
-        const snap = await getDoc(ref)
-        if (snap.exists()) {
-          setProfile(snap.data() as UserProfile)
-          // Pull settings from cloud — apply directly to localStorage (no reload)
-          const cloudPrefs = await pullSettings(u.uid)
-          if (cloudPrefs) {
-            localStorage.setItem('momentum-settings', JSON.stringify(cloudPrefs.settings))
-            localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(cloudPrefs.dashboardWidgets))
-            localStorage.setItem('momentum-nav-prefs', JSON.stringify(cloudPrefs.navPrefs))
-          }
-          // Pull all user data from cloud, then refresh UI
-          await pullAllData(u.uid)
-          window.dispatchEvent(new CustomEvent('momentum-data-synced'))
-        } else {
-          // First sign-in — create a profile doc
-          const now = isoNow()
-          const newProfile: UserProfile = {
-            uid: u.uid,
-            displayName: u.displayName ?? u.email?.split('@')[0] ?? 'Anonymous',
-            photoURL: u.photoURL ?? null,
-            createdAt: now,
-            updatedAt: now,
-            lastActiveAt: now,
-          }
-          await setDoc(ref, newProfile)
-          setProfile(newProfile)
-
-          // Bulk sync existing sessions
-          const allLocalSessions = await localDb.sessions.toArray()
-          for (const s of allLocalSessions) {
-            const subjectName = (await localDb.subjects.get(s.subjectId))?.name ?? 'Unknown Subject'
-            syncService.enqueueUpsert({
-              id: s.id,
+        try {
+          const ref = doc(db, 'users', u.uid)
+          const snap = await getDoc(ref)
+          if (snap.exists()) {
+            setProfile(snap.data() as UserProfile)
+            // Pull settings from cloud — apply directly to localStorage (no reload)
+            const cloudPrefs = await pullSettings(u.uid)
+            if (cloudPrefs) {
+              localStorage.setItem('momentum-settings', JSON.stringify(cloudPrefs.settings))
+              localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(cloudPrefs.dashboardWidgets))
+              localStorage.setItem('momentum-nav-prefs', JSON.stringify(cloudPrefs.navPrefs))
+            }
+            // Pull all user data from cloud, then refresh UI
+            await pullAllData(u.uid)
+            window.dispatchEvent(new CustomEvent('momentum-data-synced'))
+          } else {
+            // First sign-in — create a profile doc
+            const now = isoNow()
+            const newProfile: UserProfile = {
               uid: u.uid,
-              subjectName,
-              minutes: s.durationMinutes,
-              startAt: s.startAt,
-              endAt: s.endAt,
-              createdAt: s.createdAt,
-            })
+              displayName: u.displayName ?? u.email?.split('@')[0] ?? 'Anonymous',
+              photoURL: u.photoURL ?? null,
+              createdAt: now,
+              updatedAt: now,
+              lastActiveAt: now,
+            }
+            await setDoc(ref, newProfile)
+            setProfile(newProfile)
+
+            // Bulk sync existing sessions
+            const allLocalSessions = await localDb.sessions.toArray()
+            for (const s of allLocalSessions) {
+              const subjectName = (await localDb.subjects.get(s.subjectId))?.name ?? 'Unknown Subject'
+              syncService.enqueueUpsert({
+                id: s.id,
+                uid: u.uid,
+                subjectName,
+                minutes: s.durationMinutes,
+                startAt: s.startAt,
+                endAt: s.endAt,
+                createdAt: s.createdAt,
+              })
+            }
+            void syncService.flush()
           }
-          void syncService.flush()
+        } catch (e) {
+          console.error('Error loading user data:', e)
         }
       } else {
         setProfile(null)

@@ -150,12 +150,21 @@ export const groupService = {
   async listMyGroups(uid: string): Promise<Group[]> {
     if (!isFirebaseConfigured || !db) return []
     const q = query(collection(db, 'groupMembers'), where('uid', '==', uid))
-    const snap = await getDocs(q)
+    const snap = await Promise.race([
+      getDocs(q),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out')), 10000)
+      ),
+    ])
     const groupIds = snap.docs.map((d) => (d.data() as GroupMember).groupId)
     const groups: Group[] = []
     for (const id of groupIds) {
-      const g = await this.getGroup(id)
-      if (g) groups.push(g)
+      try {
+        const g = await this.getGroup(id)
+        if (g) groups.push(g)
+      } catch (e) {
+        console.warn(`Failed to load group ${id}:`, e)
+      }
     }
     return groups
   },

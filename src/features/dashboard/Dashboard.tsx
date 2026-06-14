@@ -265,7 +265,7 @@ export default function Dashboard() {
                           'ml-2 shrink-0 text-xs',
                           a.dueDate < todayStr ? 'text-red-500' : 'text-slate-400'
                         )}>
-                          {a.dueDate === todayStr ? 'Today' : `Overdue ${format(new Date(a.dueDate), 'd MMM')}`}
+                          {a.dueDate === todayStr ? 'Today' : a.dueDate ? `Overdue ${format(new Date(a.dueDate), 'd MMM')}` : 'No date'}
                         </span>
                       </li>
                     ))}

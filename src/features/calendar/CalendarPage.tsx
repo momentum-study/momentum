@@ -277,10 +277,11 @@ export default function CalendarPage() {
   const in30 = addDays(new Date(), 30)
   const upcoming = filteredTasks
     .filter((a) => {
+      if (!a.dueDate) return false
       const d = parseISO(a.dueDate)
       return d >= new Date(todayStr) && d <= in30
     })
-    .sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime())
+    .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
 
   const taskValid =
     form.title.trim() !== '' &&
@@ -459,7 +460,7 @@ export default function CalendarPage() {
                           </>
                         )}
                         <span>•</span>
-                        <span>{format(parseISO(a.dueDate), 'MMM d, yyyy')}</span>
+                        <span>{a.dueDate ? format(parseISO(a.dueDate), 'MMM d, yyyy') : 'No date'}</span>
                         {a.weight > 0 && (
                           <>
                             <span>•</span>

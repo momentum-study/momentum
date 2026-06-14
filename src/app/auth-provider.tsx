@@ -22,6 +22,7 @@ import type { UserProfile } from '../domain/cloud-types'
 import { syncService } from '../lib/sync-service'
 import { db as localDb } from '../db/app-db'
 import { pullSettings } from '../lib/settings-sync'
+import { pullAllData } from '../lib/data-sync'
 interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
@@ -63,6 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.setItem('momentum-nav-prefs', JSON.stringify(cloudPrefs.navPrefs))
             window.location.reload()
           }
+          // Pull all user data (focus areas, marks, habits, etc.) from cloud
+          await pullAllData(u.uid)
         } else {
           // First sign-in — create a profile doc
           const now = isoNow()

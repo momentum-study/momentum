@@ -24,7 +24,7 @@ import { syncService } from '../lib/sync-service'
 import { db as localDb } from '../db/app-db'
 import { pullSettings } from '../lib/settings-sync'
 import { pullAllData } from '../lib/data-sync'
-import { subscribeToUserData } from '../lib/data-sync'
+import { subscribeToUserData, installSyncHooks, uninstallSyncHooks } from '../lib/data-sync'
 interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
@@ -56,7 +56,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       else localStorage.removeItem('momentum-cloud-uid')
       // Real-time sync: subscribe to cloud changes for this user
       if (unsubSyncRef.current) { unsubSyncRef.current(); unsubSyncRef.current = null }
-      if (u) unsubSyncRef.current = subscribeToUserData(u.uid)
+      if (u) {
+        unsubSyncRef.current = subscribeToUserData(u.uid)
+        installSyncHooks(u.uid)
+      }
+      if (!u) {
+        uninstallSyncHooks()
+      }
       if (u && db) {
         try {
           const ref = doc(db, 'users', u.uid)

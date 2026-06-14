@@ -92,7 +92,11 @@ async function loadAllData(): Promise<AppData> {
     sessions: [...sessions].sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
     progressLogs: [...progressLogs].sort((a, b) => parseISO(b.loggedAt).getTime() - parseISO(a.loggedAt).getTime()),
     marks: [...marks].sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime()),
-    assignments: [...assignments].sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime()),
+    assignments: [...assignments].sort((a, b) => {
+      const aDate = a.dueDate ? parseISO(a.dueDate).getTime() : 0
+      const bDate = b.dueDate ? parseISO(b.dueDate).getTime() : 0
+      return aDate - bDate
+    }),
     habits: [...habits],
     habitLogs: [...habitLogs].sort((a, b) => b.date.localeCompare(a.date)),
     streakDays: [...streakDays].sort((a, b) => b.id.localeCompare(a.id)),

@@ -144,6 +144,37 @@ export async function pushFullBackup(uid: string): Promise<void> {
   await pushAllData(uid)
 }
 
+// ────────── Dexie hooks: auto-push on every local mutation ──────────
+// Hooks are installed once on module load. The activeSyncUid flag gates
+// whether they actually push to Firestore (set on sign-in, cleared on sign-out).
+
+let activeSyncUid: string | null = null
+
+/** Enable sync hooks for the given user. */
+export function installSyncHooks(uid: string) {
+  activeSyncUid = uid
+}
+
+/** Disable all sync hooks. */
+export function uninstallSyncHooks() {
+  activeSyncUid = null
+}
+
+// Install hooks once — they check activeSyncUid at call time.
+if (typeof window !== 'undefined') {
+  for (const tableKey of SYNC_TABLES) {
+    localDb.table(tableKey).hook('creating', (_pk, value) => {
+      if (activeSyncUid) void pushRecord(activeSyncUid, tableKey, value)
+    })
+    localDb.table(tableKey).hook('updating', (modifications, _primKey, obj) => {
+      if (activeSyncUid) void pushRecord(activeSyncUid, tableKey, { ...obj, ...modifications })
+    })
+    localDb.table(tableKey).hook('deleting', (pk) => {
+      if (activeSyncUid) void removeRecord(activeSyncUid, tableKey, String(pk))
+    })
+  }
+}
+
 /**
  * Subscribe to real-time updates from the cloud.
  * Whenever any synced table changes on the server, pull the change into local DB

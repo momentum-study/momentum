@@ -112,15 +112,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Debounce loadData so rapid mutations (e.g. spam-deleting logs) coalesce
   // into a single read instead of stacking 11-table scans on top of each other.
   const loadTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const hasLoadedOnce = useRef(false)
   const loadData = useCallback(async () => {
     loadTimer.current = setTimeout(async () => {
       loadTimer.current = null
       const next = await loadAllData()
       setData(next)
-      // Cloud sync: push to Firestore after local changes, but NOT on initial load
+      // Cloud sync: push to Firestore after local changes, but skip the very first load
       // (initial pull happens in auth-provider on sign-in).
       const uid = typeof localStorage !== 'undefined' ? localStorage.getItem('momentum-cloud-uid') : null
-      if (uid && !isInitialLoad) void pushAllData(uid)
+      if (uid && hasLoadedOnce.current) void pushAllData(uid)
+      hasLoadedOnce.current = true
       setIsInitialLoad(false)
     }, 80)
   }, [])

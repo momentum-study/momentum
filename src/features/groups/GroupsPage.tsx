@@ -181,6 +181,9 @@ export default function GroupsPage() {
             value={inviteCode}
             onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
           />
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          )}
           <Button variant="primary" className="w-full" onClick={joinGroup}>
             Join
           </Button>

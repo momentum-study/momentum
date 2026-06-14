@@ -15,7 +15,14 @@ service cloud.firestore {
     match /groups/{groupId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      // Owner can update anything; any signed-in user may bump memberCount/updatedAt
+      // (used by the join transaction). Other fields are owner-only.
+      allow update: if isSignedIn() && (
+        resource.data.createdBy == request.auth.uid ||
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['memberCount', 'updatedAt'])
+      );
+      allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
     }
 
     // groupMembers/{groupId_uid} — top-level collection

@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useRef,
   type ReactNode,
 } from 'react'
 import {
@@ -23,6 +24,7 @@ import { syncService } from '../lib/sync-service'
 import { db as localDb } from '../db/app-db'
 import { pullSettings } from '../lib/settings-sync'
 import { pullAllData } from '../lib/data-sync'
+import { subscribeToUserData } from '../lib/data-sync'
 interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
@@ -39,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const unsubSyncRef = useRef<(() => void) | null>(null)
+
 
   // Subscribe to auth state changes
   useEffect(() => {
@@ -50,8 +54,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(u)
       if (u) localStorage.setItem('momentum-cloud-uid', u.uid)
       else localStorage.removeItem('momentum-cloud-uid')
+      // Real-time sync: subscribe to cloud changes for this user
+      if (unsubSyncRef.current) { unsubSyncRef.current(); unsubSyncRef.current = null }
+      if (u) unsubSyncRef.current = subscribeToUserData(u.uid)
       if (u && db) {
-        // Fetch or create the user's profile doc
         const ref = doc(db, 'users', u.uid)
         const snap = await getDoc(ref)
         if (snap.exists()) {
@@ -101,7 +107,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setIsLoading(false)
     })
-    return unsub
+    return () => {
+      unsub()
+      if (unsubSyncRef.current) unsubSyncRef.current()
+    }
   }, [])
 
   const signIn = useCallback(async () => {

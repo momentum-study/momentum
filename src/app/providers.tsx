@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { parseISO } from 'date-fns'
 import { db } from '../db/app-db'
-import { pushAllData, subscribeToUserData } from '../lib/data-sync'
+import { pushAllData } from '../lib/data-sync'
 import type {
   Assignment,
   Category,
@@ -143,14 +143,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       void loadData()
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  // Subscribe to real-time cloud updates — pulls changes from the server
-  // and dispatches a 'momentum-data-synced' event so the UI refreshes.
-  useEffect(() => {
-    const uid = localStorage.getItem('momentum-cloud-uid')
-    if (!uid) return
-    const unsub = subscribeToUserData(uid)
-    return unsub
   }, [])
 
   const value = useMemo(

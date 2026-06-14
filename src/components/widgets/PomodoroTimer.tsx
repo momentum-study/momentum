@@ -9,6 +9,8 @@ import { loadSettings, saveSettings } from '../../features/settings/SettingsPage
 import type { Settings } from '../../features/settings/SettingsPage'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession } from '../../lib/routine-tracker'
+import { clearTimerState, loadTimerState, saveTimerState } from '../../lib/timer-persistence'
+import type { PersistedTimerState } from '../../lib/timer-persistence'
 
 type Mode = 'pomodoro' | 'simple'
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
@@ -36,6 +38,14 @@ function playNotificationSound() {
   }
 }
 
+function getPhaseDuration(phase: Phase, cfg?: { focusMinutes: number; breakMinutes: number; longBreakMinutes: number }): number {
+  const settings = loadSettings()
+  const c = cfg ?? { focusMinutes: settings.pomodoroFocusMinutes, breakMinutes: settings.pomodoroBreakMinutes, longBreakMinutes: settings.pomodoroLongBreakMinutes }
+  if (phase === 'focus') return c.focusMinutes * 60
+  if (phase === 'shortBreak') return c.breakMinutes * 60
+  return c.longBreakMinutes * 60
+}
+
 export function PomodoroTimer() {
   const { data, loadData } = useData()
   const [settings, setSettings] = useState<Settings>(loadSettings)
@@ -54,18 +64,41 @@ export function PomodoroTimer() {
   const [projectId, setProjectId] = useState<string>('')
   const [taskId, setTaskId] = useState<string>('')
 
-  const [mode, setMode] = useState<Mode>('simple')
+  // Mode — try to restore from localStorage
+  const [mode, setMode] = useState<Mode>(() => {
+    const saved = loadTimerState()
+    return saved?.mode ?? 'simple'
+  })
 
-  // Simple timer
-  const [simpleRunning, setSimpleRunning] = useState(false)
+  // Simple timer: store start timestamp (ms) instead of counter
+  // When null, timer is stopped/paused
+  const [simpleStartedAt, setSimpleStartedAt] = useState<number | null>(() => {
+    const saved = loadTimerState()
+    if (saved?.mode === 'simple' && saved.startedAt) return saved.startedAt
+    return null
+  })
   const [simpleSeconds, setSimpleSeconds] = useState(0)
   const simpleIntervalRef = useRef<number | null>(null)
 
   // Pomodoro timer
-  const [pomPhase, setPomPhase] = useState<Phase>('focus')
-  const [pomRunning, setPomRunning] = useState(false)
-  const [pomSeconds, setPomSeconds] = useState(settings.pomodoroFocusMinutes * 60)
-  const [pomCycles, setPomCycles] = useState(0)
+  const [pomPhase, setPomPhase] = useState<Phase>(() => {
+    const saved = loadTimerState()
+    return saved?.phase ?? 'focus'
+  })
+  const [pomStartedAt, setPomStartedAt] = useState<number | null>(() => {
+    const saved = loadTimerState()
+    if (saved?.mode === 'pomodoro' && saved.startedAt) return saved.startedAt
+    return null
+  })
+  const [pomSeconds, setPomSeconds] = useState(() => {
+    const saved = loadTimerState()
+    if (saved?.mode === 'pomodoro' && saved.phaseRemaining) return saved.phaseRemaining
+    return settings.pomodoroFocusMinutes * 60
+  })
+  const [pomCycles, setPomCycles] = useState(() => {
+    const saved = loadTimerState()
+    return saved?.cyclesCompleted ?? 0
+  })
   const pomIntervalRef = useRef<number | null>(null)
 
   // Refs so the interval callback always sees latest values
@@ -75,10 +108,110 @@ export function PomodoroTimer() {
   const stateRef = useRef({ pomPhase, subjectId, projectId, taskId, pomCycles })
   stateRef.current = { pomPhase, subjectId, projectId, taskId, pomCycles }
 
+
+
   useEffect(() => {
     if (!subjectId && data.subjects[0]) setSubjectId(data.subjects[0].id)
   }, [data.subjects, subjectId])
 
+  // Simple timer tick — compute elapsed from wall clock
+  useEffect(() => {
+    if (!simpleStartedAt) return
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - simpleStartedAt) / 1000)
+      setSimpleSeconds(elapsed)
+    }
+    tick()
+    const interval = window.setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [simpleStartedAt])
+
+  // Pomodoro timer tick — compute remaining from wall clock
+  useEffect(() => {
+    if (!pomStartedAt) return
+    const tick = () => {
+      const saved = loadTimerState()
+      const currentPhase = saved?.phase ?? pomPhase
+      const duration = getPhaseDuration(currentPhase, configRef.current)
+      const elapsed = Math.floor((Date.now() - pomStartedAt) / 1000)
+      const remaining = Math.max(0, duration - elapsed)
+      setPomSeconds(remaining)
+    }
+    tick()
+    const interval = window.setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [pomStartedAt, pomPhase])
+
+  // Pomodoro phase transition — fires when phase timer hits 0
+  useEffect(() => {
+    if (!pomStartedAt) return
+    if (pomSeconds > 0) return
+    if (configRef.current.soundEnabled) playNotificationSound()
+    const st = stateRef.current
+    const cfg = configRef.current
+
+    if (pomPhase === 'focus') {
+      // Save the completed focus session
+      const actualSubjId = st.projectId ? (data.projects.find((p) => p.id === st.projectId)?.subjectId ?? st.subjectId) : st.subjectId
+      if (actualSubjId) {
+        const task = st.taskId ? data.assignments.find((a) => a.id === st.taskId) : undefined
+        const project = st.projectId ? data.projects.find((p) => p.id === st.projectId) : undefined
+        const end = new Date()
+        const start = new Date(end.getTime() - cfg.focusMinutes * 60 * 1000)
+        const session = {
+          id: uuid(),
+          subjectId: actualSubjId,
+          projectId: project?.id ?? null,
+          assignmentId: task?.id ?? null,
+          startAt: start.toISOString(),
+          endAt: end.toISOString(),
+          durationMinutes: cfg.focusMinutes,
+          note: task ? `Task: ${task.title}` : undefined,
+          source: 'pomodoro' as const,
+          createdAt: isoNow(),
+          updatedAt: isoNow(),
+        }
+        void db.sessions.add(session).then(async () => {
+          const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
+          syncSession(session, subjectName)
+          await updateRoutineLogsForSession(session)
+          await loadData()
+        })
+      }
+      const newCycles = st.pomCycles + 1
+      setPomCycles(newCycles)
+      const nextPhase = newCycles % cfg.cycles === 0 ? 'longBreak' : 'shortBreak'
+      setPomPhase(nextPhase)
+      const now = Date.now()
+      setPomStartedAt(now)
+      const newState: PersistedTimerState = {
+        mode: 'pomodoro',
+        startedAt: now,
+        phaseRemaining: getPhaseDuration(nextPhase, cfg),
+        phase: nextPhase,
+        cyclesCompleted: newCycles,
+        config: cfg,
+      }
+      saveTimerState(newState)
+    } else {
+      // Break completed — go back to focus
+      setPomPhase('focus')
+      const now = Date.now()
+      setPomStartedAt(now)
+      const newState: PersistedTimerState = {
+        mode: 'pomodoro',
+        startedAt: now,
+        phaseRemaining: cfg.focusMinutes * 60,
+        phase: 'focus',
+        cyclesCompleted: st.pomCycles,
+        config: cfg,
+      }
+      saveTimerState(newState)
+    }
+  }, [pomStartedAt, pomSeconds, pomPhase])
+
+
+  // Cleanup on unmount: clear intervals but DON'T clear persisted state
   useEffect(() => {
     return () => {
       if (simpleIntervalRef.current) clearInterval(simpleIntervalRef.current)
@@ -112,17 +245,23 @@ export function PomodoroTimer() {
 
   // Simple timer
   function startSimple() {
-    setSimpleRunning(true)
-    simpleIntervalRef.current = window.setInterval(() => {
-      setSimpleSeconds((s) => s + 1)
-    }, 1000)
+    const now = Date.now()
+    setSimpleStartedAt(now)
+    const state: PersistedTimerState = {
+      mode: 'simple',
+      startedAt: now,
+      phaseRemaining: null,
+      phase: 'focus',
+      cyclesCompleted: 0,
+      config: configRef.current,
+    }
+    saveTimerState(state)
   }
   const { syncSession } = useSessionSync()
 
   async function stopSimple() {
-    if (simpleIntervalRef.current) clearInterval(simpleIntervalRef.current)
-    simpleIntervalRef.current = null
-    setSimpleRunning(false)
+    setSimpleStartedAt(null)
+    clearTimerState()
     const total = simpleSeconds
     const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId)?.subjectId ?? subjectId) : subjectId
     if (total >= 10 && actualSubjectId) {
@@ -154,67 +293,35 @@ export function PomodoroTimer() {
 
   // Pomodoro timer
   function startPomodoro() {
-    setPomRunning(true)
-    pomIntervalRef.current = window.setInterval(() => {
-      setPomSeconds((s) => {
-        if (s <= 1) {
-          if (configRef.current.soundEnabled) playNotificationSound()
-          const st = stateRef.current
-          const cfg = configRef.current
-          if (st.pomPhase === 'focus') {
-            const actualSubjId = st.projectId ? (data.projects.find((p) => p.id === st.projectId)?.subjectId ?? st.subjectId) : st.subjectId
-            if (actualSubjId) {
-              const task = st.taskId ? data.assignments.find((a) => a.id === st.taskId) : undefined
-              const project = st.projectId ? data.projects.find((p) => p.id === st.projectId) : undefined
-              const end = new Date()
-              const start = new Date(end.getTime() - cfg.focusMinutes * 60 * 1000)
-              const session = {
-                id: uuid(),
-                subjectId: actualSubjId,
-                projectId: project?.id ?? null,
-                assignmentId: task?.id ?? null,
-                startAt: start.toISOString(),
-                endAt: end.toISOString(),
-                durationMinutes: cfg.focusMinutes,
-                note: task ? `Task: ${task.title}` : undefined,
-                source: 'pomodoro' as const,
-                createdAt: isoNow(),
-                updatedAt: isoNow(),
-              }
-              void db.sessions.add(session).then(async () => {
-                const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
-                syncSession(session, subjectName)
-                await updateRoutineLogsForSession(session)
-                await loadData()
-              })
-            }
-            const newCycles = st.pomCycles + 1
-            setPomCycles(newCycles)
-            if (newCycles % cfg.cycles === 0) {
-              setPomPhase('longBreak')
-              return cfg.longBreakMinutes * 60
-            } else {
-              setPomPhase('shortBreak')
-              return cfg.breakMinutes * 60
-            }
-          } else {
-            setPomPhase('focus')
-            return cfg.focusMinutes * 60
-          }
-        }
-        return s - 1
-      })
-    }, 1000)
+    const now = Date.now()
+    setPomStartedAt(now)
+    const state: PersistedTimerState = {
+      mode: 'pomodoro',
+      startedAt: now,
+      phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
+      phase: pomPhase,
+      cyclesCompleted: pomCycles,
+      config: configRef.current,
+    }
+    saveTimerState(state)
   }
 
   function pausePomodoro() {
-    if (pomIntervalRef.current) clearInterval(pomIntervalRef.current)
-    pomIntervalRef.current = null
-    setPomRunning(false)
+    setPomStartedAt(null)
+    const state: PersistedTimerState = {
+      mode: 'pomodoro',
+      startedAt: null,
+      phaseRemaining: pomSeconds,
+      phase: pomPhase,
+      cyclesCompleted: pomCycles,
+      config: configRef.current,
+    }
+    saveTimerState(state)
   }
 
   function resetPomodoro() {
-    pausePomodoro()
+    setPomStartedAt(null)
+    clearTimerState()
     setPomPhase('focus')
     setPomCycles(0)
     setPomSeconds(config.focusMinutes * 60)
@@ -226,7 +333,8 @@ export function PomodoroTimer() {
     : pomPhase === 'shortBreak' ? '☕ Short Break'
     : '🌿 Long Break'
 
-  const isTimerActive = simpleRunning || pomRunning
+  const isTimerActive = simpleStartedAt != null || pomStartedAt != null
+
 
   return (
     <Card>
@@ -439,7 +547,7 @@ export function PomodoroTimer() {
       {/* Controls */}
       <div className="mt-3 flex justify-center gap-2">
         {mode === 'simple' ? (
-          !simpleRunning ? (
+          !simpleStartedAt ? (
             <Button variant="primary" onClick={startSimple} disabled={!subjectId && !projectId}>
               Start
             </Button>
@@ -450,7 +558,7 @@ export function PomodoroTimer() {
           )
         ) : (
           <>
-            {!pomRunning ? (
+            {!pomStartedAt ? (
               <Button variant="primary" onClick={startPomodoro} disabled={!subjectId && !projectId}>
                 Start
               </Button>

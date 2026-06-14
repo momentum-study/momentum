@@ -250,7 +250,7 @@ export default function SubjectsPage() {
           </div>
 
           <div>
-            <label className="label">Color</label>
+            <label className="label">Colour</label>
             <ColorPicker value={formData.color} onChange={(c) => setFormData((prev) => ({ ...prev, color: c }))} />
           </div>
 

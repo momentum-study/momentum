@@ -170,10 +170,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <button
             onClick={openCustomizer}
             className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-            aria-label="Customize navigation"
+            aria-label="Customise navigation"
           >
             <span aria-hidden>🛠️</span>
-            <span>Customize</span>
+            <span>Customise</span>
           </button>
         </div>
       </aside>
@@ -198,7 +198,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <Modal
         open={draftPrefs !== null}
         onClose={closeCustomizer}
-        title="Customize Navigation"
+        title="Customise Navigation"
       >
         {draftPrefs && (
           <div className="space-y-3">

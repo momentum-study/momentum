@@ -159,7 +159,7 @@ export default function CategoriesPage() {
             </select>
           </div>
           <div>
-            <label className="label">Color</label>
+            <label className="label">Colour</label>
             <ColorPicker value={form.color} onChange={(c) => setForm({ ...form, color: c })} />
           </div>
           <div className="flex justify-end gap-2 pt-2">

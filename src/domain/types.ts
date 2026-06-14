@@ -130,6 +130,8 @@ export interface Habit {
   deletedAt?: string | null
   archivedAt?: string | null
   archivedAfterDays?: number | null
+  status?: 'active' | 'potential'
+  targetPerDay?: number
 }
 
 export interface HabitLog {
@@ -141,6 +143,7 @@ export interface HabitLog {
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
+  value?: number
 }
 
 // Streak — one row per day that had study activity

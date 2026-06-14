@@ -183,10 +183,10 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Dashboard</h2>
-        <Button variant="secondary" size="sm" onClick={() => setCustomizeOpen(true)}>Customize</Button>
+        <Button variant="secondary" size="sm" onClick={() => setCustomizeOpen(true)}>Customise</Button>
       </div>
 
-      <Modal open={customizeOpen} onClose={() => setCustomizeOpen(false)} title="Customize Dashboard">
+      <Modal open={customizeOpen} onClose={() => setCustomizeOpen(false)} title="Customise Dashboard">
         <div className="space-y-2">
           {DASHBOARD_WIDGETS.map((w) => (
             <div key={w.id} className="flex items-center justify-between">

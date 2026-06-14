@@ -36,6 +36,7 @@ export default function HabitsPage() {
   const [logDate, setLogDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [logTime, setLogTime] = useState('')
   const [logNote, setLogNote] = useState('')
+  const [logValue, setLogValue] = useState('')
   const [editLog, setEditLog] = useState<HabitLog | null>(null)
   
   const [calendarMonth, setCalendarMonth] = useState(new Date())
@@ -51,16 +52,19 @@ export default function HabitsPage() {
         return (b.time || '').localeCompare(a.time || '')
       })
   }, [data.habitLogs, selectedId])
-  const activeHabits = data.habits.filter((h) => !h.archivedAt)
   const archivedHabits = data.habits.filter((h) => !!h.archivedAt)
-  const goodHabits = activeHabits.filter((h) => h.kind === 'good')
-  const badHabits = activeHabits.filter((h) => h.kind === 'bad')
+  // Active = not archived AND not parked as a potential habit
+  const currentHabits = data.habits.filter((h) => !h.archivedAt && h.status !== 'potential')
+  const potentialHabits = data.habits.filter((h) => !h.archivedAt && h.status === 'potential')
+  const goodHabits = currentHabits.filter((h) => h.kind === 'good')
+  const badHabits = currentHabits.filter((h) => h.kind === 'bad')
   const selectedHabit = data.habits.find((h) => h.id === selectedId) ?? null
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
   // Check if we are over the habit limit
   const habitLimit = settings.maxActiveHabits
-  const overLimit = activeHabits.length >= habitLimit
+  const overLimit = currentHabits.length >= habitLimit
+
 
   const logsByDate = useMemo(() => {
     const groups: Record<string, HabitLog[]> = {}
@@ -71,13 +75,6 @@ export default function HabitsPage() {
     return groups
   }, [selectedHabitLogs])
 
-  const logsPerDay = useMemo(() => {
-    const map: Record<string, number> = {}
-    selectedHabitLogs.forEach((log) => {
-      map[log.date] = (map[log.date] || 0) + 1
-    })
-    return map
-  }, [selectedHabitLogs])
 
   function getStreak(habitId: string): number {
     const habit = data.habits.find((h) => h.id === habitId)
@@ -119,15 +116,32 @@ export default function HabitsPage() {
     return uniqueDays.size
   }
 
-  function quickLogToday(habitId: string) {
-    // Open the log modal so the user can add a note (and time defaults to now).
-    setSelectedId(habitId)
-    openAddLog()
+  // One-click log: directly insert a timestamped log without opening a modal.
+  // Undo is queued so the user can revert the mistake easily.
+  async function quickLogToday(habitId: string) {
+    const habit = data.habits.find((h) => h.id === habitId)
+    const now = new Date()
+    const newLog = {
+      id: uuid(),
+      habitId,
+      date: format(now, 'yyyy-MM-dd'),
+      time: format(now, 'HH:mm'),
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
+    }
+    await db.habitLogs.add(newLog)
+    await loadData()
+    pushUndo({
+      description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${habit?.name ?? 'habit'}`,
+      undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
+      redo: async () => { await db.habitLogs.add(newLog); await loadData() },
+    })
   }
 
   async function saveLog() {
     if (!selectedId) return
     const habit = data.habits.find((h) => h.id === selectedId)
+    const parsedValue = logValue.trim() ? Number(logValue) : undefined
     try {
       if (editLog) {
         const prevLog = await db.habitLogs.get(editLog.id)
@@ -135,6 +149,7 @@ export default function HabitsPage() {
           date: logDate,
           time: logTime || undefined,
           note: logNote.trim() || undefined,
+          value: parsedValue,
           updatedAt: isoNow(),
         })
         await loadData()
@@ -144,7 +159,7 @@ export default function HabitsPage() {
           pushUndo({
             description: `Edited log for "${habit?.name ?? 'habit'}"`,
             undo: async () => { await db.habitLogs.update(editLog.id, prevLog); await loadData() },
-            redo: async () => { await db.habitLogs.update(editLog.id, { date: logDate, time: logTime || undefined, note: logNote.trim() || undefined, updatedAt: isoNow() }); await loadData() },
+            redo: async () => { await db.habitLogs.update(editLog.id, { date: logDate, time: logTime || undefined, note: logNote.trim() || undefined, value: parsedValue, updatedAt: isoNow() }); await loadData() },
           })
         }
       } else {
@@ -154,6 +169,7 @@ export default function HabitsPage() {
           date: logDate,
           time: logTime || undefined,
           note: logNote.trim() || undefined,
+          value: parsedValue,
           createdAt: isoNow(),
           updatedAt: isoNow(),
         }
@@ -186,13 +202,15 @@ export default function HabitsPage() {
     setLogDate(log ? log.date : todayStr)
     setLogTime(log?.time || format(new Date(), 'HH:mm'))
     setLogNote(log?.note || '')
+    setLogValue(log?.value?.toString() ?? '')
     setShowAddLog(true)
   }
+
 
   function openAddHabit() {
     if (overLimit) {
       const ok = window.confirm(
-        `You already have ${activeHabits.length} active habits. ` +
+        `You already have ${currentHabits.length} active habits. ` +
         `Research suggests 1–3 habits at a time is optimal — focusing on fewer habits ` +
         `gives you a much better chance of sticking with them long-term.` +
         `\n\nAdd another anyway?`
@@ -221,11 +239,21 @@ export default function HabitsPage() {
       if (editHabit) {
         await db.habits.update(editHabit.id, { name: name.trim(), kind, color, archivedAfterDays, updatedAt: isoNow() })
       } else {
-        await db.habits.add({ id: uuid(), name: name.trim(), kind, color, archivedAfterDays, createdAt: isoNow(), updatedAt: isoNow() })
+        await db.habits.add({ id: uuid(), name: name.trim(), kind, color, archivedAfterDays, status: 'active', createdAt: isoNow(), updatedAt: isoNow() })
       }
       setShowModal(false)
       await loadData()
     } catch (e) { console.error('Failed to save habit', e) }
+  }
+
+  async function promoteHabit(id: string) {
+    await db.habits.update(id, { status: 'active', updatedAt: isoNow() })
+    await loadData()
+  }
+
+  async function demoteToPotential(id: string) {
+    await db.habits.update(id, { status: 'potential', updatedAt: isoNow() })
+    await loadData()
   }
 
   async function archiveHabitFn(id: string) {
@@ -324,10 +352,16 @@ export default function HabitsPage() {
               />
             ))}
           </div>
-          <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); quickLogToday(habit.id) }}>
-            {isBad ? '+ Log lapse' : '+ Log'}
-          </Button>
+          <div className="flex gap-1">
+            <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); quickLogToday(habit.id) }}>
+              {isBad ? '+ Log lapse' : '+ Log'}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
+              + Note
+            </Button>
+          </div>
         </div>
+
         {/* Suggestion to archive for good habits only */}
         {!isBad && reachedThreshold && (
           <p className="mt-2 text-xs text-green-600 dark:text-green-400">
@@ -339,8 +373,9 @@ export default function HabitsPage() {
           </p>
         )}
 
-        <div className="mt-2 flex gap-1">
+        <div className="mt-2 flex flex-wrap gap-1">
           <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); openEditHabit(habit) }}>Edit</Button>
+          <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); demoteToPotential(habit.id) }} title="Move to potential list — pick this up later">Park</Button>
           <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setArchiveConfirm(habit.id) }}>Archive</Button>
           <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(habit.id) }}>Delete</Button>
         </div>
@@ -368,6 +403,32 @@ export default function HabitsPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{badHabits.map((h) => <HabitCard key={h.id} habit={h} />)}</div>
         )}
       </div>
+      {potentialHabits.length > 0 && (
+        <div>
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">Potential Habits</h3>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+            On the wishlist — pick these up when you've got room.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {potentialHabits.map((h) => (
+              <Card key={h.id} className="opacity-80">
+                <div className="flex items-center gap-3">
+                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: h.color }} />
+                  <div className="flex-1 font-medium text-slate-700 dark:text-slate-200">{h.name}</div>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    {h.kind === 'good' ? 'Good' : 'Bad'}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1">
+                  <Button variant="primary" size="sm" onClick={() => promoteHabit(h.id)}>Promote</Button>
+                  <Button variant="secondary" size="sm" onClick={() => openEditHabit(h)}>Edit</Button>
+                  <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(h.id)}>Delete</Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       {archivedHabits.length > 0 && (
         <div>
@@ -402,7 +463,7 @@ export default function HabitsPage() {
               </span>
             </div>
           </CardHeader>
-          
+
           <div className="mb-4 flex gap-4 text-sm text-slate-600">
             <div><span className="font-semibold">{getStreak(selectedHabit.id)}</span> day streak</div>
             <div><span className="font-semibold">{selectedHabitLogs.length}</span> total logs</div>
@@ -421,36 +482,51 @@ export default function HabitsPage() {
               {Array.from({ length: calendarStartDay }).map((_, i) => <div key={`empty-${i}`} />)}
               {calendarDays.map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd')
-                const count = logsPerDay[dateStr] || 0
-                const intensity = count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : 3
+                const dayLogs = logsByDate[dateStr] ?? []
+                const count = dayLogs.length
+                const totalValue = dayLogs.reduce((sum, l) => sum + (l.value ?? 0), 0)
+                // Adaptive thresholds: 5 levels (0, 1, 2, 3, 4) using per-habit history
+                const target = selectedHabit.targetPerDay ?? 1
+                const intensity = count === 0
+                  ? 0
+                  : count >= target * 4
+                  ? 4
+                  : count >= target * 2
+                  ? 3
+                  : count >= target
+                  ? 2
+                  : 1
+                const opacity = intensity === 0 ? undefined : 0.2 + (intensity * 0.2)
                 return (
                   <button
                     key={dateStr}
                     onClick={() => setDayDetailDate(dateStr)}
+                    title={totalValue > 0 ? `${dateStr} — ${count} log${count !== 1 ? 's' : ''} (${totalValue} total)` : `${dateStr}${count > 0 ? ` — ${count} log${count !== 1 ? 's' : ''}` : ''}`}
                     className={cn(
-                      'flex h-9 w-full items-center justify-center rounded text-xs font-medium transition-all hover:ring-2 hover:ring-primary-400',
+                      'flex h-9 w-full flex-col items-center justify-center rounded text-xs font-medium transition-all hover:ring-2 hover:ring-primary-400',
                       intensity === 0 && 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700',
                       intensity > 0 && 'text-white shadow-sm'
                     )}
-                    style={intensity > 0 ? { backgroundColor: selectedHabit.color, opacity: intensity === 1 ? 0.4 : intensity === 2 ? 0.7 : 1 } : undefined}
+                    style={intensity > 0 ? { backgroundColor: selectedHabit.color, opacity } : undefined}
                   >
-                    {format(day, 'd')}
-                    {count > 0 && <span className="ml-0.5 text-[10px] opacity-80">×{count}</span>}
+                    <span>{format(day, 'd')}</span>
+                    {count > 0 && <span className="text-[9px] opacity-90">×{count}{totalValue > 0 ? ` ${totalValue}` : ''}</span>}
                   </button>
                 )
               })}
             </div>
-            {/* Heatmap legend */}
+            {/* Heatmap legend — 5 levels */}
             <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-500">
               <span>less</span>
               <div className="h-3 w-3 rounded bg-slate-100 dark:bg-slate-800" />
+              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.2 }} />
               <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.4 }} />
-              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.7 }} />
-              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color }} />
+              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.6 }} />
+              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.8 }} />
+              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 1 }} />
               <span>more</span>
             </div>
           </div>
-
           <div className="mb-4">
             <Button variant="secondary" onClick={() => openAddLog()}>+ Add Log</Button>
           </div>
@@ -474,6 +550,14 @@ export default function HabitsPage() {
         <div className="space-y-3">
           <input type="date" className="input" max={todayStr} value={logDate} onChange={(e) => setLogDate(e.target.value)} />
           <input type="time" className="input" value={logTime} onChange={(e) => setLogTime(e.target.value)} />
+          <input
+            type="number"
+            className="input"
+            placeholder="Amount (optional, e.g. 15 for 15 minutes)"
+            min={0}
+            value={logValue}
+            onChange={(e) => setLogValue(e.target.value)}
+          />
           <textarea className="input" placeholder="Note (e.g. what happened, how you felt)" rows={3} value={logNote} onChange={(e) => setLogNote(e.target.value)} />
           <Button variant="primary" className="w-full" onClick={saveLog}>Save</Button>
         </div>

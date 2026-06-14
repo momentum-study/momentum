@@ -207,7 +207,7 @@ export default function AIReviewPage() {
     lines.push('## Streak')
     lines.push(`- Current streak: ${stats.currentStreak} days`)
     lines.push('')
-    lines.push('Please analyze:')
+    lines.push('Please analyse:')
     lines.push('1. Overall productivity and consistency')
     lines.push('2. Balance across subjects')
     lines.push('3. Session length patterns')

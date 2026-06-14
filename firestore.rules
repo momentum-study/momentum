@@ -49,9 +49,11 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/groupMembers/$(statId));
     }
 
-    // sessions/{sessionId} — owners read/write their own
+    // sessions/{sessionId} — readable by any signed-in user (needed for group leaderboard)
+    // writes restricted to the session owner
     match /sessions/{sessionId} {
-      allow read, write: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
     }
     // userData/{uid_tableName} — per-user data sync (focus areas, marks, etc.)

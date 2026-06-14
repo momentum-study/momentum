@@ -54,8 +54,13 @@ function computeMemberStats(
   weekStart.setDate(now.getDate() - dayOfWeek)
   weekStart.setHours(0, 0, 0, 0)
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const todayStart = new Date(now)
+  todayStart.setHours(0, 0, 0, 0)
 
   const totalMinutes = own.reduce((sum, s) => sum + s.minutes, 0)
+  const todayMinutes = own
+    .filter((s) => new Date(s.startAt) >= todayStart)
+    .reduce((sum, s) => sum + s.minutes, 0)
   const weekMinutes = own
     .filter((s) => new Date(s.startAt) >= weekStart)
     .reduce((sum, s) => sum + s.minutes, 0)
@@ -81,13 +86,13 @@ function computeMemberStats(
     .map((s) => s.startAt)
     .sort()
     .pop() ?? null
-
   return {
     uid,
     displayName,
     photoURL,
     groupId,
     currentStreak: streak,
+    todayMinutes,
     weekMinutes,
     monthMinutes,
     totalMinutes,

@@ -24,7 +24,8 @@ export default function GroupDetailPage() {
   const [showLeave, setShowLeave] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
-  const [sortBy, setSortBy] = useState<'week' | 'month' | 'total' | 'streak'>('week')
+  const [sortBy, setSortBy] = useState<'today' | 'week' | 'month' | 'total' | 'streak'>('today')
+
   const fetchStats = useCallback(async (groupId: string, memberList: GroupMember[]) => {
     if (!isFirebaseConfigured || !db) return
     const results: MemberStatsType[] = []
@@ -130,6 +131,7 @@ export default function GroupDetailPage() {
 
   const sortedStats = [...stats].sort((a, b) => {
     switch (sortBy) {
+      case 'today': return b.todayMinutes - a.todayMinutes
       case 'week': return b.weekMinutes - a.weekMinutes
       case 'month': return b.monthMinutes - a.monthMinutes
       case 'total': return b.totalMinutes - a.totalMinutes
@@ -157,8 +159,8 @@ export default function GroupDetailPage() {
         </div>
       </div>
 
-      <div className="flex gap-2">
-        {(['week', 'month', 'total', 'streak'] as const).map((s) => (
+      <div className="flex flex-wrap gap-2">
+        {(['today', 'week', 'month', 'total', 'streak'] as const).map((s) => (
           <button
             key={s}
             onClick={() => setSortBy(s)}
@@ -169,7 +171,8 @@ export default function GroupDetailPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
             )}
           >
-            {s === 'week' ? 'This Week'
+            {s === 'today' ? 'Today'
+             : s === 'week' ? 'This Week'
              : s === 'month' ? 'This Month'
              : s === 'total' ? 'All Time'
              : 'Streak'}
@@ -197,6 +200,9 @@ export default function GroupDetailPage() {
                 </div>
               </div>
               <div className="text-right">
+                {sortBy === 'today' && (
+                  <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{Math.round(s.todayMinutes)}<span className="text-xs font-normal text-slate-500">m</span></div>
+                )}
                 {sortBy === 'week' && (
                   <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{Math.round(s.weekMinutes)}<span className="text-xs font-normal text-slate-500">m</span></div>
                 )}

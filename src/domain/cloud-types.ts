@@ -44,6 +44,8 @@ export interface SyncedSession {
 
 // Aggregated stats for a group member, computed from synced sessions.
 // Used for the group leaderboard — avoids querying every session every time.
+// Aggregated stats for a group member, computed from synced sessions.
+// Used for the group leaderboard — avoids querying every session every time.
 export interface MemberStats {
   uid: string
   displayName: string
@@ -51,6 +53,8 @@ export interface MemberStats {
   groupId: string
   // Current streak of consecutive days with at least one session
   currentStreak: number
+  // Total study minutes today (since midnight local time)
+  todayMinutes: number
   // Total study minutes this week (Monday-Sunday)
   weekMinutes: number
   // Total study minutes this month

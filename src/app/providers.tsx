@@ -120,12 +120,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const loadData = useCallback(async () => {
     loadTimer.current = setTimeout(async () => {
       loadTimer.current = null
-      const next = await loadAllData()
-      setData(next)
-      hasLoadedOnce.current = true
-      setIsInitialLoad(false)
-      // Cloud push is no longer done on every loadData — the real-time
-      // onSnapshot listener in AuthProvider handles cross-device sync.
+      try {
+        const next = await loadAllData()
+        setData(next)
+        hasLoadedOnce.current = true
+      } catch (e) {
+        console.error('loadAllData failed:', e)
+      } finally {
+        setIsInitialLoad(false)
+      }
     }, 80)
   }, [])
   useEffect(() => { void loadData() }, [loadData])

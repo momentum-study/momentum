@@ -56,17 +56,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const snap = await getDoc(ref)
         if (snap.exists()) {
           setProfile(snap.data() as UserProfile)
-          // Pull and sync settings
+          // Pull settings from cloud — apply directly to localStorage (no reload)
           const cloudPrefs = await pullSettings(u.uid)
           if (cloudPrefs) {
             localStorage.setItem('momentum-settings', JSON.stringify(cloudPrefs.settings))
             localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(cloudPrefs.dashboardWidgets))
             localStorage.setItem('momentum-nav-prefs', JSON.stringify(cloudPrefs.navPrefs))
-            window.location.reload()
           }
-          // Pull all user data (focus areas, marks, habits, etc.) from cloud
+          // Pull all user data from cloud, then refresh UI
           await pullAllData(u.uid)
-          // Force UI to re-read local data after the cloud pull.
           window.dispatchEvent(new CustomEvent('momentum-data-synced'))
         } else {
           // First sign-in — create a profile doc

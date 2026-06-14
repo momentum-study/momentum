@@ -5,6 +5,8 @@ import {
   doc,
   getDoc,
   setDoc,
+  onSnapshot,
+  type Unsubscribe,
 } from 'firebase/firestore'
 import { db as firestore, isFirebaseConfigured } from './firebase'
 import { db as localDb } from '../db/app-db'
@@ -139,7 +141,43 @@ export async function removeRecord(uid: string, tableKey: TableKey, recordId: st
   }
 }
 
-/** Push all data at once (used for backup import). */
 export async function pushFullBackup(uid: string): Promise<void> {
   await pushAllData(uid)
+}
+
+/**
+ * Subscribe to real-time updates from the cloud.
+ * Whenever any synced table changes on the server, pull the change into local DB
+ * and dispatch a 'momentum-data-synced' event so the UI refreshes.
+ */
+export function subscribeToUserData(uid: string): Unsubscribe {
+  if (!isFirebaseConfigured || !firestore) {
+    return () => {}
+  }
+  const unsubscribers: Unsubscribe[] = []
+  for (const tableKey of SYNC_TABLES) {
+    const docRef = doc(firestore, DATA_COLLECTION, `${uid}_${tableKey}`)
+    const unsub = onSnapshot(
+      docRef,
+      async (snap) => {
+        if (!snap.exists()) return
+        const cloudDoc = snap.data() as CloudTableDoc
+        if (!Array.isArray(cloudDoc.records) || cloudDoc.records.length === 0) return
+        try {
+          const table = localDb.table(tableKey)
+          await table.bulkPut(cloudDoc.records as { id: string }[])
+          window.dispatchEvent(new CustomEvent('momentum-data-synced', { detail: { source: 'cloud' } }))
+        } catch (e) {
+          console.warn(`[sync] Failed to apply remote update for ${tableKey}:`, e)
+        }
+      },
+      (err) => {
+        console.warn(`[sync] Snapshot error for ${tableKey}:`, err)
+      }
+    )
+    unsubscribers.push(unsub)
+  }
+  return () => {
+    for (const u of unsubscribers) u()
+  }
 }

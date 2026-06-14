@@ -224,6 +224,15 @@ export default function HabitsPage() {
     setArchivedAfterDays(settings.defaultArchiveDays)
     setShowModal(true)
   }
+
+  function openAddPotential() {
+    setEditHabit(null)
+    setName('')
+    setKind('good')
+    setColor(DEFAULT_COLOR)
+    setArchivedAfterDays(null)
+    setShowModal(true)
+  }
   function openEditHabit(habit: Habit) {
     setEditHabit(habit)
     setName(habit.name)
@@ -354,10 +363,10 @@ export default function HabitsPage() {
           </div>
           <div className="flex gap-1">
             <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); quickLogToday(habit.id) }}>
-              {isBad ? '+ Log lapse' : '+ Log'}
+              Quick Log
             </Button>
             <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
-              Quick Log
+              {isBad ? 'Log lapse' : 'Log with note'}
             </Button>
           </div>
         </div>
@@ -387,8 +396,28 @@ export default function HabitsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Habits</h2>
-        <Button variant="primary" size="sm" onClick={openAddHabit}>Add Habit</Button>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={openAddPotential}
+            title="Add a habit you want to do later but can't take on right now"
+          >
+            + Park for later
+          </Button>
+          <Button variant="primary" size="sm" onClick={openAddHabit}>Add Habit</Button>
+        </div>
       </div>
+
+      {/* Inline explainer so the 'Park' feature is discoverable */}
+      {currentHabits.length > 0 && potentialHabits.length === 0 && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-200">
+          <span className="text-lg leading-none">💡</span>
+          <div className="flex-1">
+            <strong>Got habits you can't take on right now?</strong> Hit "Park for later" to add them to your wishlist — they don't count toward your active limit and you can promote them whenever you've got room.
+          </div>
+        </div>
+      )}
 
       <div>
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-green-600 dark:text-green-400">Good Habits</h3>
@@ -396,7 +425,6 @@ export default function HabitsPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{goodHabits.map((h) => <HabitCard key={h.id} habit={h} />)}</div>
         )}
       </div>
-
       <div>
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">Bad Habits</h3>
         {badHabits.length === 0 ? <EmptyState title="No bad habits" description="Track habits you want to avoid." /> : (

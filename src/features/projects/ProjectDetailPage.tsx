@@ -40,33 +40,63 @@ export default function ProjectDetailPage() {
     () => sessions.reduce((sum, s) => sum + s.durationMinutes, 0),
     [sessions]
   )
-  const openTasks = useMemo(() => tasks.filter((t) => !t.completed), [tasks])
-  const doneTasks = useMemo(() => tasks.filter((t) => t.completed), [tasks])
+  const openTasks = useMemo(() => {
+    const sorted = [...tasks.filter((t) => !t.completed)]
+    sorted.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+    return sorted
+  }, [tasks])
+  const doneTasks = useMemo(() => {
+    const sorted = [...tasks.filter((t) => t.completed)]
+    sorted.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+    return sorted
+  }, [tasks])
 
   if (isLoading) return <PageSpinner />
   if (!project) return <div className="space-y-4"><p className="text-red-600 dark:text-red-400">Project not found.</p><Link to="/projects" className="text-primary-500 underline">Back to projects</Link></div>
 
   const p = project
-  async function addTask() {
+  async function saveTask() {
     if (!taskTitle.trim() || !p) return
-    const a: Assignment = {
-      id: uuid(),
-      subjectId: p.subjectId,
-      projectId: p.id,
-      title: taskTitle.trim(),
-      dueDate: taskDue || format(new Date(), 'yyyy-MM-dd'),
-      category: 'homework',
-      weight: 0,
-      completed: false,
-      createdAt: isoNow(),
-      updatedAt: isoNow(),
+    const now = isoNow()
+    if (editTask) {
+      const prev = { ...editTask }
+      await db.assignments.update(editTask.id, {
+        title: taskTitle.trim(),
+        dueDate: taskDue || editTask.dueDate,
+        updatedAt: now,
+      })
+      await loadData()
+      pushUndo({ description: `Edited task "${taskTitle.trim()}"`, undo: async () => { await db.assignments.update(editTask.id, prev); await loadData() }, redo: async () => { await db.assignments.update(editTask.id, { title: taskTitle.trim(), dueDate: taskDue || editTask.dueDate, updatedAt: now }); await loadData() } })
+    } else {
+      const maxIndex = tasks.reduce((max, t) => Math.max(max, t.orderIndex ?? 0), -1)
+      const a: Assignment = {
+        id: uuid(),
+        subjectId: p.subjectId,
+        projectId: p.id,
+        title: taskTitle.trim(),
+        dueDate: taskDue || format(new Date(), 'yyyy-MM-dd'),
+        category: 'homework',
+        weight: 0,
+        completed: false,
+        orderIndex: maxIndex + 1,
+        createdAt: now,
+        updatedAt: now,
+      }
+      await db.assignments.add(a)
+      await loadData()
+      pushUndo({ description: `Added task "${a.title}" to ${p.name}`, undo: async () => { await db.assignments.delete(a.id); await loadData() }, redo: async () => { await db.assignments.add(a); await loadData() } })
     }
-    await db.assignments.add(a)
-    await loadData()
-    pushUndo({ description: `Added task "${a.title}" to ${p.name}`, undo: async () => { await db.assignments.delete(a.id); await loadData() }, redo: async () => { await db.assignments.add(a); await loadData() } })
     setShowTaskModal(false)
+    setEditTask(null)
     setTaskTitle('')
     setTaskDue('')
+  }
+
+  function openEditTask(task: Assignment) {
+    setEditTask(task)
+    setTaskTitle(task.title)
+    setTaskDue(task.dueDate.slice(0, 10))
+    setShowTaskModal(true)
   }
 
   async function toggleTask(task: Assignment) {
@@ -80,6 +110,18 @@ export default function ProjectDetailPage() {
     await db.assignments.delete(task.id)
     await loadData()
     pushUndo({ description: `Deleted task "${task.title}"`, undo: async () => { await db.assignments.add(task); await loadData() }, redo: async () => { await db.assignments.delete(task.id); await loadData() } })
+  }
+
+  async function moveTask(task: Assignment, direction: 1 | -1) {
+    const sorted = [...openTasks]
+    const idx = sorted.findIndex((t) => t.id === task.id)
+    const target = idx + direction
+    if (target < 0 || target >= sorted.length) return
+    const other = sorted[target]
+    const tempIndex = task.orderIndex ?? idx
+    await db.assignments.update(task.id, { orderIndex: other.orderIndex ?? target, updatedAt: isoNow() })
+    await db.assignments.update(other.id, { orderIndex: tempIndex, updatedAt: isoNow() })
+    await loadData()
   }
 
   async function logTime() {
@@ -142,7 +184,7 @@ export default function ProjectDetailPage() {
       <div>
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Tasks ({tasks.length})</h3>
         {tasks.length === 0 && <EmptyState title="No tasks yet" description="Add tasks to break this project into smaller pieces." />}
-        {openTasks.length > 0 && openTasks.map((t) => (
+        {openTasks.length > 0 && openTasks.map((t, idx) => (
           <div key={t.id} className="flex items-center justify-between border-b border-slate-100 py-2 dark:border-slate-700">
             <div className="flex items-center gap-2">
               <input type="checkbox" checked={false} onChange={() => toggleTask(t)} className="h-4 w-4 cursor-pointer" />
@@ -152,8 +194,13 @@ export default function ProjectDetailPage() {
                 {formatMinutes(sessions.filter((s) => s.assignmentId === t.id).reduce((sum, s) => sum + s.durationMinutes, 0))}
               </span>
             </div>
-            <div className="flex gap-1">
+            <div className="flex items-center gap-1">
+              <div className="flex flex-col">
+                <button onClick={() => moveTask(t, -1)} disabled={idx === 0} className="rounded p-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-slate-700" title="Move up">▲</button>
+                <button onClick={() => moveTask(t, 1)} disabled={idx === openTasks.length - 1} className="rounded p-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-slate-700" title="Move down">▼</button>
+              </div>
               <Button variant="secondary" size="sm" onClick={() => { setTimeTaskId(t.id); setShowTimeModal(true) }}>+ Log</Button>
+              <Button variant="secondary" size="sm" onClick={() => openEditTask(t)}>Edit</Button>
               <Button variant="danger" size="sm" onClick={() => deleteTask(t)}>×</Button>
             </div>
           </div>
@@ -166,6 +213,10 @@ export default function ProjectDetailPage() {
                 <div className="flex items-center gap-2">
                   <input type="checkbox" checked={true} onChange={() => toggleTask(t)} className="h-4 w-4 cursor-pointer" />
                   <span className="text-sm text-slate-500 line-through">{t.title}</span>
+                </div>
+                <div className="flex gap-1">
+                  <Button variant="secondary" size="sm" onClick={() => openEditTask(t)}>Edit</Button>
+                  <Button variant="danger" size="sm" onClick={() => deleteTask(t)}>×</Button>
                 </div>
               </div>
             ))}
@@ -199,7 +250,7 @@ export default function ProjectDetailPage() {
         <div className="space-y-3">
           <input className="input" placeholder="Task name" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
           <input type="date" className="input" value={taskDue} onChange={(e) => setTaskDue(e.target.value)} />
-          <Button variant="primary" className="w-full" onClick={addTask}>Add Task</Button>
+          <Button variant="primary" className="w-full" onClick={saveTask}>{editTask ? 'Save Changes' : 'Add Task'}</Button>
         </div>
       </Modal>
 

@@ -106,6 +106,7 @@ export interface Assignment {
   category: TaskCategory // homework | assignments | miscellaneous
   weight: number // percentage weight (0-100) of the final grade; 0 if not graded
   completed: boolean
+  orderIndex?: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null

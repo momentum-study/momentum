@@ -15,6 +15,8 @@ import CalendarPage from '../features/calendar/CalendarPage'
 import CategoriesPage from '../features/categories/CategoriesPage'
 import GroupsPage from '../features/groups/GroupsPage'
 import GroupDetailPage from '../features/groups/GroupDetailPage'
+import RoutinePage from '../features/routines/RoutinePage'
+import AIReviewPage from '../features/reviews/AIReviewPage'
 
 export function AppRouter() {
   return (
@@ -32,6 +34,8 @@ export function AppRouter() {
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/categories" element={<CategoriesPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/reviews" element={<AIReviewPage />} />
+                <Route path="/routines" element={<RoutinePage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/groups" element={<GroupsPage />} />
                 <Route path="/groups/:id" element={<GroupDetailPage />} />

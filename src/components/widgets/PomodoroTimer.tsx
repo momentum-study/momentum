@@ -8,6 +8,7 @@ import { cn, isoNow } from '../../lib/utils'
 import { loadSettings, saveSettings } from '../../features/settings/SettingsPage'
 import type { Settings } from '../../features/settings/SettingsPage'
 import { useSessionSync } from '../../lib/use-session-sync'
+import { updateRoutineLogsForSession } from '../../lib/routine-tracker'
 
 type Mode = 'pomodoro' | 'simple'
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
@@ -99,6 +100,14 @@ export function PomodoroTimer() {
     }
     setSettings(full)
     saveSettings(full)
+    const uid = localStorage.getItem('momentum-cloud-uid')
+    if (uid) {
+      import('../../lib/settings-sync').then(({ pushSettings }) => {
+        const dashboardWidgets = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? '[]')
+        const navPrefs = JSON.parse(localStorage.getItem('momentum-nav-prefs') ?? '{}')
+        pushSettings(uid, full, dashboardWidgets, navPrefs)
+      })
+    }
   }
 
   // Simple timer
@@ -137,6 +146,7 @@ export function PomodoroTimer() {
       await db.sessions.add(session)
       const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
       syncSession(session, subjectName)
+      await updateRoutineLogsForSession(session)
       await loadData()
     }
     setSimpleSeconds(0)
@@ -174,6 +184,7 @@ export function PomodoroTimer() {
               void db.sessions.add(session).then(async () => {
                 const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
                 syncSession(session, subjectName)
+                await updateRoutineLogsForSession(session)
                 await loadData()
               })
             }

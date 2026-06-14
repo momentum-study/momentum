@@ -134,13 +134,23 @@ function DataImport() {
     setImporting(true)
     setError('')
     try {
+      const hadSettings = !!pendingPayload.settings
       const { counts } = await importBackup(pendingPayload, mode)
       const imported = Object.values(counts).reduce((a, b) => a + b, 0)
-      setSuccess(`Imported ${imported} records across ${Object.keys(counts).length} tables.`)
+      setSuccess(
+        `Imported ${imported} records across ${Object.keys(counts).length} tables.` +
+        (hadSettings ? ' Reloading to apply settings...' : '')
+      )
       setPreview(null)
       setPendingPayload(null)
       setModalOpen(false)
       await loadData()
+      // Settings live in localStorage and are loaded on mount by each consumer
+      // (Pomodoro timer, Dashboard, etc.). A reload is the cleanest way to
+      // make sure every component reflects the new values.
+      if (hadSettings) {
+        setTimeout(() => window.location.reload(), 600)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed')
     } finally {
@@ -176,14 +186,14 @@ function DataImport() {
         {preview && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600 dark:text-slate-300">
-              Found <strong>{preview.total} table{preview.total !== 1 ? 's' : ''}</strong> with data:
+              Found <strong>{preview.total} table{preview.total !== 1 ? 's' : ''}</strong> with data
+              {pendingPayload?.settings ? <> and <strong>settings</strong></> : null}.
             </p>
             <ul className="max-h-48 overflow-y-auto rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
               {preview.tables.map((t) => (
                 <li key={t}>{t}</li>
               ))}
             </ul>
-
             <div className="space-y-1">
               <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Import mode</p>
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
@@ -266,6 +276,13 @@ export default function SettingsPage() {
   useEffect(() => {
     saveSettings(settings)
     applyDarkMode(settings.darkMode)
+    // Push to cloud if signed in
+    const uid = localStorage.getItem('momentum-cloud-uid')
+    if (uid) {
+      const dashboardWidgets = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? '[]')
+      const navPrefs = JSON.parse(localStorage.getItem('momentum-nav-prefs') ?? '{}')
+    import('../../lib/settings-sync').then(({ pushSettings }) => pushSettings(uid, settings, dashboardWidgets, navPrefs))
+    }
   }, [settings])
 
   useEffect(() => {
@@ -364,7 +381,7 @@ export default function SettingsPage() {
         </CardHeader>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Export your data as a JSON file to back it up, or import a previously exported backup.
-          Exports include all marks, focus areas, sessions, habits, and other study data.
+          Exports include all study data and your settings (timer config, daily target, etc.).
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={async () => { await downloadBackup() }}>

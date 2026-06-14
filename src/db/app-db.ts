@@ -7,6 +7,8 @@ import type {
   Mark,
   Project,
   ProgressLog,
+  Routine,
+  RoutineLog,
   Session,
   StreakDay,
   Subject,
@@ -33,6 +35,8 @@ export class AppDB extends Dexie {
   habits!: Table<Habit, string>
   habitLogs!: Table<HabitLog, string>
   streakDays!: Table<StreakDay, string>
+  routines!: Table<Routine, string>
+  routineLogs!: Table<RoutineLog, string>
 
   constructor() {
     super('study-app')
@@ -58,6 +62,10 @@ export class AppDB extends Dexie {
     })
     this.version(6).stores({
       sessions: 'id, subjectId, projectId, assignmentId, startAt',
+    })
+    this.version(7).stores({
+      routines: 'id, subjectId, name',
+      routineLogs: 'id, routineId, date',
     })
   }
 }

@@ -147,3 +147,29 @@ export interface StreakDay {
   goalMet: boolean
   createdAt: string
 }
+
+// Routines — weekly study schedule
+
+export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6  // 0=Sun, 6=Sat
+
+export interface Routine {
+  id: string
+  name: string                // e.g. 'Math Study Block'
+  subjectId: string           // which focus area
+  projectId?: string | null   // optional project within that focus area
+  targetMinutes: number       // goal for this routine block
+  days: DayOfWeek[]           // which days this applies e.g. [1, 3, 5] for Mon/Wed/Fri
+  color: string               // hex color for display
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string | null
+}
+
+export interface RoutineLog {
+  id: string
+  routineId: string
+  date: string               // ISO date YYYY-MM-DD
+  actualMinutes: number      // how much was actually studied
+  completed: boolean         // true if actualMinutes >= targetMinutes
+  createdAt: string
+}

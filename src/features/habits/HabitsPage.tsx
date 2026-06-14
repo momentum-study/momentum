@@ -88,7 +88,8 @@ export default function HabitsPage() {
     const maxDays = habit?.createdAt
       ? Math.min(365, Math.ceil((Date.now() - new Date(habit.createdAt).getTime()) / 86400000))
       : 365
-    // Safety net: allow 1 missed day per week without breaking the streak.
+    // Safety net: allow 1 missed day per week for good habits only.
+    // For bad habits, a lapse resets the streak immediately.
     let streak = 0
     let missed = 0
     let d = new Date()
@@ -100,6 +101,7 @@ export default function HabitsPage() {
         missed = 0
         d = subDays(d, 1)
       } else {
+        if (isBad) break
         missed++
         if (missed > 1) break
         d = subDays(d, 1)

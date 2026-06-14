@@ -1,14 +1,16 @@
 // Backup / restore helpers for Momentum's IndexedDB
 import { db } from '../db/app-db'
 import type { AppData } from '../app/providers'
+import { loadSettings, saveSettings, type Settings } from '../features/settings/SettingsPage'
 
-const EXPORT_VERSION = 1
+const EXPORT_VERSION = 2
 
 export interface BackupPayload {
   app: 'momentum'
   version: number
   exportedAt: string
   data: Partial<AppData>
+  settings?: Settings
 }
 
 const TABLE_KEYS: (keyof AppData)[] = [
@@ -41,6 +43,7 @@ export async function exportData(): Promise<BackupPayload> {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     data,
+    settings: loadSettings(),
   }
 }
 
@@ -89,17 +92,16 @@ export type ImportMode = 'merge' | 'replace'
 
 /** Apply a backup payload to the DB. merge = bulkPut (overwrite by id). replace = clear then bulkPut. */
 export async function importBackup(payload: BackupPayload, mode: ImportMode): Promise<{ counts: Record<string, number> }> {
+  // Restore settings if present in the backup
+  if (payload.settings) {
+    saveSettings(payload.settings)
+  }
+  // Replace mode: wipe the entire DB first
+  if (mode === 'replace') await db.delete()
   const counts: Record<string, number> = {}
   for (const key of TABLE_KEYS) {
     const rows = payload.data[key]
     if (!Array.isArray(rows)) continue
-    if (mode === 'replace') {
-      try {
-        await db.table(key).clear()
-      } catch (e) {
-        // table may not exist
-      }
-    }
     if (rows.length > 0) {
       try {
         await db.table(key).bulkPut(rows)

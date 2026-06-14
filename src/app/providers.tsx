@@ -9,6 +9,8 @@ import type {
   Mark,
   Project,
   ProgressLog,
+  Routine,
+  RoutineLog,
   Session,
   StreakDay,
   Subject,
@@ -27,6 +29,8 @@ export type AppData = {
   habits: Habit[]
   habitLogs: HabitLog[]
   streakDays: StreakDay[]
+  routines: Routine[]
+  routineLogs: RoutineLog[]
 }
 
 type ScopeFilter = 'all' | 'academic' | 'nonAcademic'
@@ -54,14 +58,15 @@ const emptyData: AppData = {
   habits: [],
   habitLogs: [],
   streakDays: [],
+  routines: [],
+  routineLogs: [],
 }
-
-const DataContext = createContext<DataContextValue | null>(null)
 
 async function loadAllData(): Promise<AppData> {
   const [
     categories, subjects, projects, tasks, sessions, progressLogs,
     marks, assignments, habits, habitLogs, streakDays,
+    routines, routineLogs,
   ] = await Promise.all([
     db.categories.toArray(),
     db.subjects.toArray(),
@@ -74,6 +79,8 @@ async function loadAllData(): Promise<AppData> {
     db.habits.toArray(),
     db.habitLogs.toArray(),
     db.streakDays.toArray(),
+    db.routines.toArray(),
+    db.routineLogs.toArray(),
   ])
 
   return {
@@ -88,8 +95,12 @@ async function loadAllData(): Promise<AppData> {
     habits: [...habits],
     habitLogs: [...habitLogs].sort((a, b) => b.date.localeCompare(a.date)),
     streakDays: [...streakDays].sort((a, b) => b.id.localeCompare(a.id)),
+    routines: [...routines].sort((a, b) => a.name.localeCompare(b.name)),
+    routineLogs: [...routineLogs].sort((a, b) => b.date.localeCompare(a.date)),
   }
 }
+
+const DataContext = createContext<DataContextValue | null>(null)
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(emptyData)

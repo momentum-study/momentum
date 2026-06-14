@@ -21,6 +21,7 @@ import { isoNow } from '../lib/utils'
 import type { UserProfile } from '../domain/cloud-types'
 import { syncService } from '../lib/sync-service'
 import { db as localDb } from '../db/app-db'
+import { pullSettings } from '../lib/settings-sync'
 interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
@@ -46,12 +47,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u)
+      if (u) localStorage.setItem('momentum-cloud-uid', u.uid)
+      else localStorage.removeItem('momentum-cloud-uid')
       if (u && db) {
         // Fetch or create the user's profile doc
         const ref = doc(db, 'users', u.uid)
         const snap = await getDoc(ref)
         if (snap.exists()) {
           setProfile(snap.data() as UserProfile)
+          // Pull and sync settings
+          const cloudPrefs = await pullSettings(u.uid)
+          if (cloudPrefs) {
+            localStorage.setItem('momentum-settings', JSON.stringify(cloudPrefs.settings))
+            localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(cloudPrefs.dashboardWidgets))
+            localStorage.setItem('momentum-nav-prefs', JSON.stringify(cloudPrefs.navPrefs))
+            window.location.reload()
+          }
         } else {
           // First sign-in — create a profile doc
           const now = isoNow()
@@ -94,7 +105,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) {
       throw new Error('Firebase is not configured. Set credentials in src/lib/firebase.ts')
     }
-    await signInWithPopup(auth, googleProvider)
+    try {
+      await signInWithPopup(auth, googleProvider)
+    } catch (e) {
+      console.error('Sign-in failed:', e)
+      throw e
+    }
   }, [])
 
   const signOut = useCallback(async () => {

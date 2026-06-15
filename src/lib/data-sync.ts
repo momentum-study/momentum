@@ -48,20 +48,24 @@ export async function pullAllData(uid: string): Promise<number> {
   if (!isFirebaseConfigured || !firestore) return 0
   let total = 0
 
-  for (const tableKey of SYNC_TABLES) {
-    try {
-      const snap = await getDoc(doc(firestore, DATA_COLLECTION, `${uid}_${tableKey}`))
-      if (!snap.exists()) continue
-      const cloudDoc = snap.data() as CloudTableDoc
-      if (!Array.isArray(cloudDoc.records) || cloudDoc.records.length === 0) continue
+  beginSync()
+  try {
+    for (const tableKey of SYNC_TABLES) {
+      try {
+        const snap = await getDoc(doc(firestore, DATA_COLLECTION, `${uid}_${tableKey}`))
+        if (!snap.exists()) continue
+        const cloudDoc = snap.data() as CloudTableDoc
+        if (!Array.isArray(cloudDoc.records) || cloudDoc.records.length === 0) continue
 
-      // Merge: upsert each record by id (cloud wins on conflict)
-      const table = localDb.table(tableKey)
-      await table.bulkPut(cloudDoc.records as { id: string }[])
-      total += cloudDoc.records.length
-    } catch (e) {
-      console.warn(`Failed to pull table ${tableKey}:`, e)
+        const table = localDb.table(tableKey)
+        await table.bulkPut(cloudDoc.records as { id: string }[])
+        total += cloudDoc.records.length
+      } catch (e) {
+        console.warn(`Failed to pull table ${tableKey}:`, e)
+      }
     }
+  } finally {
+    endSync()
   }
   return total
 }
@@ -149,6 +153,11 @@ export async function pushFullBackup(uid: string): Promise<void> {
 // whether they actually push to Firestore (set on sign-in, cleared on sign-out).
 
 let activeSyncUid: string | null = null
+/** Guard: when true, local Dexie hooks suppress push (cloud-initiated writes). */
+let isSyncing = false
+/** Call before a cloud-initiated bulkPut / bulkAdd to suppress push hooks. */
+export function beginSync() { isSyncing = true }
+export function endSync() { isSyncing = false }
 
 /** Enable sync hooks for the given user. */
 export function installSyncHooks(uid: string) {
@@ -164,13 +173,13 @@ export function uninstallSyncHooks() {
 if (typeof window !== 'undefined') {
   for (const tableKey of SYNC_TABLES) {
     localDb.table(tableKey).hook('creating', (_pk, value) => {
-      if (activeSyncUid) void pushRecord(activeSyncUid, tableKey, value)
+      if (!isSyncing && activeSyncUid) void pushRecord(activeSyncUid, tableKey, value)
     })
     localDb.table(tableKey).hook('updating', (modifications, _primKey, obj) => {
-      if (activeSyncUid) void pushRecord(activeSyncUid, tableKey, { ...obj, ...modifications })
+      if (!isSyncing && activeSyncUid) void pushRecord(activeSyncUid, tableKey, { ...obj, ...modifications })
     })
     localDb.table(tableKey).hook('deleting', (pk) => {
-      if (activeSyncUid) void removeRecord(activeSyncUid, tableKey, String(pk))
+      if (!isSyncing && activeSyncUid) void removeRecord(activeSyncUid, tableKey, String(pk))
     })
   }
 }
@@ -197,11 +206,14 @@ export function subscribeToUserData(uid: string): Unsubscribe {
         if (!Array.isArray(cloudDoc.records) || cloudDoc.records.length === 0) return
         console.log(`[sync] ${tableKey}: ${cloudDoc.records.length} records`)
         try {
+          beginSync()
           const table = localDb.table(tableKey)
           await table.bulkPut(cloudDoc.records as { id: string }[])
           window.dispatchEvent(new CustomEvent('momentum-data-synced', { detail: { source: 'cloud' } }))
         } catch (e) {
           console.warn(`[sync] Failed to apply ${tableKey}:`, e)
+        } finally {
+          endSync()
         }
       },
       (err) => {

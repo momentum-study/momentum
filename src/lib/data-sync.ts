@@ -92,11 +92,12 @@ export async function pullAllData(uid: string): Promise<number> {
 export async function pushTable(uid: string, tableKey: TableKey): Promise<void> {
   if (!isFirebaseConfigured || !firestore) return
   try {
-    const records = (await localDb.table(tableKey).toArray()).map(stripUndefined)
+    const records = (await localDb.table(tableKey).toArray())
+    if (records.length === 0) return
     await setDoc(doc(firestore, DATA_COLLECTION, `${uid}_${tableKey}`), {
       uid,
       tableName: tableKey,
-      records,
+      records: records.map(stripUndefined),
       updatedAt: isoNow(),
     } satisfies CloudTableDoc)
     console.log(`[sync] Pushed ${tableKey}: ${records.length} records`)

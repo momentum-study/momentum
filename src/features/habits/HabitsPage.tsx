@@ -26,6 +26,7 @@ export default function HabitsPage() {
   const [kind, setKind] = useState<Habit['kind']>('good')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [archivedAfterDays, setArchivedAfterDays] = useState<number | null>(null)
+  const [newHabitStatus, setNewHabitStatus] = useState<'active' | 'potential'>('active')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null)
@@ -222,6 +223,7 @@ export default function HabitsPage() {
     setKind('good')
     setColor(DEFAULT_COLOR)
     setArchivedAfterDays(settings.defaultArchiveDays)
+    setNewHabitStatus('active')
     setShowModal(true)
   }
 
@@ -231,8 +233,10 @@ export default function HabitsPage() {
     setKind('good')
     setColor(DEFAULT_COLOR)
     setArchivedAfterDays(null)
+    setNewHabitStatus('potential')
     setShowModal(true)
   }
+
   function openEditHabit(habit: Habit) {
     setEditHabit(habit)
     setName(habit.name)
@@ -248,7 +252,7 @@ export default function HabitsPage() {
       if (editHabit) {
         await db.habits.update(editHabit.id, { name: name.trim(), kind, color, archivedAfterDays, updatedAt: isoNow() })
       } else {
-        await db.habits.add({ id: uuid(), name: name.trim(), kind, color, archivedAfterDays, status: 'active', createdAt: isoNow(), updatedAt: isoNow() })
+        await db.habits.add({ id: uuid(), name: name.trim(), kind, color, archivedAfterDays, status: newHabitStatus, createdAt: isoNow(), updatedAt: isoNow() })
       }
       setShowModal(false)
       await loadData()

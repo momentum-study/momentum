@@ -83,8 +83,9 @@ export async function pushTable(uid: string, tableKey: TableKey): Promise<void> 
       records,
       updatedAt: isoNow(),
     } satisfies CloudTableDoc)
+    console.log(`[sync] Pushed ${tableKey}: ${records.length} records`)
   } catch (e) {
-    console.warn(`Failed to push table ${tableKey}:`, e)
+    console.error(`[sync] Failed to push ${tableKey}:`, e)
   }
 }
 export async function pushAllData(uid: string): Promise<void> {
@@ -154,13 +155,27 @@ export function uninstallSyncHooks() {
 
 const dirtyTables = new Set<TableKey>()
 let flushTimer: ReturnType<typeof setTimeout> | null = null
-const FLUSH_DELAY = 2_000 // coalesce mutations within 2s
+const FLUSH_DELAY = 500 // coalesce mutations within 500ms
 
 function markDirty(tableKey: TableKey) {
   if (!activeSyncUid) return
   dirtyTables.add(tableKey)
   if (!flushTimer) {
     flushTimer = setTimeout(flushDirtyTables, FLUSH_DELAY)
+  }
+}
+
+/** Flush pending dirty tables immediately (used on page close / tab hide). */
+export function flushNow() {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  if (!activeSyncUid || dirtyTables.size === 0) return
+  const tables = [...dirtyTables]
+  dirtyTables.clear()
+  for (const tableKey of tables) {
+    void pushTable(activeSyncUid, tableKey)
   }
 }
 
@@ -187,6 +202,16 @@ if (typeof window !== 'undefined') {
       if (!isSyncing && activeSyncUid) markDirty(tableKey)
     })
   }
+
+  // Flush pending changes when the tab is hidden (user switches to another tab/device).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushNow()
+  })
+
+  // Flush pending changes before the page unloads.
+  window.addEventListener('beforeunload', () => {
+    flushNow()
+  })
 }
 
 /**
@@ -209,7 +234,7 @@ export function subscribeToUserData(uid: string): Unsubscribe {
         if (!snap.exists()) return
         const cloudDoc = snap.data() as CloudTableDoc
         if (!Array.isArray(cloudDoc.records) || cloudDoc.records.length === 0) return
-        console.log(`[sync] ${tableKey}: ${cloudDoc.records.length} records`)
+        console.info(`[sync] Applying ${cloudDoc.records.length} records to ${tableKey}`)
         try {
           beginSync()
           const table = localDb.table(tableKey)

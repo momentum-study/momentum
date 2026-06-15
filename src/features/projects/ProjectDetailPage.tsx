@@ -271,7 +271,10 @@ export default function ProjectDetailPage() {
       <Modal open={showTaskModal} onClose={() => setShowTaskModal(false)} title={editTask ? 'Edit Task' : 'Add Task'}>
         <div className="space-y-3">
           <input className="input" placeholder="Task name" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
-          <input type="date" className="input" value={taskDue} onChange={(e) => setTaskDue(e.target.value)} />
+          <div className="flex items-center gap-2">
+            <input type="date" className="input flex-1" value={taskDue} onChange={(e) => setTaskDue(e.target.value)} />
+            <Button type="button" variant="secondary" onClick={() => setTaskDue('')} disabled={!taskDue}>Clear</Button>
+          </div>
           <Button variant="primary" className="w-full" onClick={saveTask}>{editTask ? 'Save Changes' : 'Add Task'}</Button>
         </div>
       </Modal>

@@ -261,7 +261,11 @@ function AccountSettings() {
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-slate-500">Sign in to sync your study data and join groups.</p>
-          <Button variant="primary" onClick={signIn}>Sign In with Google</Button>
+          <Button variant="primary" onClick={() => {
+            if (window.confirm("To enable sync between devices, please disable ad-blockers (like Brave Shields) for this site first. Proceed to sign in?")) {
+              signIn()
+            }
+          }}>Sign In with Google</Button>
         </div>
       )}
     </Card>

@@ -6,6 +6,7 @@ import { UndoToast } from '../ui/UndoToast'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 
+import { SyncBanner } from '../ui/SyncBanner'
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '🏠' },
   { to: '/subjects', label: 'Focus Areas', icon: '📚' },
@@ -134,7 +135,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+      <SyncBanner />
+      <div className="flex flex-1 overflow-hidden">
       <aside
         className={cn(
           'flex flex-col border-r border-slate-200 bg-white transition-all duration-200',
@@ -193,8 +196,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
         </div>
+      </div>
       <UndoToast />
-
       <Modal
         open={draftPrefs !== null}
         onClose={closeCustomizer}

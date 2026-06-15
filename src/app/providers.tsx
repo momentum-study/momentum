@@ -122,6 +122,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const loadTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const hasLoadedOnce = useRef(false)
   const loadData = useCallback(async () => {
+    if (loadTimer.current) clearTimeout(loadTimer.current)
     loadTimer.current = setTimeout(async () => {
       loadTimer.current = null
       try {

@@ -16,6 +16,22 @@ import type { AppData } from '../app/providers'
 type TableKey = keyof AppData
 
 const DATA_COLLECTION = 'userData'
+/** Firestore rejects `undefined` field values. Strip them recursively before setDoc. */
+function stripUndefined<T>(value: T): T {
+  if (value === null || value === undefined) return value
+  if (Array.isArray(value)) {
+    return value.map(stripUndefined) as unknown as T
+  }
+  if (typeof value === 'object' && value.constructor === Object) {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) out[k] = stripUndefined(v)
+    }
+    return out as T
+  }
+  return value
+}
+
 
 /** All table names to sync. */
 export const SYNC_TABLES: TableKey[] = [
@@ -76,7 +92,7 @@ export async function pullAllData(uid: string): Promise<number> {
 export async function pushTable(uid: string, tableKey: TableKey): Promise<void> {
   if (!isFirebaseConfigured || !firestore) return
   try {
-    const records = await localDb.table(tableKey).toArray()
+    const records = (await localDb.table(tableKey).toArray()).map(stripUndefined)
     await setDoc(doc(firestore, DATA_COLLECTION, `${uid}_${tableKey}`), {
       uid,
       tableName: tableKey,

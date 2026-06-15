@@ -278,13 +278,18 @@ export default function SubjectsPage() {
           <div>
             <label className="label">Weekly Target (minutes)</label>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               className="input w-full"
-              value={formData.weeklyTargetMinutes}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, weeklyTargetMinutes: parseInt(e.target.value) || 0 }))
-              }
-              min="0"
+              value={formData.weeklyTargetMinutes === 0 ? '' : String(formData.weeklyTargetMinutes)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === '') { setFormData((prev) => ({ ...prev, weeklyTargetMinutes: 0 })); return; }
+                const n = Number(v);
+                if (isNaN(n)) return;
+                setFormData((prev) => ({ ...prev, weeklyTargetMinutes: n }));
+              }}
               step="15"
             />
           </div>

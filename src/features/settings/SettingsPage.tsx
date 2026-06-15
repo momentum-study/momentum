@@ -93,12 +93,20 @@ function SettingsField({ label, children }: { label: string; children: ReactNode
 }
 
 function NumberInput({ value, onChange, min = 0 }: { value: number; onChange: (n: number) => void; min?: number }) {
+  const display = value === 0 ? '' : String(value)
   return (
     <input
-      type="number"
-      min={min}
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      value={display}
+      onChange={(e) => {
+        const v = e.target.value
+        if (v === '') { onChange(min); return }
+        const n = Number(v)
+        if (isNaN(n)) return
+        onChange(Math.max(min, n))
+      }}
       className="input w-24 text-right"
     />
   )

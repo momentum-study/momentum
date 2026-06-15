@@ -367,10 +367,11 @@ export function PomodoroTimer() {
               <label className="label">Focus</label>
               <div className="flex items-center gap-1">
                 <input
-                  type="number"
-                  min={1}
-                  value={config.focusMinutes}
-                  onChange={(e) => saveConfig({ focusMinutes: Math.max(1, Number(e.target.value)) })}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={config.focusMinutes === 1 ? '' : String(config.focusMinutes)}
+                  onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ focusMinutes: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ focusMinutes: Math.max(1, n) }) }}
                   className="input w-16 text-center"
                 />
                 <span className="text-xs text-slate-500">min</span>
@@ -380,10 +381,11 @@ export function PomodoroTimer() {
               <label className="label">Short Break</label>
               <div className="flex items-center gap-1">
                 <input
-                  type="number"
-                  min={1}
-                  value={config.breakMinutes}
-                  onChange={(e) => saveConfig({ breakMinutes: Math.max(1, Number(e.target.value)) })}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={config.breakMinutes === 1 ? '' : String(config.breakMinutes)}
+                  onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ breakMinutes: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ breakMinutes: Math.max(1, n) }) }}
                   className="input w-16 text-center"
                 />
                 <span className="text-xs text-slate-500">min</span>
@@ -393,10 +395,11 @@ export function PomodoroTimer() {
               <label className="label">Long Break</label>
               <div className="flex items-center gap-1">
                 <input
-                  type="number"
-                  min={1}
-                  value={config.longBreakMinutes}
-                  onChange={(e) => saveConfig({ longBreakMinutes: Math.max(1, Number(e.target.value)) })}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={config.longBreakMinutes === 1 ? '' : String(config.longBreakMinutes)}
+                  onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ longBreakMinutes: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ longBreakMinutes: Math.max(1, n) }) }}
                   className="input w-16 text-center"
                 />
                 <span className="text-xs text-slate-500">min</span>
@@ -406,11 +409,12 @@ export function PomodoroTimer() {
               <label className="label">Cycles</label>
               <div className="flex items-center gap-1">
                 <input
-                  type="number"
-                  min={1}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   max={12}
-                  value={config.cycles}
-                  onChange={(e) => saveConfig({ cycles: Math.max(1, Math.min(12, Number(e.target.value))) })}
+                  value={config.cycles === 1 ? '' : String(config.cycles)}
+                  onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ cycles: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ cycles: Math.max(1, Math.min(12, n)) }) }}
                   className="input w-16 text-center"
                 />
                 <span className="text-xs text-slate-500">× then long</span>

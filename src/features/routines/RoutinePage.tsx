@@ -419,12 +419,18 @@ export default function RoutinePage() {
               Target Minutes
             </label>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               className="input mt-1"
-              min={5}
-              max={480}
-              value={targetMinutes}
-              onChange={(e) => setTargetMinutes(Math.max(5, Math.min(480, parseInt(e.target.value) || 30)))}
+              value={targetMinutes === 5 ? '' : String(targetMinutes)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === '') { setTargetMinutes(5); return };
+                const n = Number(v);
+                if (isNaN(n)) return;
+                setTargetMinutes(Math.max(5, Math.min(480, n)))
+              }}
             />
           </div>
 

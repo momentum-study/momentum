@@ -362,7 +362,7 @@ export default function Dashboard() {
             <div className="flex flex-wrap items-end gap-3">
               <div>
                 <label className="label">Minutes</label>
-                <input type="number" className="input w-24" min={1} value={logDuration} onChange={(e) => setLogDuration(Number(e.target.value))} />
+                <input type="text" inputMode="numeric" pattern="[0-9]*" className="input w-24" value={logDuration === 1 ? '' : String(logDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setLogDuration(1); return }; const n = Number(v); if (isNaN(n)) return; setLogDuration(Math.max(1, n)) }} />
               </div>
               <div>
                 <label className="label">Date</label>
@@ -460,7 +460,7 @@ export default function Dashboard() {
         <div className="space-y-3">
           <div>
             <label className="label">Minutes</label>
-            <input type="number" className="input" min={1} value={editDuration} onChange={(e) => setEditDuration(Math.max(1, Number(e.target.value)))} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" className="input" value={editDuration === 1 ? '' : String(editDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setEditDuration(1); return }; const n = Number(v); if (isNaN(n)) return; setEditDuration(Math.max(1, n)) }} />
           </div>
           <div>
             <label className="label">Date</label>

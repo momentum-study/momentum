@@ -292,7 +292,7 @@ export default function ProjectDetailPage() {
           </div>
           <div>
             <label className="label">Minutes</label>
-            <input type="number" className="input" min={1} value={timeMinutes} onChange={(e) => setTimeMinutes(Math.max(1, Number(e.target.value)))} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" className="input" value={timeMinutes === 1 ? '' : String(timeMinutes)} onChange={(e) => { const v = e.target.value; if (v === '') { setTimeMinutes(1); return }; const n = Number(v); if (isNaN(n)) return; setTimeMinutes(Math.max(1, n)) }} />
           </div>
           <div>
             <label className="label">Note</label>

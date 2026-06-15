@@ -1,5 +1,7 @@
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+
+const UPDATE_CHANNEL = 'momentum-sw-update'
 
 export function ReloadPrompt() {
   const {
@@ -15,10 +17,45 @@ export function ReloadPrompt() {
     },
   })
 
-  const close = () => {
+  // Local override so cross-tab BroadcastChannel messages can show the prompt
+  // even in tabs where useRegisterSW hasn't detected the new SW yet.
+  const [broadcastUpdate, setBroadcastUpdate] = useState(false)
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return
+    const channel = new BroadcastChannel(UPDATE_CHANNEL)
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === 'update-available') {
+        setBroadcastUpdate(true)
+        // Also tell the SW to skipWaiting so this tab reloads cleanly when the user clicks Reload.
+        navigator.serviceWorker?.getRegistration().then(reg => {
+          reg?.waiting?.postMessage({ type: 'SKIP_WAITING' })
+        }).catch(() => {})
+      }
+    }
+    channel.addEventListener('message', onMessage)
+    return () => {
+      channel.removeEventListener('message', onMessage)
+      channel.close()
+    }
+  }, [])
+
+  // When this tab detects an update via useRegisterSW, broadcast to other tabs.
+  useEffect(() => {
+    if (!needRefresh) return
+    if (typeof BroadcastChannel === 'undefined') return
+    try {
+      const channel = new BroadcastChannel(UPDATE_CHANNEL)
+      channel.postMessage({ type: 'update-available' })
+      channel.close()
+    } catch {}
+  }, [needRefresh])
+
+  const close = useCallback(() => {
     setOfflineReady(false)
     setNeedRefresh(false)
-  }
+    setBroadcastUpdate(false)
+  }, [setOfflineReady, setNeedRefresh])
 
   // Periodically force an update check every 60s to detect new versions.
   // HashRouter means no real page navigations occur, so SW won't auto-check.
@@ -32,9 +69,8 @@ export function ReloadPrompt() {
     return () => clearInterval(id)
   }, [])
 
-  if (!offlineReady && !needRefresh) return null
-
-  const isUpdate = needRefresh
+  const showPrompt = needRefresh || broadcastUpdate
+  if (!offlineReady && !showPrompt) return null
 
   return (
     <div
@@ -44,15 +80,18 @@ export function ReloadPrompt() {
       <div className="pointer-events-auto w-full max-w-md rounded-lg border border-amber-300 bg-amber-50 p-4 shadow-lg dark:border-amber-800 dark:bg-amber-900/40">
         <div className="flex items-start gap-3">
           <p className="flex-1 text-sm font-medium text-amber-900 dark:text-amber-100">
-            {isUpdate
+            {showPrompt
               ? 'A new version is available.'
               : 'App is ready to work offline.'}
           </p>
           <div className="flex shrink-0 gap-2">
-            {isUpdate && (
+            {showPrompt && (
               <button
                 className="rounded bg-amber-600 px-3 py-1 text-sm font-medium text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
-                onClick={() => updateServiceWorker(true)}
+                onClick={() => {
+                  setBroadcastUpdate(false)
+                  void updateServiceWorker(true)
+                }}
               >
                 Reload
               </button>

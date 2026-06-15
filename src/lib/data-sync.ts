@@ -94,7 +94,8 @@ export async function pushAllData(uid: string): Promise<void> {
   console.log(`[sync] Pushed ${SYNC_TABLES.length} tables to cloud`)
 }
 
-/** Push a single record to its table in Firestore (incremental sync). */
+/** DEPRECATED: per-record push is replaced by debounced table push via markDirty().
+ * Kept as a fallback for callers that need an immediate single-record push. */
 export async function pushRecord(uid: string, tableKey: TableKey, record: unknown): Promise<void> {
   if (!isFirebaseConfigured || !firestore) return
   try {
@@ -105,7 +106,6 @@ export async function pushRecord(uid: string, tableKey: TableKey, record: unknow
       const existing = snap.data() as CloudTableDoc
       records = Array.isArray(existing.records) ? existing.records : []
     }
-    // Upsert by id
     const rec = record as { id: string }
     const idx = records.findIndex((r) => (r as { id: string }).id === rec.id)
     if (idx >= 0) records[idx] = rec
@@ -119,28 +119,6 @@ export async function pushRecord(uid: string, tableKey: TableKey, record: unknow
     })
   } catch (e) {
     console.warn(`Failed to push record to ${tableKey}:`, e)
-  }
-}
-
-/** Remove a single record from the cloud table. */
-export async function removeRecord(uid: string, tableKey: TableKey, recordId: string): Promise<void> {
-  if (!isFirebaseConfigured || !firestore) return
-  try {
-    const docId = `${uid}_${tableKey}`
-    const snap = await getDoc(doc(firestore, DATA_COLLECTION, docId))
-    if (!snap.exists()) return
-    const existing = snap.data() as CloudTableDoc
-    const records = (Array.isArray(existing.records) ? existing.records : [])
-      .filter((r) => (r as { id: string }).id !== recordId)
-
-    await setDoc(doc(firestore, DATA_COLLECTION, docId), {
-      uid,
-      tableName: tableKey,
-      records,
-      updatedAt: isoNow(),
-    })
-  } catch (e) {
-    console.warn(`Failed to remove record ${recordId} from ${tableKey}:`, e)
   }
 }
 
@@ -169,17 +147,44 @@ export function uninstallSyncHooks() {
   activeSyncUid = null
 }
 
+// ────────── Debounced push: coalesce rapid mutations into one table push ──────────
+// Instead of pushing each record individually (getDoc + setDoc per mutation),
+// dirty tables are flushed as a whole after a short delay. This avoids
+// downloading/re-uploading the entire table array on every single click.
+
+const dirtyTables = new Set<TableKey>()
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+const FLUSH_DELAY = 2_000 // coalesce mutations within 2s
+
+function markDirty(tableKey: TableKey) {
+  if (!activeSyncUid) return
+  dirtyTables.add(tableKey)
+  if (!flushTimer) {
+    flushTimer = setTimeout(flushDirtyTables, FLUSH_DELAY)
+  }
+}
+
+async function flushDirtyTables() {
+  flushTimer = null
+  if (!activeSyncUid || dirtyTables.size === 0) return
+  const tables = [...dirtyTables]
+  dirtyTables.clear()
+  for (const tableKey of tables) {
+    await pushTable(activeSyncUid, tableKey)
+  }
+}
+
 // Install hooks once — they check activeSyncUid at call time.
 if (typeof window !== 'undefined') {
   for (const tableKey of SYNC_TABLES) {
-    localDb.table(tableKey).hook('creating', (_pk, value) => {
-      if (!isSyncing && activeSyncUid) void pushRecord(activeSyncUid, tableKey, value)
+    localDb.table(tableKey).hook('creating', () => {
+      if (!isSyncing && activeSyncUid) markDirty(tableKey)
     })
-    localDb.table(tableKey).hook('updating', (modifications, _primKey, obj) => {
-      if (!isSyncing && activeSyncUid) void pushRecord(activeSyncUid, tableKey, { ...obj, ...modifications })
+    localDb.table(tableKey).hook('updating', () => {
+      if (!isSyncing && activeSyncUid) markDirty(tableKey)
     })
-    localDb.table(tableKey).hook('deleting', (pk) => {
-      if (!isSyncing && activeSyncUid) void removeRecord(activeSyncUid, tableKey, String(pk))
+    localDb.table(tableKey).hook('deleting', () => {
+      if (!isSyncing && activeSyncUid) markDirty(tableKey)
     })
   }
 }

@@ -20,6 +20,7 @@ export type Settings = {
   soundEnabled: boolean
   maxActiveHabits: number
   defaultArchiveDays: number
+  settingsUpdatedAt: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -33,19 +34,26 @@ export const DEFAULT_SETTINGS: Settings = {
   soundEnabled: true,
   maxActiveHabits: 3,
   defaultArchiveDays: 66,
+  settingsUpdatedAt: '',
 }
 
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<Settings>
+      // Older stored blobs may not have settingsUpdatedAt; merge preserves defaults
+      return { ...DEFAULT_SETTINGS, ...parsed }
+    }
   } catch (e) { /* ignore */ }
   return { ...DEFAULT_SETTINGS }
 }
 
 export function saveSettings(settings: Settings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+  // Do not mutate the caller's object. Create a copy with an updated timestamp
+  const toSave: Settings = { ...settings, settingsUpdatedAt: new Date().toISOString() }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
 }
 
 export function applyDarkMode(enabled: boolean) {

@@ -112,7 +112,7 @@ export default function CategoriesPage() {
                   <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(cat)}>Delete</Button>
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {data.subjects.filter((s) => s.categoryId === cat.id).length} focus area(s)
+                  {(() => { const n = data.subjects.filter((s) => s.categoryId === cat.id).length; return n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`; })()}
                 </div>
               </Card>
             ))}
@@ -137,7 +137,7 @@ export default function CategoriesPage() {
                   <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(cat)}>Delete</Button>
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {data.subjects.filter((s) => s.categoryId === cat.id).length} focus area(s)
+                  {(() => { const n = data.subjects.filter((s) => s.categoryId === cat.id).length; return n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`; })()}
                 </div>
               </Card>
             ))}

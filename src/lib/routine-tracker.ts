@@ -3,7 +3,7 @@
 import { v4 as uuid } from 'uuid'
 import { db } from '../db/app-db'
 import type { Session, RoutineLog, DayOfWeek } from '../domain/types'
-import { isoNow } from './utils'
+import { getSessionScope, isoNow } from './utils'
 
 /**
  * For the given session, find all matching routines (today's day + same subject
@@ -11,6 +11,9 @@ import { isoNow } from './utils'
  * session's minutes. Creates the log if it doesn't exist yet.
  */
 export async function updateRoutineLogsForSession(session: Session): Promise<void> {
+  const subjects = await db.subjects.toArray()
+  const categories = await db.categories.toArray()
+  if (getSessionScope(session, subjects, categories) !== 'academic') return
   const sessionDate = session.startAt.slice(0, 10) // YYYY-MM-DD
   const sessionDow = new Date(session.startAt).getDay() as DayOfWeek
 
@@ -52,9 +55,11 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
     }
   }
 }
-
 /** Subtract a session's minutes from any matching routine logs. Used on delete. */
 export async function revertRoutineLogsForSession(session: Session): Promise<void> {
+  const subjects = await db.subjects.toArray()
+  const categories = await db.categories.toArray()
+  if (getSessionScope(session, subjects, categories) !== 'academic') return
   const sessionDate = session.startAt.slice(0, 10)
   const sessionDow = new Date(session.startAt).getDay() as DayOfWeek
 

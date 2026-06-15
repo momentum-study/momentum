@@ -9,7 +9,7 @@ import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { Modal } from '../../components/ui/Modal'
-import { cn, formatMinutes, isoNow } from '../../lib/utils'
+import { cn, formatMinutes, getSessionScope, isoNow } from '../../lib/utils'
 import { loadSettings } from '../settings/SettingsPage'
 import { db } from '../../db/app-db'
 import { updateRoutineLogsForSession, revertRoutineLogsForSession } from '../../lib/routine-tracker'
@@ -25,10 +25,15 @@ export default function Dashboard() {
   const { visibleWidgets, setVisibleWidgets } = useDashboardWidgets()
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const todayStr = format(new Date(), 'yyyy-MM-dd')
-  
+
+  const academicSessions = useMemo(
+    () => data.sessions.filter((s) => getSessionScope(s, data.subjects, data.categories) === 'academic'),
+    [data.sessions, data.subjects, data.categories]
+  )
+
   const streak = useMemo(() => {
     const daySet = new Set<string>()
-    for (const s of data.sessions) {
+    for (const s of academicSessions) {
       daySet.add(format(new Date(s.startAt), 'yyyy-MM-dd'))
     }
     let count = 0
@@ -47,17 +52,17 @@ export default function Dashboard() {
       }
     }
     return count
-  }, [data.sessions])
+  }, [academicSessions])
 
   const [calendarMonth, setCalendarMonth] = useState(new Date())
   const minutesByDay = useMemo(() => {
     const map: Record<string, number> = {}
-    for (const s of data.sessions) {
+    for (const s of academicSessions) {
       const day = format(new Date(s.startAt), 'yyyy-MM-dd')
       map[day] = (map[day] ?? 0) + s.durationMinutes
     }
     return map
-  }, [data.sessions])
+  }, [academicSessions])
   const calendarDays = useMemo(() => {
     const start = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1)
     const daysInMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate()
@@ -154,18 +159,18 @@ export default function Dashboard() {
 
   if (isLoading) return <PageSpinner />
   const settings = loadSettings()
-  const todayMinutes = data.sessions
+  const todayMinutes = academicSessions
     .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
     .reduce((sum, s) => sum + s.durationMinutes, 0)
   const weekStart = new Date()
   weekStart.setDate(weekStart.getDate() - weekStart.getDay())
   weekStart.setHours(0, 0, 0, 0)
-  const weekMinutes = data.sessions
+  const weekMinutes = academicSessions
     .filter((s) => new Date(s.startAt) >= weekStart)
     .reduce((sum, s) => sum + s.durationMinutes, 0)
   const goalPct = Math.min(100, Math.round((todayMinutes / settings.dailyTargetMinutes) * 100))
   const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-  const recentSessions = data.sessions.slice(0, 8).map((s) => ({
+  const recentSessions = academicSessions.slice(0, 8).map((s) => ({
     ...s,
     subjectName: data.subjects.find((sub) => sub.id === s.subjectId)?.name ?? 'Unknown',
   }))
@@ -252,7 +257,7 @@ export default function Dashboard() {
               </div>
               {(() => {
                 const due = data.assignments
-                  .filter((a) => !a.deletedAt && !a.completed && a.dueDate <= todayStr)
+                  .filter((a) => !a.deletedAt && !a.completed && a.dueDate !== '' && a.dueDate <= todayStr)
                   .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
                   .slice(0, 5)
                 if (due.length === 0) return <p className="text-sm text-slate-500">No tasks due today</p>

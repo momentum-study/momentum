@@ -3,7 +3,7 @@ import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, gradeColor, isoNow, pctToGrade } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
-import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
+import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
@@ -125,12 +125,6 @@ export default function MarksPage() {
     return result
   }, [marks, filterSubject, filterName, sortKey, sortOrder, subjectName])
 
-  const overallWeighted = useMemo(() => {
-    if (marks.length === 0) return 0
-    const sumWeighted = marks.reduce((s, m) => s + weightedPct(m) * m.weight, 0)
-    const sumWeight = marks.reduce((s, m) => s + m.weight, 0)
-    return sumWeight > 0 ? sumWeighted / sumWeight : 0
-  }, [marks])
   // Early return AFTER all hooks
   if (isLoading) return <PageSpinner />
 
@@ -249,23 +243,6 @@ export default function MarksPage() {
         </div>
       )}
 
-      {/* Overall summary — hidden when filtering by subject */}
-      {!filterSubject && marks.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Overall</CardTitle></CardHeader>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-slate-500 dark:text-slate-400">Total marks</span>
-              <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{marks.length}</div>
-            </div>
-            <div>
-              <span className="text-slate-500 dark:text-slate-400">Weighted average</span>
-              <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{overallWeighted.toFixed(1)}%</div>
-              <div className={cn('text-sm font-medium', gradeColor(pctToGrade(overallWeighted)))}>{pctToGrade(overallWeighted)}</div>
-            </div>
-          </div>
-        </Card>
-      )}
 
       {/* Mark list */}
       {marks.length === 0 ? (

@@ -23,6 +23,7 @@ import type { UserProfile } from '../domain/cloud-types'
 import { syncService } from '../lib/sync-service'
 import { db as localDb } from '../db/app-db'
 import { pullSettings } from '../lib/settings-sync'
+import { loadSettings } from '../features/settings/SettingsPage'
 import { pullAllData } from '../lib/data-sync'
 import { subscribeToUserData, installSyncHooks, uninstallSyncHooks } from '../lib/data-sync'
 interface AuthContextValue {
@@ -72,9 +73,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Pull settings from cloud — apply directly to localStorage (no reload)
             const cloudPrefs = await pullSettings(u.uid)
             if (cloudPrefs) {
-              localStorage.setItem('momentum-settings', JSON.stringify(cloudPrefs.settings))
-              localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(cloudPrefs.dashboardWidgets))
-              localStorage.setItem('momentum-nav-prefs', JSON.stringify(cloudPrefs.navPrefs))
+              // Don't clobber local settings that are newer than the cloud copy.
+              // loadSettings() returns localStorage merged with defaults; settingsUpdatedAt
+              // is '' when never saved locally.
+              const localSettings = loadSettings()
+              const localUpdatedAt = localSettings.settingsUpdatedAt
+              if (localUpdatedAt && localUpdatedAt >= cloudPrefs.updatedAt) {
+                // Local is newer or equal — keep local values
+              } else {
+                localStorage.setItem('momentum-settings', JSON.stringify(cloudPrefs.settings))
+                localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(cloudPrefs.dashboardWidgets))
+                localStorage.setItem('momentum-nav-prefs', JSON.stringify(cloudPrefs.navPrefs))
+              }
             }
             // Pull all user data from cloud, then refresh UI
             await pullAllData(u.uid)

@@ -1,3 +1,5 @@
+import type { Session, Subject, Category, Scope } from '../domain/types'
+
 // Lightweight className joiner (no extra deps)
 export function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(' ')
@@ -35,4 +37,16 @@ export function gradeColor(grade: string): string {
   if (grade.startsWith('C')) return 'text-yellow-600 dark:text-yellow-400'
   if (grade.startsWith('D')) return 'text-orange-600 dark:text-orange-400'
   return 'text-red-600 dark:text-red-400'
+}
+
+/** Resolve the scope of a session by looking up its subject → category chain. */
+export function getSessionScope(
+  session: Session,
+  subjects: Subject[],
+  categories: Category[]
+): Scope | null {
+  const subject = subjects.find((s) => s.id === session.subjectId)
+  if (!subject) return null
+  const category = categories.find((c) => c.id === subject.categoryId)
+  return category?.scope ?? null
 }

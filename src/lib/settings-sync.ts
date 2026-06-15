@@ -30,7 +30,7 @@ export async function pushSettings(
       settings,
       dashboardWidgets,
       navPrefs,
-      updatedAt: isoNow(),
+      updatedAt: settings.settingsUpdatedAt || isoNow(),
     } satisfies CloudPrefsPayload)
   } catch (e) {
     console.warn('Failed to push settings to cloud:', e)

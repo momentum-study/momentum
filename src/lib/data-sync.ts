@@ -11,6 +11,7 @@ import {
 import { db as firestore, isFirebaseConfigured } from './firebase'
 import { db as localDb } from '../db/app-db'
 import { isoNow } from './utils'
+import { syncStatus } from './sync-status'
 import type { AppData } from '../app/providers'
 
 type TableKey = keyof AppData
@@ -90,10 +91,12 @@ export async function pullAllData(uid: string): Promise<number> {
 
 /** Push a single table's entire contents to Firestore. */
 export async function pushTable(uid: string, tableKey: TableKey): Promise<void> {
-  if (!isFirebaseConfigured || !firestore) return
+  if (!isFirebaseConfigured || !firestore) {
+    throw new Error('Firebase not configured')
+  }
+  const records = (await localDb.table(tableKey).toArray())
+  if (records.length === 0) return
   try {
-    const records = (await localDb.table(tableKey).toArray())
-    if (records.length === 0) return
     await setDoc(doc(firestore, DATA_COLLECTION, `${uid}_${tableKey}`), {
       uid,
       tableName: tableKey,
@@ -101,8 +104,20 @@ export async function pushTable(uid: string, tableKey: TableKey): Promise<void> 
       updatedAt: isoNow(),
     } satisfies CloudTableDoc)
     console.log(`[sync] Pushed ${tableKey}: ${records.length} records`)
+    syncStatus.notifySuccess()
   } catch (e) {
-    console.error(`[sync] Failed to push ${tableKey}:`, e)
+    const err = e as { code?: string; message?: string }
+    const code = err.code ?? 'unknown'
+    const message = err.message ?? String(e)
+    console.error(`[sync] Failed to push ${tableKey}: ${code} ${message}`)
+    if (code === 'resource-exhausted') {
+      syncStatus.notifyFailure(`Firestore quota exceeded — sync paused until tomorrow (UTC)`)
+    } else if (code === 'unavailable' || /BLOCKED|offline/i.test(message)) {
+      syncStatus.notifyFailure(`Sync blocked — check that ad-blocker (Brave Shields) is off for this site`)
+    } else {
+      syncStatus.notifyFailure(`Sync failed for ${tableKey} (${code})`)
+    }
+    throw e // re-throw so the dirty table isn't cleared
   }
 }
 export async function pushAllData(uid: string): Promise<void> {
@@ -181,7 +196,6 @@ function markDirty(tableKey: TableKey) {
     flushTimer = setTimeout(flushDirtyTables, FLUSH_DELAY)
   }
 }
-
 /** Flush pending dirty tables immediately (used on page close / tab hide). */
 export function flushNow() {
   if (flushTimer) {
@@ -190,8 +204,9 @@ export function flushNow() {
   }
   if (!activeSyncUid || dirtyTables.size === 0) return
   const tables = [...dirtyTables]
-  dirtyTables.clear()
+  // Don't clear — let push failures keep tables dirty. The caller (beforeunload) won't wait anyway.
   for (const tableKey of tables) {
+    dirtyTables.delete(tableKey)
     void pushTable(activeSyncUid, tableKey)
   }
 }
@@ -200,9 +215,17 @@ async function flushDirtyTables() {
   flushTimer = null
   if (!activeSyncUid || dirtyTables.size === 0) return
   const tables = [...dirtyTables]
-  dirtyTables.clear()
+  
+  // Try flushing each table, keep ones that fail in the dirty set so they're retried.
+  // Clear only the ones that succeed.
   for (const tableKey of tables) {
-    await pushTable(activeSyncUid, tableKey)
+    try {
+      await pushTable(activeSyncUid, tableKey)
+      dirtyTables.delete(tableKey)
+    } catch (e) {
+      // Table stays in dirtyTables — will be retried on next markDirty or page close
+      console.error(`[sync] Will retry ${tableKey} later`)
+    }
   }
 }
 

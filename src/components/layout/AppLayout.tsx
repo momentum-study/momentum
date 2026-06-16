@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { UndoToast } from '../ui/UndoToast'
@@ -7,6 +7,7 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 
 import { SyncBanner } from '../ui/SyncBanner'
+
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '🏠' },
   { to: '/subjects', label: 'Focus Areas', icon: '📚' },

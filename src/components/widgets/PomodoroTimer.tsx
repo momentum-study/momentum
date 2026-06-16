@@ -210,7 +210,7 @@ export function PomodoroTimer() {
     }
   }, [pomStartedAt, pomSeconds, pomPhase])
 
-
+  // Cleanup on unmount: clear intervals but DON'T clear persisted state
   // Cleanup on unmount: clear intervals but DON'T clear persisted state
   useEffect(() => {
     return () => {
@@ -218,6 +218,14 @@ export function PomodoroTimer() {
       if (pomIntervalRef.current) clearInterval(pomIntervalRef.current)
     }
   }, [])
+
+  // Update document.title when timer is running
+  const isRunning = simpleStartedAt !== null || pomStartedAt !== null
+  useEffect(() => {
+    if (!isRunning) { document.title = 'Momentum'; return }
+    document.title = simpleStartedAt !== null ? `${fmt(simpleSeconds)} — Momentum` : `${fmt(pomSeconds)} — Momentum`
+    return () => { document.title = 'Momentum' }
+  }, [isRunning, simpleSeconds, pomSeconds])
 
   // Save config to localStorage
   function saveConfig(patch: Partial<typeof config>) {

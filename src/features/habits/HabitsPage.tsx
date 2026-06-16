@@ -11,6 +11,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { ColorPicker } from '../../components/ui/ColorPicker'
 import { v4 as uuid } from 'uuid'
+import { Collapsible } from '../../components/ui/Collapsible'
 import type { Habit, HabitLog } from '../../domain/types'
 
 const DEFAULT_COLOR = '#6366f1'
@@ -26,11 +27,12 @@ export default function HabitsPage() {
   const [kind, setKind] = useState<Habit['kind']>('good')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [archivedAfterDays, setArchivedAfterDays] = useState<number | null>(null)
+  const [targetPerDay, setTargetPerDay] = useState(1)
   const [newHabitStatus, setNewHabitStatus] = useState<'active' | 'potential'>('active')
+  const [parkForLater, setParkForLater] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null)
-  const [showArchived, setShowArchived] = useState(false)
   const [dayDetailDate, setDayDetailDate] = useState<string | null>(null)
   
   const [showAddLog, setShowAddLog] = useState(false)
@@ -223,19 +225,12 @@ export default function HabitsPage() {
     setKind('good')
     setColor(DEFAULT_COLOR)
     setArchivedAfterDays(settings.defaultArchiveDays)
+    setTargetPerDay(1)
     setNewHabitStatus('active')
+    setParkForLater(false)
     setShowModal(true)
   }
 
-  function openAddPotential() {
-    setEditHabit(null)
-    setName('')
-    setKind('good')
-    setColor(DEFAULT_COLOR)
-    setArchivedAfterDays(null)
-    setNewHabitStatus('potential')
-    setShowModal(true)
-  }
 
   function openEditHabit(habit: Habit) {
     setEditHabit(habit)
@@ -243,16 +238,17 @@ export default function HabitsPage() {
     setKind(habit.kind)
     setColor(habit.color)
     setArchivedAfterDays(habit.archivedAfterDays ?? null)
+    setTargetPerDay(habit.targetPerDay ?? 1)
     setShowModal(true)
   }
-
   async function saveHabit() {
     if (!name.trim()) return
     try {
+      const status: 'active' | 'potential' = parkForLater ? 'potential' : newHabitStatus
       if (editHabit) {
-        await db.habits.update(editHabit.id, { name: name.trim(), kind, color, archivedAfterDays, updatedAt: isoNow() })
+        await db.habits.update(editHabit.id, { name: name.trim(), kind, color, archivedAfterDays, targetPerDay, updatedAt: isoNow() })
       } else {
-        await db.habits.add({ id: uuid(), name: name.trim(), kind, color, archivedAfterDays, status: newHabitStatus, createdAt: isoNow(), updatedAt: isoNow() })
+        await db.habits.add({ id: uuid(), name: name.trim(), kind, color, archivedAfterDays, targetPerDay, status, createdAt: isoNow(), updatedAt: isoNow() })
       }
       setShowModal(false)
       await loadData()
@@ -401,43 +397,23 @@ export default function HabitsPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Habits</h2>
         <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={openAddPotential}
-            title="Add a habit you want to do later but can't take on right now"
-          >
-            + Park for later
-          </Button>
           <Button variant="primary" size="sm" onClick={openAddHabit}>Add Habit</Button>
         </div>
       </div>
 
-      {/* Inline explainer so the 'Park' feature is discoverable */}
-      {currentHabits.length > 0 && potentialHabits.length === 0 && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-200">
-          <span className="text-lg leading-none">💡</span>
-          <div className="flex-1">
-            <strong>Got habits you can't take on right now?</strong> Hit "Park for later" to add them to your wishlist — they don't count toward your active limit and you can promote them whenever you've got room.
-          </div>
-        </div>
-      )}
 
-      <div>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-green-600 dark:text-green-400">Good Habits</h3>
+      <Collapsible id="good-habits" title="Good Habits" count={goodHabits.length} defaultOpen={true} accent="#22c55e">
         {goodHabits.length === 0 ? <EmptyState title="No good habits" description="Track positive habits you want to build." /> : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{goodHabits.map((h) => <HabitCard key={h.id} habit={h} />)}</div>
         )}
-      </div>
-      <div>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">Bad Habits</h3>
+      </Collapsible>
+      <Collapsible id="bad-habits" title="Bad Habits" count={badHabits.length} defaultOpen={true} accent="#ef4444">
         {badHabits.length === 0 ? <EmptyState title="No bad habits" description="Track habits you want to avoid." /> : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{badHabits.map((h) => <HabitCard key={h.id} habit={h} />)}</div>
         )}
-      </div>
+      </Collapsible>
       {potentialHabits.length > 0 && (
-        <div>
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">Potential Habits</h3>
+        <Collapsible id="potential-habits" title="Potential Habits" count={potentialHabits.length} defaultOpen={false} accent="#f59e0b">
           <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             On the wishlist — pick these up when you've got room.
           </p>
@@ -459,27 +435,22 @@ export default function HabitsPage() {
               </Card>
             ))}
           </div>
-        </div>
+        </Collapsible>
       )}
 
       {archivedHabits.length > 0 && (
-        <div>
-          <button className="text-sm font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400" onClick={() => setShowArchived(!showArchived)}>
-            {showArchived ? 'Hide' : 'Show'} Archived Habits ({archivedHabits.length})
-          </button>
-          {showArchived && (
-            <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {archivedHabits.map((h) => (
-                <Card key={h.id} className="opacity-75">
-                  <div className="flex items-center justify-between">
-                    <div className="font-medium text-slate-700 dark:text-slate-300">{h.name} (Archived)</div>
-                    <Button variant="secondary" size="sm" onClick={() => unarchiveHabitFn(h.id)}>Restore</Button>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
+        <Collapsible id="archived-habits" title={`Archived Habits`} count={archivedHabits.length} defaultOpen={false} accent="#64748b">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {archivedHabits.map((h) => (
+              <Card key={h.id} className="opacity-75">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium text-slate-700 dark:text-slate-300">{h.name} (Archived)</div>
+                  <Button variant="secondary" size="sm" onClick={() => unarchiveHabitFn(h.id)}>Restore</Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </Collapsible>
       )}
 
       {selectedHabit && (
@@ -568,12 +539,51 @@ export default function HabitsPage() {
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editHabit ? 'Edit Habit' : 'Add Habit'}>
         <div className="space-y-3">
-          <input className="input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-          <select className="input" value={kind} onChange={(e) => setKind(e.target.value as Habit['kind'])}>
-            <option value="good">Good</option>
-            <option value="bad">Bad</option>
-          </select>
-          <ColorPicker value={color} onChange={setColor} />
+          <div className="grid grid-cols-2 gap-3">
+            <input className="input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+            <select className="input" value={kind} onChange={(e) => setKind(e.target.value as Habit['kind'])}>
+              <option value="good">Good</option>
+              <option value="bad">Bad</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <ColorPicker value={color} onChange={setColor} />
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Target per day</label>
+              <input
+                type="number"
+                className="input"
+                min={1}
+                value={targetPerDay}
+                onChange={(e) => setTargetPerDay(Number(e.target.value) || 1)}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Archive after (days, 0 = never)</label>
+            <input
+              type="number"
+              className="input"
+              min={0}
+              placeholder={String(settings.defaultArchiveDays)}
+              value={archivedAfterDays ?? ''}
+              onChange={(e) => {
+                const v = e.target.value
+                setArchivedAfterDays(v === '' ? null : Number(v))
+              }}
+            />
+          </div>
+          {!editHabit && (
+            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={parkForLater}
+                onChange={(e) => setParkForLater(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              />
+              Park this for later (won't count toward your habit limit)
+            </label>
+          )}
           <Button variant="primary" className="w-full" onClick={saveHabit}>{editHabit ? 'Save' : 'Add'}</Button>
         </div>
       </Modal>

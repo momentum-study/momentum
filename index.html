@@ -8,6 +8,13 @@
     <meta name="description" content="Momentum — local-first study tracker with timer, assignments, marks, habits, and reports." />
     <title>Momentum</title>
   </head>
+  <!-- Prevent dark mode flash: apply dark class before React hydrates -->
+  <script>
+    try {
+      const raw = JSON.parse(localStorage.getItem('momentum-settings'))
+      if (raw && raw.darkMode) document.documentElement.classList.add('dark')
+    } catch {}
+  </script>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

@@ -16,6 +16,8 @@ import type { Habit, HabitLog } from '../../domain/types'
 
 const DEFAULT_COLOR = '#6366f1'
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const STREAK_MILESTONES = [7, 14, 21, 30, 66, 100] as const
+
 
 export default function HabitsPage() {
   const { data, loadData } = useData()
@@ -117,6 +119,33 @@ export default function HabitsPage() {
   function getDaysLogged(habitId: string): number {
     const uniqueDays = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
     return uniqueDays.size
+  }
+
+  function getForgivenDates(habitId: string): Set<string> {
+    const habit = data.habits.find((h) => h.id === habitId)
+    if (!habit || habit.kind === 'bad') return new Set()
+    const logDates = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
+    const forgiven = new Set<string>()
+    let streak = 0
+    let missed = 0
+    let d = new Date()
+    const maxDays = habit.createdAt
+      ? Math.min(365, Math.ceil((Date.now() - new Date(habit.createdAt).getTime()) / 86400000))
+      : 365
+    while (streak < maxDays) {
+      const ds = format(d, 'yyyy-MM-dd')
+      if (logDates.has(ds)) {
+        streak++
+        missed = 0
+        d = subDays(d, 1)
+      } else {
+        missed++
+        if (missed > 1) break
+        if (missed === 1) forgiven.add(ds)
+        d = subDays(d, 1)
+      }
+    }
+    return forgiven
   }
 
   // One-click log: directly insert a timestamped log without opening a modal.
@@ -317,7 +346,9 @@ export default function HabitsPage() {
       const d = subDays(new Date(), 6 - i)
       const ds = format(d, 'yyyy-MM-dd')
       const hasLog = data.habitLogs.some((l) => l.habitId === habit.id && l.date === ds)
-      return { date: ds, hasLog }
+      const daysAgo = 6 - i
+      const isForgiven = !isBad && !hasLog && streak > 0 && streak > daysAgo
+      return { date: ds, hasLog, isForgiven }
     })
     const streakLabel = isBad
       ? (streak > 0 ? `✓ ${streak} day streak of avoiding` : 'No streak yet')
@@ -344,6 +375,14 @@ export default function HabitsPage() {
               {streakLabel}
               <span className="mx-1">·</span>
               {daysLogged} {isBad ? 'lapses' : 'days logged'}
+              {!isBad && streak > 0 && (
+                <>
+                  <span className="mx-1">·</span>
+                  {STREAK_MILESTONES.filter((m) => streak >= m).map((m) => (
+                    <span key={m} className="mx-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">{m}d</span>
+                  ))}
+                </>
+              )}
             </div>
           </div>
           {todayCount > 0 && (
@@ -355,9 +394,9 @@ export default function HabitsPage() {
             {last7.map((d) => (
               <div
                 key={d.date}
-                className={cn('h-2.5 w-2.5 rounded-full', d.hasLog ? '' : 'bg-slate-200 dark:bg-slate-700')}
-                style={d.hasLog ? { backgroundColor: habit.color } : undefined}
-                title={`${d.date}${isBad ? ' (lapse)' : ''}`}
+                className={cn('h-2.5 w-2.5 rounded-full', !d.hasLog && !d.isForgiven && 'bg-slate-200 dark:bg-slate-700', d.isForgiven && 'opacity-50')}
+                style={d.hasLog ? { backgroundColor: habit.color } : d.isForgiven ? { backgroundColor: habit.color, opacity: 0.5 } : undefined}
+                title={`${d.date}${d.isForgiven ? ' (forgiven)' : ''}${isBad && d.hasLog ? ' (lapse)' : ''}`}
               />
             ))}
           </div>
@@ -483,12 +522,14 @@ export default function HabitsPage() {
             </div>
             <div className="grid grid-cols-7 gap-1">
               {Array.from({ length: calendarStartDay }).map((_, i) => <div key={`empty-${i}`} />)}
-              {calendarDays.map((day) => {
+              {(() => {
+                const forgivenDates = getForgivenDates(selectedHabit.id)
+                const habitStartDate = selectedHabit.createdAt.slice(0, 10)
+                return calendarDays.map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd')
                 const dayLogs = logsByDate[dateStr] ?? []
                 const count = dayLogs.length
                 const totalValue = dayLogs.reduce((sum, l) => sum + (l.value ?? 0), 0)
-                // Adaptive thresholds: 5 levels (0, 1, 2, 3, 4) using per-habit history
                 const target = selectedHabit.targetPerDay ?? 1
                 const intensity = count === 0
                   ? 0
@@ -500,23 +541,56 @@ export default function HabitsPage() {
                   ? 2
                   : 1
                 const opacity = intensity === 0 ? undefined : 0.2 + (intensity * 0.2)
+                const isFuture = dateStr > todayStr
+                const isBeforeStart = dateStr < habitStartDate
+                const isToday = dateStr === todayStr
+                const isForgiven = forgivenDates.has(dateStr)
+                const hasLogs = count > 0
+                const isMissed = !hasLogs && !isFuture && !isBeforeStart && !isForgiven
+                // Streak break: a past logged day followed by 2+ consecutive missed days
+                // We need to check if the previous day had logs and this day is the start of a miss run of 2+
+                let hasStreakBreak = false
+                if (isMissed) {
+                  // Check: previous day exists, had logs, and next day is also missed
+                  const prevDay = new Date(day)
+                  prevDay.setDate(prevDay.getDate() - 1)
+                  const prevStr = format(prevDay, 'yyyy-MM-dd')
+                  const prevHadLogs = (logsByDate[prevStr]?.length ?? 0) > 0
+                  const nextDay = new Date(day)
+                  nextDay.setDate(nextDay.getDate() + 1)
+                  const nextStr = format(nextDay, 'yyyy-MM-dd')
+                  const nextDayLogs = logsByDate[nextStr] ?? []
+                  const nextIsMissed = nextDayLogs.length === 0 && nextStr <= todayStr && nextStr >= habitStartDate && !forgivenDates.has(nextStr)
+                  if (prevHadLogs && nextIsMissed) hasStreakBreak = true
+                }
+                const muted = isFuture || isBeforeStart
                 return (
                   <button
                     key={dateStr}
                     onClick={() => setDayDetailDate(dateStr)}
-                    title={totalValue > 0 ? `${dateStr} — ${count} log${count !== 1 ? 's' : ''} (${totalValue} total)` : `${dateStr}${count > 0 ? ` — ${count} log${count !== 1 ? 's' : ''}` : ''}`}
+                    title={muted ? dateStr : totalValue > 0 ? `${dateStr} — ${count} log${count !== 1 ? 's' : ''} (${totalValue} total)` : isForgiven ? `${dateStr} — forgiven` : isMissed ? `${dateStr} — missed` : `${dateStr}${count > 0 ? ` — ${count} log${count !== 1 ? 's' : ''}` : ''}`}
+                    aria-label={muted ? dateStr : hasLogs ? `Logged` : isForgiven ? `Forgiven` : isMissed ? `Missed` : `No study logged`}
                     className={cn(
-                      'flex h-9 w-full flex-col items-center justify-center rounded text-xs font-medium transition-all hover:ring-2 hover:ring-primary-400',
-                      intensity === 0 && 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700',
-                      intensity > 0 && 'text-white shadow-sm'
+                      'flex h-9 w-full flex-col items-center justify-center rounded text-xs font-medium transition-all',
+                      muted && 'cursor-default text-slate-300 dark:text-slate-600',
+                      !muted && 'hover:ring-2 hover:ring-primary-400',
+                      isToday && 'ring-2 ring-orange-400',
+                      hasLogs && 'text-white shadow-sm',
+                      isForgiven && 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400',
+                      isMissed && !hasStreakBreak && 'bg-red-50 text-red-400 dark:bg-red-900/20 dark:text-red-400',
+                      isMissed && hasStreakBreak && 'bg-red-50 text-red-400 dark:bg-red-900/20 dark:text-red-400 border-l-2 border-red-400',
+                      !hasLogs && !isForgiven && !isMissed && !muted && 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                     )}
-                    style={intensity > 0 ? { backgroundColor: selectedHabit.color, opacity } : undefined}
+                    style={hasLogs ? { backgroundColor: selectedHabit.color, opacity } : undefined}
                   >
                     <span>{format(day, 'd')}</span>
-                    {count > 0 && <span className="text-[9px] opacity-90">×{count}{totalValue > 0 ? ` ${totalValue}` : ''}</span>}
+                    {isMissed && !muted && <span className="text-[9px] text-red-400">×</span>}
+                    {isForgiven && <span className="text-[9px]">♡</span>}
+                    {hasLogs && <span className="text-[9px] opacity-90">×{count}{totalValue > 0 ? ` ${totalValue}` : ''}</span>}
                   </button>
                 )
-              })}
+                })
+              })()}
             </div>
             {/* Heatmap legend — 5 levels */}
             <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-500">

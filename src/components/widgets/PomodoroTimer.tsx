@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { formatDistanceToNow } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
@@ -8,7 +9,7 @@ import { cn, isoNow } from '../../lib/utils'
 import { loadSettings, saveSettings } from '../../features/settings/SettingsPage'
 import type { Settings } from '../../features/settings/SettingsPage'
 import { useSessionSync } from '../../lib/use-session-sync'
-import { updateRoutineLogsForSession } from '../../lib/routine-tracker'
+import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
 import { clearTimerState, loadTimerState, saveTimerState } from '../../lib/timer-persistence'
 import type { PersistedTimerState } from '../../lib/timer-persistence'
 
@@ -175,6 +176,7 @@ export function PomodoroTimer() {
           const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
           syncSession(session, subjectName)
           await updateRoutineLogsForSession(session)
+          await updateStreakDayForSession(session)
           await loadData()
         })
       }
@@ -294,6 +296,7 @@ export function PomodoroTimer() {
       const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
       syncSession(session, subjectName)
       await updateRoutineLogsForSession(session)
+      await updateStreakDayForSession(session)
       await loadData()
     }
     setSimpleSeconds(0)
@@ -486,26 +489,68 @@ export function PomodoroTimer() {
           {cycleLabel}
         </div>
       )}
+      {/* Break indicator */}
+      {mode === 'pomodoro' && settings.pomodoroEnabled && (pomPhase === 'shortBreak' || pomPhase === 'longBreak') && (() => {
+        const subjectName = data.subjects.find((s) => s.id === subjectId)?.name
+        return (
+          <div className="mb-3 text-center text-sm text-slate-600 dark:text-slate-300">
+            {pomPhase === 'shortBreak' ? 'Short' : 'Long'} break{subjectName ? ` from ${subjectName}` : ''}
+          </div>
+        )
+      })()}
 
       {/* Timer display */}
       <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
         {fmt(currentSeconds)}
       </div>
 
-      {/* Cycle indicator */}
+      {/* Cycle indicator - larger dots with numbers */}
       {mode === 'pomodoro' && settings.pomodoroEnabled && (
-        <div className="mt-2 flex justify-center gap-1">
-          {Array.from({ length: config.cycles }, (_, i) => (
-            <div
-              key={i}
-              className={cn(
-                'h-2 w-2 rounded-full',
-                i < (pomCycles % config.cycles)
-                  ? 'bg-primary-600'
-                  : 'bg-slate-200 dark:bg-slate-700'
-              )}
-            />
-          ))}
+        <div className="mt-2 flex justify-center gap-2">
+          {Array.from({ length: config.cycles }, (_, i) => {
+            const completed = i < (pomCycles % config.cycles)
+            return (
+              <div
+                key={i}
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-full border-2',
+                  completed
+                    ? 'border-primary-600 bg-primary-600 text-white'
+                    : 'border-slate-300 dark:border-slate-600'
+                )}
+              >
+                {completed ? i + 1 : ''}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Recent Sessions */}
+      {mode === 'pomodoro' && settings.pomodoroEnabled && (
+        <div className="mt-4">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Recent Sessions</h3>
+          <div className="space-y-2">
+            {data.sessions.filter((s) => s.source === 'pomodoro').slice(0, 3).map((session) => {
+              const subject = data.subjects.find((s) => s.id === session.subjectId)
+              return (
+                <div key={session.id} className="flex items-center gap-2 text-xs">
+                  <div
+                    className={cn(
+                      'h-2 w-2 rounded-full',
+                      subject?.color ?? 'bg-slate-400'
+                    )}
+                  />
+                  <span className="truncate text-slate-700 dark:text-slate-300">{subject?.name ?? 'Unknown'}</span>
+                  <span className="text-slate-500 dark:text-slate-400">{session.durationMinutes}m</span>
+                  <span className="ml-auto text-slate-400">{formatDistanceToNow(new Date(session.startAt), { addSuffix: true })}</span>
+                </div>
+              )
+            })}
+            {data.sessions.filter((s) => s.source === 'pomodoro').length === 0 && (
+              <p className="text-xs text-slate-400 dark:text-slate-500">No sessions yet</p>
+            )}
+          </div>
         </div>
       )}
 

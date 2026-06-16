@@ -11,6 +11,13 @@ import { PageSpinner } from '../../components/ui/Spinner'
 import { cn } from '../../lib/utils'
 import type { Group } from '../../domain/cloud-types'
 
+function groupColor(name: string) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h)
+  const hue = ((h % 360) + 360) % 360
+  return { bg: `hsl(${hue}, 60%, 85%)`, accent: `hsl(${hue}, 70%, 45%)` }
+}
+
 export default function GroupsPage() {
   const { user, profile, isConfigured, isLoading: authLoading } = useAuth()
   const [groups, setGroups] = useState<Group[]>([])
@@ -135,20 +142,33 @@ export default function GroupsPage() {
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {groups.map((g) => (
+          {groups.map((g) => {
+            const { bg, accent } = groupColor(g.name)
+            const initial = g.name.trim().charAt(0).toUpperCase() || '?'
+            return (
             <Link key={g.id} to={`/groups/${g.id}`}>
-              <Card className={cn('transition-shadow hover:shadow-md')}>
-                <div className="font-medium text-slate-800 dark:text-slate-100">{g.name}</div>
+              <Card className={cn('overflow-hidden transition-shadow hover:shadow-md')}>
+                <div className="-mx-4 -mt-4 mb-3 flex items-center justify-center py-6" style={{ backgroundColor: bg }}>
+                  <div
+                    className="flex h-16 w-16 items-center justify-center rounded-full text-2xl font-semibold text-white"
+                    style={{ backgroundColor: accent }}
+                    aria-hidden
+                  >
+                    {initial}
+                  </div>
+                </div>
+                <div className="font-medium text-slate-800 dark:text-slate-100" style={{ color: accent }}>{g.name}</div>
                 {g.description && (
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{g.description}</p>
                 )}
                 <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                  <span>{g.memberCount} member{g.memberCount !== 1 ? 's' : ''}</span>
+                  <span>👥 {g.memberCount} member{g.memberCount !== 1 ? 's' : ''}</span>
                   <span className="font-mono">{g.inviteCode}</span>
                 </div>
               </Card>
             </Link>
-          ))}
+            )
+          })}
         </div>
       )}
 

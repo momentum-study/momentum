@@ -157,9 +157,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }
-
 export function useData() {
   const context = useContext(DataContext)
   if (!context) throw new Error('useData must be used within DataProvider')
   return context
 }
+
+/**
+ * Subscribe to a single slice of AppData so re-renders only fire when that
+ * slice changes (referential equality via shallow comparison).
+ *
+ * Example: `const sessions = useDataSelector(s => s.sessions)`
+ */
+export function useDataSelector<T>(selector: (data: AppData) => T): T {
+  const { data } = useData()
+  return useMemo(() => selector(data), [data]) // re-compute only when data object swaps
+}
+
+/** Granular hooks — each page only subscribes to what it needs. */
+export function useSubjects()       { return useDataSelector(d => d.subjects) }
+export function useSessions()        { return useDataSelector(d => d.sessions) }
+export function useAssignments()     { return useDataSelector(d => d.assignments) }

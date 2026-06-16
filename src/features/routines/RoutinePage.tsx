@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { format } from 'date-fns'
+import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, isoNow } from '../../lib/utils'
@@ -28,6 +28,8 @@ export default function RoutinePage() {
   const [days, setDays] = useState<DayOfWeek[]>([1, 3, 5])
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [logMinutesRoutineId, setLogMinutesRoutineId] = useState<string | null>(null)
+  const [logMinutesValue, setLogMinutesValue] = useState(0)
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
   const todayDow = new Date().getDay() as DayOfWeek
@@ -64,6 +66,45 @@ export default function RoutinePage() {
     if (!subjectId) return []
     return data.projects.filter((p) => p.subjectId === subjectId && !p.deletedAt)
   }, [data.projects, subjectId])
+
+  const weekDates = useMemo(() => {
+    const today = new Date()
+    const sunday = subDays(today, today.getDay())
+    return Array.from({ length: 7 }).map((_, i) => format(subDays(sunday, -i), 'yyyy-MM-dd'))
+  }, [])
+
+  const weekLogsByDate = useMemo(() => {
+    const map: Record<string, RoutineLog[]> = {}
+    weekDates.forEach((d) => { map[d] = [] })
+    data.routineLogs.forEach((log) => {
+      if (weekDates.includes(log.date) && map[log.date]) {
+        map[log.date].push(log)
+      }
+    })
+    return map
+  }, [data.routineLogs, weekDates])
+
+  const weeklyProgress = useMemo(() => {
+    return activeRoutines.map((routine) => {
+      const weeklyLogs = weekDates.reduce<RoutineLog[]>((acc, d) => {
+        const dayLogs = weekLogsByDate[d]?.filter((l) => l.routineId === routine.id) ?? []
+        return acc.concat(dayLogs)
+      }, [])
+      const totalMinutes = weeklyLogs.reduce((sum, l) => sum + l.actualMinutes, 0)
+      const scheduledDays = routine.days.filter((d) =>
+        weekDates.some((wd) => new Date(wd).getDay() === d)
+      ).length
+      const target = routine.targetMinutes * scheduledDays
+      return {
+        name: routine.name,
+        subject: getSubjectName(routine.subjectId),
+        daysLabel: getDaysLabel(routine.days),
+        target,
+        logged: totalMinutes,
+        progress: target > 0 ? Math.round((totalMinutes / target) * 100) : 0,
+      }
+    })
+  }, [activeRoutines, weekDates, weekLogsByDate])
 
   function getSubjectName(id: string): string {
     return data.subjects.find((s) => s.id === id)?.name ?? 'Unknown'
@@ -219,6 +260,41 @@ export default function RoutinePage() {
     }
   }
 
+  async function saveLogMinutes() {
+    if (!logMinutesRoutineId || logMinutesValue <= 0) return
+    const routine = activeRoutines.find((r) => r.id === logMinutesRoutineId)
+    if (!routine) return
+    const newLogId = uuid()
+    const completed = logMinutesValue >= routine.targetMinutes
+    const newLog: RoutineLog = {
+      id: newLogId,
+      routineId: routine.id,
+      date: todayStr,
+      actualMinutes: logMinutesValue,
+      completed,
+      createdAt: isoNow(),
+    }
+    try {
+      await db.routineLogs.add(newLog)
+      push({
+        description: `Logged ${logMinutesValue} min for "${routine.name}"`,
+        undo: async () => {
+          await db.routineLogs.delete(newLogId)
+          await loadData()
+        },
+        redo: async () => {
+          await db.routineLogs.add(newLog)
+          await loadData()
+        },
+      })
+      setLogMinutesRoutineId(null)
+      setLogMinutesValue(0)
+      await loadData()
+    } catch (e) {
+      console.error('Failed to log minutes', e)
+    }
+  }
+
   function RoutineCard({ routine }: { routine: Routine }) {
     const isToday = routine.days.includes(todayDow)
     const log = routineLogsToday[routine.id]
@@ -291,12 +367,24 @@ export default function RoutinePage() {
                 </span>
               </div>
             )}
+            <div className="mt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setLogMinutesValue(routine.targetMinutes)
+                  setLogMinutesRoutineId(routine.id)
+                }}
+              >
+                Log minutes
+              </Button>
+            </div>
           </div>
         )}
 
         {!isToday && (
           <div className="mt-2 text-xs text-slate-400">
-            Today: {getDaysLabel(routine.days).includes('No days') ? 'Not scheduled' : 'Not scheduled'}
+            Not scheduled today
           </div>
         )}
 
@@ -353,6 +441,91 @@ export default function RoutinePage() {
                 width: `${dailyProgress.scheduledMinutes > 0 ? Math.min(100, Math.round((dailyProgress.completedMinutes / dailyProgress.scheduledMinutes) * 100)) : 0}%`,
               }}
             />
+          </div>
+        </Card>
+      )}
+
+      {/* 7-day mini calendar */}
+      <Card>
+        <div className="flex items-center justify-between">
+          {weekDates.map((date, i) => {
+            const dayOfWeek = new Date(date).getDay() as DayOfWeek
+            const dayLogs = data.routineLogs.filter((l) => l.date === date)
+            const scheduledRoutines = activeRoutines.filter((r) => r.days.includes(dayOfWeek))
+            const hasLogs = dayLogs.length > 0
+            const completedCount = dayLogs.filter((l) => l.completed).length
+            const allComplete = scheduledRoutines.length > 0 && completedCount === scheduledRoutines.length
+            const someComplete = completedCount > 0 && !allComplete
+            const isTodayDate = date === todayStr
+
+            return (
+              <div key={date} className="flex flex-col items-center gap-1">
+                <span className="text-[10px] text-slate-400">{WEEKDAY_SHORT[i]}</span>
+                <div
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium',
+                    isTodayDate && 'ring-2 ring-primary-500',
+                    allComplete
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : someComplete
+                        ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                        : hasLogs
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                  )}
+                >
+                  {new Date(date).getDate()}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </Card>
+
+      {/* This Week summary */}
+      {activeRoutines.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>This Week</CardTitle>
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b text-xs text-slate-500">
+                  <th className="pb-2 font-medium">Name</th>
+                  <th className="pb-2 font-medium">Subject</th>
+                  <th className="pb-2 font-medium">Days</th>
+                  <th className="pb-2 font-medium">Target</th>
+                  <th className="pb-2 font-medium">Logged</th>
+                  <th className="pb-2 font-medium">Progress</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weeklyProgress.map((rp, i) => (
+                  <tr key={i} className="border-b last:border-b-0">
+                    <td className="py-2 font-medium text-slate-800 dark:text-slate-100">{rp.name}</td>
+                    <td className="py-2 text-slate-600 dark:text-slate-400">{rp.subject}</td>
+                    <td className="py-2 text-slate-600 dark:text-slate-400">{rp.daysLabel}</td>
+                    <td className="py-2 text-slate-600 dark:text-slate-400">{rp.target}m</td>
+                    <td className="py-2 text-slate-600 dark:text-slate-400">{rp.logged}m</td>
+                    <td className="py-2">
+                      <span
+                        className={cn(
+                          'font-medium',
+                          rp.progress >= 100
+                            ? 'text-green-600 dark:text-green-400'
+                            : rp.progress >= 50
+                              ? 'text-yellow-600 dark:text-yellow-400'
+                              : 'text-slate-500 dark:text-slate-400'
+                        )}
+                      >
+                        {rp.progress}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </Card>
       )}
@@ -493,6 +666,62 @@ export default function RoutinePage() {
               onClick={() => deleteConfirm && deleteRoutineFn(deleteConfirm)}
             >
               Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={logMinutesRoutineId !== null}
+        onClose={() => setLogMinutesRoutineId(null)}
+        title="Log Minutes"
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+              Minutes
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              className="input mt-1"
+              value={logMinutesValue <= 0 ? '' : String(logMinutesValue)}
+              onChange={(e) => {
+                const v = e.target.value
+                if (v === '') { setLogMinutesValue(0); return }
+                const n = Number(v)
+                if (isNaN(n)) return
+                setLogMinutesValue(Math.max(0, Math.min(480, n)))
+              }}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+              Date
+            </label>
+            <input
+              type="text"
+              className="input mt-1"
+              value={todayStr}
+              readOnly
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setLogMinutesRoutineId(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={saveLogMinutes}
+              disabled={logMinutesValue <= 0}
+            >
+              Save
             </Button>
           </div>
         </div>

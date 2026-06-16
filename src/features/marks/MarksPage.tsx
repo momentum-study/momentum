@@ -3,7 +3,6 @@ import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, gradeColor, isoNow, pctToGrade } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
-import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
@@ -81,24 +80,6 @@ export default function MarksPage() {
       return a.name.localeCompare(b.name)
     })
   }, [subjects, categories])
-
-  const subjectStats = useMemo(() => {
-    const stats: Record<string, { weightedPct: number; totalWeight: number; markCount: number }> = {}
-    for (const m of marks) {
-      if (!stats[m.subjectId]) {
-        stats[m.subjectId] = { weightedPct: 0, totalWeight: 0, markCount: 0 }
-      }
-      const s = stats[m.subjectId]
-      s.markCount++
-      s.totalWeight += m.weight
-      s.weightedPct += weightedPct(m) * m.weight
-    }
-    for (const sid of Object.keys(stats)) {
-      const s = stats[sid]
-      if (s.totalWeight > 0) s.weightedPct /= s.totalWeight
-    }
-    return stats
-  }, [marks])
 
   const filteredMarks = useMemo(() => {
     let result = [...marks]
@@ -212,37 +193,6 @@ export default function MarksPage() {
           <input className="input text-sm" placeholder="Filter by name..." value={filterName} onChange={(e) => setFilterName(e.target.value)} />
         </div>
       )}
-
-      {/* Per-subject summary cards — hidden when filtering by subject */}
-      {!filterSubject && Object.keys(subjectStats).length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-          {Object.entries(subjectStats).map(([sid, stat]) => {
-            if (stat.markCount === 0) return null
-            const grade = pctToGrade(stat.weightedPct)
-            const subj = subjects.find((s) => s.id === sid)
-            const color = subj?.color ?? '#94a3b8'
-            return (
-              <Card key={sid} className="p-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                    <div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{subjectName(sid)}</div>
-                      <div className="text-xs text-slate-400 dark:text-slate-500">{stat.markCount} mark{stat.markCount !== 1 ? 's' : ''}</div>
-                    </div>
-                  </div>
-                  <div className={cn('text-sm font-medium', gradeColor(grade))}>{grade}</div>
-                </div>
-                <div className="mt-2 flex items-baseline justify-between">
-                  <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{stat.weightedPct.toFixed(1)}%</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">Total weight: {stat.totalWeight}%</div>
-                </div>
-              </Card>
-            )
-          })}
-        </div>
-      )}
-
 
       {/* Mark list */}
       {marks.length === 0 ? (

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../../lib/utils'
@@ -84,6 +84,15 @@ function applyPrefs(base: typeof NAV_ITEMS, prefs: NavPrefs): typeof NAV_ITEMS {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)')
+    setIsMobile(mql.matches)
+    function onChange(e: MediaQueryListEvent) { setIsMobile(e.matches) }
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
   const [prefs, setPrefs] = useState<NavPrefs>(() => loadPrefs())
   const [draftPrefs, setDraftPrefs] = useState<NavPrefs | null>(null)
   const location = useLocation()
@@ -141,7 +150,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className="flex flex-1 overflow-hidden">
       <aside
         className={cn(
-          'flex flex-col border-r border-slate-200 bg-white transition-all duration-200',
+          'hidden md:flex flex-col border-r border-slate-200 bg-white transition-all duration-200',
           'dark:border-slate-700 dark:bg-slate-800',
           sidebarOpen ? 'w-56' : 'w-0 overflow-hidden border-r-0'
         )}
@@ -165,7 +174,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 )
               }
             >
-              <span>{item.icon}</span>
+              <span aria-hidden="true">{item.icon}</span>
               <span>{item.label}</span>
             </NavLink>
           ))}
@@ -182,10 +191,69 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
+      {/* Mobile sidebar slide-over */}
+      {isMobile && (
+        <>
+          {/* Backdrop */}
+          <div
+            className={cn(
+              'fixed inset-0 z-30 bg-black/50 transition-opacity',
+              mobileSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+            )}
+            onClick={() => setMobileSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          {/* Slide-over panel */}
+          <aside
+            className={cn(
+              'fixed left-0 top-0 z-40 flex h-full w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-200',
+              'dark:border-slate-700 dark:bg-slate-800',
+              mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+            )}
+          >
+            <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+              <span className="text-lg font-semibold text-primary-600 dark:text-primary-400">
+                Momentum
+              </span>
+            </div>
+            <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+              {visibleItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileSidebarOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100'
+                    )
+                  }
+                >
+                  <span aria-hidden="true">{item.icon}</span>
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+            </nav>
+            <div className="border-t border-slate-200 px-2 py-2 dark:border-slate-700">
+              <button
+                onClick={() => { openCustomizer(); setMobileSidebarOpen(false) }}
+                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                aria-label="Customise navigation"
+              >
+                <span aria-hidden>🛠️</span>
+                <span>Customise</span>
+              </button>
+            </div>
+          </aside>
+        </>
+      )}
+
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-700 dark:bg-slate-800">
           <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
+            onClick={() => isMobile ? setMobileSidebarOpen(!mobileSidebarOpen) : setSidebarOpen(!sidebarOpen)}
             className="rounded p-1 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
             aria-label="Toggle sidebar"
           >

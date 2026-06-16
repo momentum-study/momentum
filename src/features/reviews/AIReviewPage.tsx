@@ -207,6 +207,33 @@ export default function AIReviewPage() {
     lines.push('## Streak')
     lines.push(`- Current streak: ${stats.currentStreak} days`)
     lines.push('')
+
+    // Active Habits
+    const activeHabits = data.habits.filter(h => !h.archivedAt && h.status !== 'potential')
+    if (activeHabits.length > 0) {
+      lines.push('## Active Habits')
+      activeHabits.forEach(habit => {
+        const logs = data.habitLogs.filter(l => l.habitId === habit.id)
+        const uniqueDays = new Set(logs.map(l => l.date)).size
+        lines.push(`- ${habit.name} (${habit.kind}): ${uniqueDays} days logged, target ${habit.targetPerDay ?? 1}/day`)
+      })
+      lines.push('')
+    }
+
+    // Pending Tasks
+    const pendingTasks = data.assignments.filter(a => !a.completed && !a.deletedAt)
+    if (pendingTasks.length > 0) {
+      lines.push('## Pending Tasks')
+      pendingTasks.sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
+      pendingTasks.slice(0, 15).forEach(task => {
+        const dueStr = task.dueDate ? ` (due ${task.dueDate})` : ''
+        const subject = data.subjects.find(s => s.id === task.subjectId)
+        lines.push(`- ${task.title}${dueStr} [${subject?.name ?? 'Unknown'}]`)
+      })
+      if (pendingTasks.length > 15) lines.push(`- ... and ${pendingTasks.length - 15} more`)
+      lines.push('')
+    }
+
     lines.push('Please analyse:')
     lines.push('1. Overall productivity and consistency')
     lines.push('2. Balance across subjects')
@@ -216,7 +243,7 @@ export default function AIReviewPage() {
     lines.push('6. Recommendations for next week\'s study schedule')
 
     return lines.join('\n')
-  }, [dateRange, stats, settings.dailyTargetMinutes])
+  }, [dateRange, stats, settings.dailyTargetMinutes, data.habits, data.habitLogs, data.assignments, data.subjects])
 
   const handleCopy = async () => {
     try {
@@ -347,10 +374,24 @@ export default function AIReviewPage() {
             'focus:outline-none focus:ring-2 focus:ring-primary-500'
           )}
         />
-        <div className="mt-4 flex items-center gap-4">
+        <div className="mt-4 flex flex-wrap items-center gap-4">
           <Button variant="primary" onClick={handleCopy}>
             {copied ? '✓ Copied!' : 'Copy to Clipboard'}
           </Button>
+          <Button
+            variant="secondary"
+            onClick={() => window.open(`https://chatgpt.com/?q=${encodeURIComponent(aiPrompt)}`, '_blank', 'noopener,noreferrer')}
+          >
+            Open in ChatGPT
+          </Button>
+          {typeof navigator !== 'undefined' && 'share' in navigator && (
+            <Button
+              variant="secondary"
+              onClick={() => navigator.share({ title: 'Study Review', text: aiPrompt }).catch(() => {})}
+            >
+              Share
+            </Button>
+          )}
         </div>
       </Card>
     </div>

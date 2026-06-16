@@ -5,9 +5,10 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor } from '../../lib/utils'
 import type { Session } from '../../domain/types'
+import { loadSettings } from '../settings/SettingsPage'
 
 type ScopeOption = 'academic' | 'nonAcademic' | 'all'
-type Period = 'week' | 'month' | 'all'
+type Period = 'week' | 'month' | 'threeMonths' | 'all'
 
 const SCOPE_OPTIONS: { value: ScopeOption; label: string }[] = [
   { value: 'academic', label: 'Academic' },
@@ -18,15 +19,24 @@ const SCOPE_OPTIONS: { value: ScopeOption; label: string }[] = [
 const PERIOD_OPTIONS: { value: Period; label: string }[] = [
   { value: 'week', label: 'This Week' },
   { value: 'month', label: 'This Month' },
+  { value: 'threeMonths', label: 'Last 3 Months' },
   { value: 'all', label: 'All Time' },
 ]
 
 const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+function periodDays(period: Period): number {
+  if (period === 'week') return 7
+  if (period === 'month') return 30
+  if (period === 'threeMonths') return 90
+  return 0 // 'all'
+}
+
 function filterSessionsByPeriod(sessions: Session[], period: Period): Session[] {
-  if (period === 'all') return sessions
-  const cutoff = subDays(new Date(), period === 'week' ? 7 : 30)
+  const days = periodDays(period)
+  if (days === 0) return sessions
+  const cutoff = subDays(new Date(), days)
   return sessions.filter((s) => new Date(s.startAt) >= cutoff)
 }
 
@@ -53,11 +63,10 @@ export default function ReportsPage() {
 
   // Period filter second
   const sessions = useMemo(() => filterSessionsByPeriod(scopeFiltered, period), [scopeFiltered, period])
-
   // Previous period for comparison
   const prevSessions = useMemo(() => {
     if (period === 'all') return [] as Session[]
-    const days = period === 'week' ? 7 : 30
+    const days = periodDays(period)
     const now = new Date()
     const periodStart = subDays(now, days)
     const prevEnd = subDays(periodStart, 1)
@@ -117,7 +126,7 @@ export default function ReportsPage() {
   // ── Daily Trend (last 30 days heatmap) ──
   const dailyTrend = useMemo(() => {
     const byDate = minutesByDate(sessions)
-    const days = period === 'week' ? 7 : period === 'month' ? 30 : 30
+    const days = periodDays(period) || 90
     const items: { date: Date; ds: string; minutes: number }[] = []
     for (let i = 0; i < days; i++) {
       const d = subDays(new Date(), days - 1 - i)
@@ -201,7 +210,8 @@ export default function ReportsPage() {
     // Comparison vs last period
     if (pctChange !== null && period !== 'all') {
       const arrow = pctChange >= 0 ? '↑' : '↓'
-      out.push(`${arrow} ${Math.abs(pctChange)}% vs last ${period === 'week' ? 'week' : 'month'} (${formatHours(prevTotal)}h → ${formatHours(totalMinutes)}h)`)
+      const periodLabel = period === 'week' ? 'week' : period === 'month' ? 'month' : '3 months'
+      out.push(`${arrow} ${Math.abs(pctChange)}% vs last ${periodLabel} (${formatHours(prevTotal)}h → ${formatHours(totalMinutes)}h)`)
     }
 
     // Session count insight
@@ -214,8 +224,8 @@ export default function ReportsPage() {
 
   if (isLoading) return <PageSpinner />
 
-  const dailyMax = dailyTrend.maxMinutes
   const todayStr = format(new Date(), 'yyyy-MM-dd')
+  const settings = loadSettings()
 
   return (
     <div className="space-y-6">
@@ -369,44 +379,68 @@ export default function ReportsPage() {
         )}
       </Card>
 
-      {/* 4. Daily Trend heatmap */}
+      {/* 4. Daily Trend bar chart */}
       <Card>
         <CardHeader>
           <CardTitle>Daily Trend</CardTitle>
         </CardHeader>
-        <div className="flex gap-1">
-          <div className="flex flex-col gap-1 pr-1">
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((l, i) => (
-              <div key={i} className="flex h-4 w-3 items-center justify-center text-[9px] text-slate-400">{l}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1 flex-1">
-            {dailyTrend.items.map(({ date, ds, minutes }) => {
-              const intensity = minutes === 0 ? 0 : 0.3 + (minutes / dailyMax) * 0.7
-              const isToday = ds === todayStr
-              return (
-                <div
-                  key={ds}
-                  title={`${format(date, 'd MMM')}: ${formatMinutes(minutes)}`}
-                  className={cn(
-                    'h-4 w-full rounded-sm transition-all',
-                    isToday && 'ring-2 ring-primary-500',
-                    minutes === 0 && 'bg-slate-100 dark:bg-slate-800',
-                  )}
-                  style={minutes > 0 ? { backgroundColor: `rgba(34, 197, 94, ${intensity})` } : undefined}
-                />
-              )
-            })}
-          </div>
-        </div>
-        <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-500">
-          <span>Less</span>
-          <div className="h-3 w-3 rounded-sm bg-slate-100 dark:bg-slate-800" />
-          <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.3)' }} />
-          <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.65)' }} />
-          <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 1)' }} />
-          <span>More</span>
-        </div>
+        {(() => {
+          const chartMax = Math.max(dailyTrend.maxMinutes, settings.dailyTargetMinutes, 1)
+          const targetPct = settings.dailyTargetMinutes > 0
+            ? (settings.dailyTargetMinutes / chartMax) * 100
+            : 100
+          return (
+            <>
+              <div className="overflow-x-auto">
+                <div className="relative flex h-40 min-w-full items-end gap-1">
+                  {/* Target line */}
+                  <div
+                    className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-amber-500"
+                    style={{ bottom: `${targetPct}%` }}
+                    aria-hidden
+                  />
+                  <div
+                    className="pointer-events-none absolute right-1 -translate-y-1/2 rounded bg-amber-500 px-1 text-[10px] font-medium leading-4 text-white"
+                    style={{ bottom: `calc(${targetPct}% + 2px)` }}
+                    aria-hidden
+                  >
+                    Target {settings.dailyTargetMinutes}m
+                  </div>
+                  {dailyTrend.items.map(({ date, ds, minutes }) => {
+                    const isToday = ds === todayStr
+                    const heightPct = (minutes / chartMax) * 100
+                    return (
+                      <div
+                        key={ds}
+                        className="flex h-full w-3 shrink-0 flex-col items-center justify-end"
+                        title={`${format(date, 'd MMM')}: ${formatMinutes(minutes)}`}
+                      >
+                        <div
+                          className={cn(
+                            'w-full rounded-t-sm transition-all',
+                            isToday && 'ring-2 ring-primary-500',
+                            minutes === 0 ? 'bg-slate-100 dark:bg-slate-800' : 'bg-primary-500',
+                          )}
+                          style={{ height: `${heightPct}%`, minHeight: minutes > 0 ? '2px' : 0 }}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="mt-2 flex items-center justify-end gap-2 text-xs text-slate-500">
+                <span className="inline-flex items-center gap-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded-sm bg-primary-500" />
+                  Minutes
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="inline-block h-0 w-3 border-t border-dashed border-amber-500" />
+                  Target
+                </span>
+              </div>
+            </>
+          )
+        })()}
       </Card>
 
       {/* 5. Grades by Subject */}
@@ -436,8 +470,40 @@ export default function ReportsPage() {
           </div>
         </Card>
       )}
+      {/* 6. Habits Summary */}
+      {data.habits.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Habits Summary</CardTitle>
+          </CardHeader>
+          <div className="space-y-3">
+            {data.habits.filter(h => !h.archivedAt).map(habit => {
+              const logs = data.habitLogs.filter(l => l.habitId === habit.id)
+              const uniqueDays = new Set(logs.map(l => l.date)).size
+              const recentLogs = logs.filter(l => {
+                const d = new Date(l.date)
+                const now = new Date()
+                return (now.getTime() - d.getTime()) < 7 * 86400000
+              }).length
+              return (
+                <div key={habit.id} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: habit.color }} />
+                    <span className="text-slate-700 dark:text-slate-300">{habit.name}</span>
+                    <span className="text-xs text-slate-400">({habit.kind})</span>
+                  </div>
+                  <div className="text-right text-xs text-slate-500">
+                    <span>{recentLogs} logs this week</span>
+                    <span className="ml-2">{uniqueDays} total days</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
 
-      {/* 6. Study Distribution by Day of Week */}
+      {/* 7. Study Distribution by Day of Week */}
       <Card>
         <CardHeader>
           <CardTitle>Study Distribution</CardTitle>

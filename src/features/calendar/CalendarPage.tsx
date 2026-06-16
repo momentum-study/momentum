@@ -64,7 +64,14 @@ const emptyMarkForm = (): MarkForm => ({ score: '', total: '100' })
 export default function CalendarPage() {
   const { data, isLoading, loadData } = useData()
   const [viewDate, setViewDate] = useState(() => new Date())
-
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)')
+    setIsMobile(mql.matches)
+    function onChange(e: MediaQueryListEvent) { setIsMobile(e.matches) }
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Assignment | null>(null)
   const [form, setForm] = useState<TaskForm>(() => emptyForm(data.subjects))
@@ -339,7 +346,64 @@ export default function CalendarPage() {
         ))}
       </div>
 
-      {/* Monthly calendar */}
+      {/* Monthly calendar — list view on mobile, grid on desktop */}
+      {isMobile ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{format(monthStart, 'MMMM yyyy')}</CardTitle>
+          </CardHeader>
+          {monthDays.every((d) => (tasksByDate.get(format(d, 'yyyy-MM-dd')) ?? []).length === 0 && (projectsByDate.get(format(d, 'yyyy-MM-dd')) ?? []).length === 0) ? (
+            <EmptyState title="No tasks this month" description="Your calendar is clear." />
+          ) : (
+            <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+              {monthDays
+                .filter((d) => {
+                  const key = format(d, 'yyyy-MM-dd')
+                  return (tasksByDate.get(key) ?? []).length > 0 || (projectsByDate.get(key) ?? []).length > 0
+                })
+                .map((d) => {
+                  const key = format(d, 'yyyy-MM-dd')
+                  const items = tasksByDate.get(key) ?? []
+                  const projects = projectsByDate.get(key) ?? []
+                  const today = isToday(d)
+                  return (
+                    <li key={key} className="py-3">
+                      <div className={cn('mb-2 flex items-center gap-2 text-sm font-medium', today ? 'text-primary-600' : 'text-slate-700 dark:text-slate-100')}>
+                        <span>{format(d, 'EEE, MMM d')}</span>
+                        {today && <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">Today</span>}
+                      </div>
+                      <ul className="space-y-1.5">
+                        {items.map((it) => (
+                          <li key={it.id}>
+                            <button
+                              onClick={() => openEditModal(it)}
+                              className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              <span
+                                className="inline-block h-2 w-2 flex-shrink-0 rounded-full"
+                                style={{ backgroundColor: catColor(it.category) }}
+                                aria-hidden="true"
+                              />
+                              <span className={cn('flex-1 text-sm', it.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-100')}>
+                                {it.title}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                        {projects.map((p) => (
+                          <li key={p.id} className="flex items-center gap-2 rounded bg-amber-100 px-2 py-1 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                            <span aria-hidden="true">🎯</span>
+                            <span className="text-sm font-medium">{p.name}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  )
+                })}
+            </ul>
+          )}
+        </Card>
+      ) : (
       <Card>
         <CardHeader>
           <CardTitle>{format(monthStart, 'MMMM yyyy')}</CardTitle>
@@ -389,6 +453,7 @@ export default function CalendarPage() {
                             <span
                               className="inline-block h-2 w-2 rounded-full flex-shrink-0"
                               style={{ backgroundColor: catColor(it.category) }}
+                              aria-hidden="true"
                             />
                             <span className={cn('text-xs', it.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-100')}>
                               {it.title}
@@ -421,6 +486,7 @@ export default function CalendarPage() {
           ))}
         </div>
       </Card>
+      )}
 
       {/* Upcoming tasks */}
       <Card>

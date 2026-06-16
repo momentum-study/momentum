@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { v4 as uuid } from 'uuid'
+import { cn, isoNow } from '../../lib/utils'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
+import { ColorPicker } from '../../components/ui/ColorPicker'
+import { EmptyState } from '../../components/ui/EmptyState'
+import { PageSpinner } from '../../components/ui/Spinner'
+import { Collapsible } from '../../components/ui/Collapsible'
 import { useData } from '../../app/providers'
 import { useAuth } from '../../app/auth-provider'
+import { db } from '../../db/app-db'
 import { downloadBackup, readBackupFile, importBackup, ImportMode } from '../../lib/backup'
+import type { Category } from '../../domain/types'
 
 const STORAGE_KEY = 'momentum-settings'
 
@@ -287,22 +295,192 @@ function AccountSettings() {
     </Card>
   )
 }
-
+// ── Categories (inline manage section) ───────────────────────────────────────
+interface CategoryFormData {
+  name: string
+  scope: Category['scope']
+  color: string
+}
+const emptyCategoryForm: CategoryFormData = {
+  name: '',
+  scope: 'academic',
+  color: '#6366f1',
+}
+function CategoriesManager() {
+  const { data, isLoading, loadData } = useData()
+  const [showModal, setShowModal] = useState(false)
+  const [editCategory, setEditCategory] = useState<Category | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<Category | null>(null)
+  const [form, setForm] = useState<CategoryFormData>(emptyCategoryForm)
+  const [saving, setSaving] = useState(false)
+  if (isLoading) return <PageSpinner />
+  const academic = data.categories.filter((c) => c.scope === 'academic')
+  const nonAcademic = data.categories.filter((c) => c.scope === 'nonAcademic')
+  function openAdd() {
+    setEditCategory(null)
+    setForm(emptyCategoryForm)
+    setShowModal(true)
+  }
+  function openEdit(cat: Category) {
+    setEditCategory(cat)
+    setForm({ name: cat.name, scope: cat.scope, color: cat.color })
+    setShowModal(true)
+  }
+  async function save() {
+    if (!form.name.trim()) return
+    setSaving(true)
+    try {
+      const now = isoNow()
+      if (editCategory) {
+        await db.categories.update(editCategory.id, {
+          name: form.name.trim(),
+          scope: form.scope,
+          color: form.color,
+          updatedAt: now,
+        })
+      } else {
+        await db.categories.add({
+          id: uuid(),
+          name: form.name.trim(),
+          scope: form.scope,
+          color: form.color,
+          createdAt: now,
+          updatedAt: now,
+        })
+      }
+      await loadData()
+      setShowModal(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+  async function deleteCat() {
+    if (!deleteConfirm) return
+    setSaving(true)
+    try {
+      await db.categories.delete(deleteConfirm.id)
+      await loadData()
+      setDeleteConfirm(null)
+    } finally {
+      setSaving(false)
+    }
+  }
+  function subjectCount(cat: Category): number {
+    return data.subjects.filter((s) => s.categoryId === cat.id).length
+  }
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Categories</h3>
+        <Button variant="primary" size="sm" onClick={openAdd}>Add Category</Button>
+      </div>
+      <Collapsible id="settings-categories-academic" title="Academic" count={academic.length} defaultOpen={true} accent="#6366f1">
+        {academic.length === 0 ? (
+          <EmptyState title="No academic categories" description="Add categories like English, Maths, Science." />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {academic.map((cat) => {
+              const n = subjectCount(cat)
+              return (
+                <Card key={cat.id}>
+                  <div className="flex items-center gap-3">
+                    <div className="h-4 w-4 rounded-full" style={{ backgroundColor: cat.color }} />
+                    <div className="flex-1 font-medium text-slate-800 dark:text-slate-100">{cat.name}</div>
+                    <Button variant="secondary" size="sm" onClick={() => openEdit(cat)}>Edit</Button>
+                    <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(cat)}>Delete</Button>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`}
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </Collapsible>
+      <Collapsible id="settings-categories-general" title="General" count={nonAcademic.length} defaultOpen={true} accent="#14b8a6">
+        {nonAcademic.length === 0 ? (
+          <EmptyState title="No general categories" description="Add categories like Chores, Hobbies." />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {nonAcademic.map((cat) => {
+              const n = subjectCount(cat)
+              return (
+                <Card key={cat.id}>
+                  <div className="flex items-center gap-3">
+                    <div className="h-4 w-4 rounded-full" style={{ backgroundColor: cat.color }} />
+                    <div className="flex-1 font-medium text-slate-800 dark:text-slate-100">{cat.name}</div>
+                    <Button variant="secondary" size="sm" onClick={() => openEdit(cat)}>Edit</Button>
+                    <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(cat)}>Delete</Button>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`}
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </Collapsible>
+      <Modal open={showModal} onClose={() => setShowModal(false)} title={editCategory ? 'Edit Category' : 'Add Category'}>
+        <div className="space-y-4">
+          <div>
+            <label className="label">Name</label>
+            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. English" />
+          </div>
+          <div>
+            <label className="label">Scope</label>
+            <select className="input" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value as Category['scope'] })}>
+              <option value="academic">Academic</option>
+              <option value="nonAcademic">General</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Colour</label>
+            <ColorPicker value={form.color} onChange={(c) => setForm({ ...form, color: c })} />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={save} disabled={saving}>
+              {saving ? 'Saving...' : editCategory ? 'Update' : 'Create'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      <Modal open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} title="Delete Category?">
+        <p className="text-sm text-slate-600 dark:text-slate-400">
+          Delete <span className="font-semibold">{deleteConfirm?.name}</span>? Focus areas in this category will become uncategorized.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+          <Button variant="danger" onClick={deleteCat} disabled={saving}>{saving ? 'Deleting...' : 'Delete'}</Button>
+        </div>
+      </Modal>
+    </div>
+  )
+}
+const TABS = ['General', 'Timer', 'Categories', 'Data'] as const
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>(loadSettings)
   const [saved, setSaved] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>('General')
+  const [resetModalOpen, setResetModalOpen] = useState(false)
+  const [resetInput, setResetInput] = useState('')
 
+  // Debounced auto-save + cloud push (500ms)
   useEffect(() => {
-    saveSettings(settings)
-    applyDarkMode(settings.darkMode)
-    // Push to cloud if signed in
-    const uid = localStorage.getItem('momentum-cloud-uid')
-    if (uid) {
-      const dashboardWidgets = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? '[]')
-      const navPrefs = JSON.parse(localStorage.getItem('momentum-nav-prefs') ?? '{}')
-    import('../../lib/settings-sync').then(({ pushSettings }) => pushSettings(uid, settings, dashboardWidgets, navPrefs))
-    }
+    const timer = setTimeout(() => {
+      saveSettings(settings)
+      applyDarkMode(settings.darkMode)
+      const uid = localStorage.getItem('momentum-cloud-uid')
+      if (uid) {
+        const dashboardWidgets = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? '[]')
+        const navPrefs = JSON.parse(localStorage.getItem('momentum-nav-prefs') ?? '{}')
+        import('../../lib/settings-sync').then(({ pushSettings }) => pushSettings(uid, settings, dashboardWidgets, navPrefs))
+      }
+    }, 500)
+    return () => clearTimeout(timer)
   }, [settings])
 
   useEffect(() => {
@@ -325,112 +503,172 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Appearance</CardTitle>
-        </CardHeader>
-        <SettingsField label="Dark Mode">
-          <Toggle value={settings.darkMode} onChange={(v) => update({ darkMode: v })} />
-        </SettingsField>
-      </Card>
+      {/* Tab bar */}
+      <div className="inline-flex rounded-full bg-slate-200 p-1 dark:bg-slate-700">
+        {TABS.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
+              activeTab === tab
+                ? 'bg-primary-600 text-white'
+                : 'text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
+            )}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Pomodoro Timer</CardTitle>
-        </CardHeader>
-        <div className="divide-y divide-slate-100 dark:divide-slate-700">
-          <SettingsField label="Show Pomodoro mode">
-            <Toggle value={settings.pomodoroEnabled} onChange={(v) => update({ pomodoroEnabled: v })} />
-          </SettingsField>
-          <SettingsField label="Focus minutes">
-            <NumberInput value={settings.pomodoroFocusMinutes} onChange={(v) => update({ pomodoroFocusMinutes: v })} min={1} />
-          </SettingsField>
-          <SettingsField label="Short break minutes">
-            <NumberInput value={settings.pomodoroBreakMinutes} onChange={(v) => update({ pomodoroBreakMinutes: v })} min={1} />
-          </SettingsField>
-          <SettingsField label="Long break minutes">
-            <NumberInput value={settings.pomodoroLongBreakMinutes} onChange={(v) => update({ pomodoroLongBreakMinutes: v })} min={1} />
-          </SettingsField>
-          <SettingsField label="Cycles before long break">
-            <NumberInput value={settings.pomodoroCyclesBeforeLongBreak} onChange={(v) => update({ pomodoroCyclesBeforeLongBreak: v })} min={1} />
-          </SettingsField>
+      {/* General tab: Appearance + Study Targets + Habits */}
+      {activeTab === 'General' && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Appearance</CardTitle>
+            </CardHeader>
+            <SettingsField label="Dark Mode">
+              <Toggle value={settings.darkMode} onChange={(v) => update({ darkMode: v })} />
+            </SettingsField>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Daily Target</CardTitle>
+            </CardHeader>
+            <SettingsField label="Daily study goal (minutes)">
+              <NumberInput value={settings.dailyTargetMinutes} onChange={(v) => update({ dailyTargetMinutes: v })} />
+            </SettingsField>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Notifications</CardTitle>
+            </CardHeader>
+            <SettingsField label="Play sound on timer end">
+              <Toggle value={settings.soundEnabled} onChange={(v) => update({ soundEnabled: v })} />
+            </SettingsField>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Habits</CardTitle>
+            </CardHeader>
+            <div className="divide-y divide-slate-100 dark:divide-slate-700">
+              <SettingsField label="Habit limit">
+                <NumberInput value={settings.maxActiveHabits} onChange={(v) => update({ maxActiveHabits: v })} min={1} />
+              </SettingsField>
+              <SettingsField label="Suggestion threshold (days)">
+                <NumberInput value={settings.defaultArchiveDays} onChange={(v) => update({ defaultArchiveDays: v })} min={1} />
+              </SettingsField>
+            </div>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Research suggests 1–3 habits is optimal for building consistency. The threshold shows a gentle suggestion to archive once a habit feels automatic.
+            </p>
+          </Card>
+        </>
+      )}
+
+      {/* Timer tab: Pomodoro settings */}
+      {activeTab === 'Timer' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Pomodoro Timer</CardTitle>
+          </CardHeader>
+          <div className="divide-y divide-slate-100 dark:divide-slate-700">
+            <SettingsField label="Show Pomodoro mode">
+              <Toggle value={settings.pomodoroEnabled} onChange={(v) => update({ pomodoroEnabled: v })} />
+            </SettingsField>
+            <SettingsField label="Focus minutes">
+              <NumberInput value={settings.pomodoroFocusMinutes} onChange={(v) => update({ pomodoroFocusMinutes: v })} min={1} />
+            </SettingsField>
+            <SettingsField label="Short break minutes">
+              <NumberInput value={settings.pomodoroBreakMinutes} onChange={(v) => update({ pomodoroBreakMinutes: v })} min={1} />
+            </SettingsField>
+            <SettingsField label="Long break minutes">
+              <NumberInput value={settings.pomodoroLongBreakMinutes} onChange={(v) => update({ pomodoroLongBreakMinutes: v })} min={1} />
+            </SettingsField>
+            <SettingsField label="Cycles before long break">
+              <NumberInput value={settings.pomodoroCyclesBeforeLongBreak} onChange={(v) => update({ pomodoroCyclesBeforeLongBreak: v })} min={1} />
+            </SettingsField>
+          </div>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            When disabled, only the simple count-up timer is shown on the Dashboard.
+          </p>
+        </Card>
+      )}
+      {/* Categories tab: inline manage section */}
+      {activeTab === 'Categories' && <CategoriesManager />}
+
+      {/* Data tab: Data Import + Danger Zone + Account */}
+      {activeTab === 'Data' && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Data Management</CardTitle>
+            </CardHeader>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Export your data as a JSON file to back it up, or import a previously exported backup.
+              Exports include all study data and your settings (timer config, daily target, etc.).
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={async () => { await downloadBackup() }}>
+                Export Data (JSON)
+              </Button>
+              <DataImport />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Reset</CardTitle>
+            </CardHeader>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Reset all settings to defaults. Your study data is not affected.
+            </p>
+            <div className="mt-3">
+              <Button variant="danger" size="sm" onClick={() => { setResetModalOpen(true); setResetInput('') }}>
+                Reset All Settings
+              </Button>
+            </div>
+          </Card>
+
+          <AccountSettings />
+        </>
+      )}
+
+      {/* Reset Settings Modal */}
+      <Modal open={resetModalOpen} onClose={() => setResetModalOpen(false)} title="Reset All Settings">
+        <div className="space-y-4">
+          <div className="rounded bg-yellow-50 px-3 py-2 text-sm text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300">
+            ⚠️ This will reset all your settings to their default values. This does <strong>not</strong> delete any of your study data, sessions, or habits.
+          </div>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Type <strong>RESET</strong> below to confirm:
+          </p>
+          <input
+            type="text"
+            value={resetInput}
+            onChange={(e) => setResetInput(e.target.value)}
+            placeholder="Type RESET"
+            className="input w-full"
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setResetModalOpen(false)}>Cancel</Button>
+            <Button
+              variant="danger"
+              disabled={resetInput !== 'RESET'}
+              onClick={() => {
+                localStorage.removeItem(STORAGE_KEY)
+                window.location.reload()
+              }}
+            >
+              Reset Settings
+            </Button>
+          </div>
         </div>
-        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          When disabled, only the simple count-up timer is shown on the Dashboard.
-        </p>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Daily Target</CardTitle>
-        </CardHeader>
-        <SettingsField label="Daily study goal (minutes)">
-          <NumberInput value={settings.dailyTargetMinutes} onChange={(v) => update({ dailyTargetMinutes: v })} />
-        </SettingsField>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Notifications</CardTitle>
-        </CardHeader>
-        <SettingsField label="Play sound on timer end">
-          <Toggle value={settings.soundEnabled} onChange={(v) => update({ soundEnabled: v })} />
-        </SettingsField>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Habits</CardTitle>
-        </CardHeader>
-        <div className="divide-y divide-slate-100 dark:divide-slate-700">
-          <SettingsField label="Habit limit">
-            <NumberInput value={settings.maxActiveHabits} onChange={(v) => update({ maxActiveHabits: v })} min={1} />
-          </SettingsField>
-          <SettingsField label="Suggestion threshold (days)">
-            <NumberInput value={settings.defaultArchiveDays} onChange={(v) => update({ defaultArchiveDays: v })} min={1} />
-          </SettingsField>
-        </div>
-        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          Research suggests 1–3 habits is optimal for building consistency. The threshold shows a gentle suggestion to archive once a habit feels automatic.
-        </p>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Data Management</CardTitle>
-        </CardHeader>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Export your data as a JSON file to back it up, or import a previously exported backup.
-          Exports include all study data and your settings (timer config, daily target, etc.).
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={async () => { await downloadBackup() }}>
-            Export Data (JSON)
-          </Button>
-          <DataImport />
-        </div>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Reset</CardTitle>
-        </CardHeader>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Reset all settings to defaults. Your study data is not affected.
-        </p>
-        <div className="mt-3">
-          <Button variant="secondary" size="sm" onClick={() => {
-            if (confirm('Reset all settings to defaults?')) {
-              localStorage.removeItem(STORAGE_KEY)
-              window.location.reload()
-            }
-          }}>
-            Reset Settings
-          </Button>
-        </div>
-      </Card>
-
-      <AccountSettings />
+      </Modal>
     </div>
   )
 }

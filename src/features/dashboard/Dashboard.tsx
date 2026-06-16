@@ -13,7 +13,7 @@ import { Modal } from '../../components/ui/Modal'
 import { cn, formatMinutes, getSessionScope, isoNow } from '../../lib/utils'
 import { loadSettings } from '../settings/SettingsPage'
 import { db } from '../../db/app-db'
-import { updateRoutineLogsForSession, revertRoutineLogsForSession } from '../../lib/routine-tracker'
+import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakDayForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
 import { useSessionSync } from '../../lib/use-session-sync'
 import type { Session, DayOfWeek, RoutineLog } from '../../domain/types'
 import { Link } from 'react-router-dom'
@@ -145,14 +145,15 @@ export default function Dashboard() {
     await db.sessions.add(session)
     const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
     await updateRoutineLogsForSession(session)
+    await updateStreakDayForSession(session)
     syncSession(session, subjectName)
     await loadData()
     let description = `Logged ${logDuration}m${project ? ` for ${project.name}` : ` study for ${subjectName}`}`
     if (task) description += ` (${task.title})`
     push({
       description,
-      undo: async () => { await db.sessions.delete(session.id); await loadData() },
-      redo: async () => { await db.sessions.add(session); await loadData() },
+      undo: async () => { await db.sessions.delete(session.id); await revertStreakDayForSession(session); await loadData() },
+      redo: async () => { await db.sessions.add(session); await updateStreakDayForSession(session); await loadData() },
     })
     setLogSubjectId('')
     setLogProjectId('')
@@ -176,6 +177,7 @@ export default function Dashboard() {
       updatedAt: isoNow(),
     }
     await db.sessions.update(editLog.id, updated)
+    await updateStreakDayForSession({ ...editLog, ...updated })
     await loadData()
     setEditLog(null)
     push({
@@ -190,11 +192,12 @@ export default function Dashboard() {
     if (!session) return
     await db.sessions.delete(id)
     await revertRoutineLogsForSession(session)
+    await revertStreakDayForSession(session)
     await loadData()
     push({
       description: `Deleted session (${session.durationMinutes}m)`,
-      undo: async () => { await db.sessions.add(session); await updateRoutineLogsForSession(session); await loadData() },
-      redo: async () => { await db.sessions.delete(id); await revertRoutineLogsForSession(session); await loadData() },
+      undo: async () => { await db.sessions.add(session); await updateRoutineLogsForSession(session); await updateStreakDayForSession(session); await loadData() },
+      redo: async () => { await db.sessions.delete(id); await revertRoutineLogsForSession(session); await revertStreakDayForSession(session); await loadData() },
     })
   }
 
@@ -446,6 +449,7 @@ export default function Dashboard() {
                 const mins = minutesByDay[dateStr] ?? 0
                 const intensity = mins / heatMax
                 const isToday = dateStr === todayStr
+                const isFuture = dateStr > todayStr
                 return (
                   <div
                     key={dayNum}
@@ -453,7 +457,8 @@ export default function Dashboard() {
                     className={cn(
                       'flex h-9 flex-col items-center justify-center rounded text-xs transition-all',
                       isToday && 'ring-2 ring-primary-500',
-                      mins === 0 && 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                      isFuture && 'text-slate-300 dark:text-slate-600',
+                      !isFuture && mins === 0 && 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
                       mins > 0 && 'text-white font-medium',
                     )}
                     style={mins > 0 ? { backgroundColor: `rgba(34, 197, 94, ${0.3 + intensity * 0.7})` } : undefined}
@@ -512,7 +517,7 @@ export default function Dashboard() {
                               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.subjectColor }} />
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{session.subjectName}{project && <span className="text-slate-500"> · {project.name}</span>}</div>
-                                <div className="text-xs text-slate-500">{formatDistanceToNow(new Date(session.startAt), { addSuffix: true })}</div>
+                                <div className="text-xs text-slate-500">{formatDistanceToNow(new Date(session.startAt), { addSuffix: true })}{session.source === 'timer' ? ' ⏱' : session.source === 'pomodoro' ? ' 🍅' : ' ✏️'}</div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { format, parseISO } from 'date-fns'
+import { differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
@@ -189,9 +189,29 @@ export default function ProjectsPage() {
                         </div>
                       </div>
                     )}
-                    {project.dueDate && (
-                      <div className="mt-2 text-sm text-slate-500">Deadline: {format(parseISO(project.dueDate), 'MMM d, yyyy')}</div>
-                    )}
+                    {project.dueDate && (() => {
+                      const daysUntil = differenceInCalendarDays(parseISO(project.dueDate), new Date())
+                      let pillClass = ''
+                      let label = ''
+                      if (daysUntil < 0) {
+                        pillClass = 'text-red-600 bg-red-50'
+                        label = 'Overdue'
+                      } else if (daysUntil <= 3) {
+                        pillClass = 'text-amber-600 bg-amber-50'
+                        label = 'Due soon'
+                      } else if (daysUntil <= 7) {
+                        pillClass = 'text-blue-600 bg-blue-50'
+                        label = 'Upcoming'
+                      }
+                      return (
+                        <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+                          <span>Deadline: {format(parseISO(project.dueDate), 'MMM d, yyyy')}</span>
+                          {label && (
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${pillClass}`}>{label}</span>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 </Card>
               </Link>

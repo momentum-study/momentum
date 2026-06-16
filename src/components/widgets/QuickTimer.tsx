@@ -5,7 +5,7 @@ import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { useData } from '../../app/providers'
 import { useSessionSync } from '../../lib/use-session-sync'
-import { updateRoutineLogsForSession } from '../../lib/routine-tracker'
+import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
 import { isoNow } from '../../lib/utils'
 
 function fmt(seconds: number): string {
@@ -108,6 +108,7 @@ export default function QuickTimer() {
         await db.sessions.add(session)
         syncSession(session, data.subjects[0].name)
         await updateRoutineLogsForSession(session)
+        await updateStreakDayForSession(session)
         await loadData()
       }
     }

@@ -2,8 +2,9 @@
 // for any Routine whose day + subject (+project) matches the session.
 import { v4 as uuid } from 'uuid'
 import { db } from '../db/app-db'
-import type { Session, RoutineLog, DayOfWeek } from '../domain/types'
+import type { Session, RoutineLog, StreakDay, DayOfWeek } from '../domain/types'
 import { getSessionScope, isoNow } from './utils'
+import { loadSettings } from '../features/settings/SettingsPage'
 
 /**
  * For the given session, find all matching routines (today's day + same subject
@@ -83,5 +84,75 @@ export async function revertRoutineLogsForSession(session: Session): Promise<voi
       actualMinutes: remaining,
       completed: remaining >= routine.targetMinutes,
     })
+  }
+}
+
+/**
+ * When a session is saved, recalculate the StreakDay for the session's date.
+ * Sums all academic session minutes for that date and compares against the
+ * user's dailyTargetMinutes setting. Upserts the StreakDay record.
+ */
+export async function updateStreakDayForSession(session: Session): Promise<void> {
+  const subjects = await db.subjects.toArray()
+  const categories = await db.categories.toArray()
+  if (getSessionScope(session, subjects, categories) !== 'academic') return
+
+  const dateKey = session.startAt.slice(0, 10) // YYYY-MM-DD
+  const settings = loadSettings()
+  const target = settings.dailyTargetMinutes
+
+  // Sum all academic session minutes for this date
+  const allSessions = await db.sessions.toArray()
+  let totalMinutes = 0
+  for (const s of allSessions) {
+    if (s.startAt.slice(0, 10) !== dateKey) continue
+    if (getSessionScope(s, subjects, categories) !== 'academic') continue
+    totalMinutes += s.durationMinutes
+  }
+
+  const goalMet = totalMinutes >= target
+  const existing = await db.streakDays.get(dateKey)
+
+  if (existing) {
+    await db.streakDays.update(dateKey, { totalMinutes, goalMet })
+  } else {
+    const streakDay: StreakDay = {
+      id: dateKey,
+      totalMinutes,
+      goalMet,
+      createdAt: isoNow(),
+    }
+    await db.streakDays.add(streakDay)
+  }
+}
+
+/**
+ * When a session is deleted, recalculate the StreakDay for the session's date.
+ * If no academic sessions remain for that date, remove the StreakDay record.
+ */
+export async function revertStreakDayForSession(session: Session): Promise<void> {
+  const subjects = await db.subjects.toArray()
+  const categories = await db.categories.toArray()
+  if (getSessionScope(session, subjects, categories) !== 'academic') return
+
+  const dateKey = session.startAt.slice(0, 10)
+  const settings = loadSettings()
+  const target = settings.dailyTargetMinutes
+
+  const allSessions = await db.sessions.toArray()
+  let totalMinutes = 0
+  for (const s of allSessions) {
+    if (s.startAt.slice(0, 10) !== dateKey) continue
+    if (s.id === session.id) continue // exclude the deleted session
+    if (getSessionScope(s, subjects, categories) !== 'academic') continue
+    totalMinutes += s.durationMinutes
+  }
+
+  const existing = await db.streakDays.get(dateKey)
+  if (totalMinutes === 0 && existing) {
+    await db.streakDays.delete(dateKey)
+  } else if (existing) {
+    const goalMet = totalMinutes >= target
+    await db.streakDays.update(dateKey, { totalMinutes, goalMet })
   }
 }

@@ -307,8 +307,7 @@ export default function Dashboard() {
         <Button className="mt-4 w-full" onClick={() => setCustomizeOpen(false)}>Done</Button>
       </Modal>
 
-      {data.sessions.length > 0 && (
-        <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
           <div className="flex items-center gap-4 text-sm">
             <span>
               Today: <strong className="text-slate-800 dark:text-slate-100">{formatMinutes(todayMinutes)}</strong>
@@ -323,8 +322,6 @@ export default function Dashboard() {
             </span>
           </div>
         </div>
-      )}
-
       {isWidgetVisible('today') && (
         <Collapsible id="dash-today" title="Today" defaultOpen={true}>
           <Card>
@@ -433,7 +430,7 @@ export default function Dashboard() {
                 </div>
                 <div className="grid grid-cols-7 gap-px rounded-sm border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 p-px">
                   {Array.from({ length: firstDow }).map((_, i) => <div key={`pad-${i}`} />)}
-                  {heatDays.map(({ date, ds, minutes }, idx) => {
+                  {heatDays.map(({ date, ds, minutes }) => {
                     const isToday = ds === todayStr
                     const isMissed = minutes === 0 && !isToday
                     const step = getIntensityStep(minutes, heatMax4w)
@@ -451,7 +448,7 @@ export default function Dashboard() {
                           step === 4 && 'bg-orange-800 text-white dark:bg-orange-900',
                         )}
                       >
-                        <span>{idx + 1}</span>
+                        <span>{date.getDate()}</span>
                         <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800">
                           {format(date, 'd MMM')}: {minutes}m
                         </div>
@@ -532,8 +529,12 @@ export default function Dashboard() {
                       isFuture && 'text-slate-300 dark:text-slate-600',
                       !isFuture && mins === 0 && 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
                       mins > 0 && 'text-white font-medium',
+                      mins > 0 && intensity < 0.2 && 'bg-green-200 dark:bg-green-900/50',
+                      mins > 0 && intensity >= 0.2 && intensity < 0.4 && 'bg-green-400 dark:bg-green-800',
+                      mins > 0 && intensity >= 0.4 && intensity < 0.6 && 'bg-green-600 dark:bg-green-700',
+                      mins > 0 && intensity >= 0.6 && intensity < 0.8 && 'bg-green-700 dark:bg-green-600',
+                      mins > 0 && intensity >= 0.8 && 'bg-green-800 dark:bg-green-500',
                     )}
-                    style={mins > 0 ? { backgroundColor: `rgba(34, 197, 94, ${0.3 + intensity * 0.7})` } : undefined}
                   >
                     <span>{dayNum}</span>
                     {mins > 0 && <span className="text-[10px] opacity-80">{formatMinutes(mins)}</span>}
@@ -544,9 +545,9 @@ export default function Dashboard() {
             <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-500">
               <span>No study</span>
               <div className="h-3 w-3 rounded-sm bg-slate-100 dark:bg-slate-800" />
-              <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.3)' }} />
-              <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.65)' }} />
-              <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 1)' }} />
+              <div className="h-3 w-3 rounded-sm bg-green-200 dark:bg-green-900/50" />
+              <div className="h-3 w-3 rounded-sm bg-green-600 dark:bg-green-700" />
+              <div className="h-3 w-3 rounded-sm bg-green-800 dark:bg-green-500" />
               <span>Full</span>
             </div>
           </Card>

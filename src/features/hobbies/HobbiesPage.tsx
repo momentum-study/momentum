@@ -5,6 +5,7 @@ import { useUndo } from '../../lib/use-undo'
 import { db } from '../../db/app-db'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
+import { ColorPicker } from '../../components/ui/ColorPicker'
 import { Modal } from '../../components/ui/Modal'
 import { cn, isoNow, formatMinutes } from '../../lib/utils'
 import { HOBBY_CATEGORIES, hobbySkillLevel, type Hobby, type HobbyCategory, type HobbySession } from '../../domain/types'
@@ -227,7 +228,7 @@ export default function HobbiesPage() {
             {HOBBY_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
           <label className="label">Color</label>
-          <input type="color" className="input h-10" value={hobbyFormData.color} onChange={(e) => setHobbyFormData({...hobbyFormData, color: e.target.value})} />
+          <ColorPicker value={hobbyFormData.color} onChange={(c) => setHobbyFormData({...hobbyFormData, color: c})} />
           <label className="label">Skill Level ({hobbyFormData.skillLevel}%)</label>
           <input type="range" min={0} max={100} className="w-full" value={hobbyFormData.skillLevel} onChange={(e) => setHobbyFormData({...hobbyFormData, skillLevel: Number(e.target.value)})} />
           <label className="label">Target Hours</label>
@@ -266,7 +267,10 @@ export default function HobbiesPage() {
                 <span className="w-4 h-4 rounded-full" style={{ backgroundColor: detailHobby.color }} />
                 <h3 className="text-lg font-semibold">{detailHobby.name}</h3>
               </div>
-              <button onClick={() => setDetailHobby(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700">✕</button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={() => setLogHobbyId(detailHobby.id)}>Log session</Button>
+                <button onClick={() => setDetailHobby(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700">✕</button>
+              </div>
             </div>
 
             {/* 90-day heatmap */}
@@ -296,7 +300,7 @@ export default function HobbiesPage() {
                     </div>
                     <div className="grid grid-cols-7 gap-px rounded-sm border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 p-px">
                       {Array.from({ length: firstDow }).map((_, i) => <div key={`pad-${i}`} />)}
-                      {heatDays.map(({ date, ds, minutes }, idx) => {
+                      {heatDays.map(({ date, ds, minutes }) => {
                         const isToday = ds === todayStr
                         const step = getIntensityStep(minutes, heatMax)
                         return (
@@ -312,7 +316,7 @@ export default function HobbiesPage() {
                               step === 4 && 'bg-primary-800 text-white dark:bg-primary-900',
                             )}
                           >
-                            <span>{idx + 1}</span>
+                            <span>{date.getDate()}</span>
                             <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800">
                               {format(date, 'd MMM')}: {minutes}m
                             </div>

@@ -359,31 +359,29 @@ export default function Dashboard() {
               </div>
               {streak === 0 && <p className="mt-2 text-sm text-slate-500">Log a session today to start your streak!</p>}
               <div className="mt-3">
-                <div className="flex gap-1">
-                  <div className="flex flex-col gap-1 pr-1">
-                    {dayLabels.map((l, i) => (
-                      <div key={i} className="flex h-4 w-3 items-center justify-center text-[9px] text-slate-400">{l}</div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-7 gap-1 flex-1">
-                    {Array.from({ length: firstDow }).map((_, i) => <div key={`pad-${i}`} />)}
-                    {heatDays.map(({ date, ds, minutes }) => {
-                      const intensity = minutes === 0 ? 0 : 0.3 + (minutes / heatMax4w) * 0.7
-                      const isToday = ds === todayStr
-                      return (
-                        <div
-                          key={ds}
-                          title={`${format(date, 'd MMM')}: ${formatMinutes(minutes)}`}
-                          className={cn(
-                            'h-4 w-full rounded-sm transition-all',
-                            isToday && 'ring-2 ring-orange-400',
-                            minutes === 0 && 'bg-slate-100 dark:bg-slate-800',
-                          )}
-                          style={minutes > 0 ? { backgroundColor: `rgba(249, 115, 22, ${intensity})` } : undefined}
-                        />
-                      )
-                    })}
-                  </div>
+                <div className="mb-1 grid grid-cols-7 gap-1 text-[9px] text-slate-400">
+                  {dayLabels.map((l, i) => (
+                    <div key={i} className="text-center">{l}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: firstDow }).map((_, i) => <div key={`pad-${i}`} />)}
+                  {heatDays.map(({ date, ds, minutes }) => {
+                    const intensity = minutes === 0 ? 0 : 0.3 + (minutes / heatMax4w) * 0.7
+                    const isToday = ds === todayStr
+                    return (
+                      <div
+                        key={ds}
+                        title={`${format(date, 'd MMM')}: ${formatMinutes(minutes)}`}
+                        className={cn(
+                          'h-4 w-full rounded-sm transition-all',
+                          isToday && 'ring-2 ring-orange-400',
+                          minutes === 0 && 'bg-slate-100 dark:bg-slate-800',
+                        )}
+                        style={minutes > 0 ? { backgroundColor: `rgba(249, 115, 22, ${intensity})` } : undefined}
+                      />
+                    )
+                  })}
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
                   <span>Milestones:</span>

@@ -8,6 +8,8 @@ import type {
   Category,
   Habit,
   HabitLog,
+  Hobby,
+  HobbySession,
   Mark,
   Project,
   ProgressLog,
@@ -33,6 +35,8 @@ export type AppData = {
   streakDays: StreakDay[]
   routines: Routine[]
   routineLogs: RoutineLog[]
+  hobbies: Hobby[]
+  hobbySessions: HobbySession[]
 }
 
 type ScopeFilter = 'all' | 'academic' | 'nonAcademic'
@@ -62,12 +66,15 @@ const emptyData: AppData = {
   streakDays: [],
   routines: [],
   routineLogs: [],
+  hobbies: [],
+  hobbySessions: [],
 }
+
 async function loadAllData(): Promise<AppData> {
   const [
     categories, subjects, projects, tasks, sessions, progressLogs,
     marks, assignments, habits, habitLogs, streakDays,
-    routines, routineLogs,
+    routines, routineLogs, hobbies, hobbySessions,
   ] = await Promise.all([
     db.categories.toArray(),
     db.subjects.toArray(),
@@ -82,10 +89,10 @@ async function loadAllData(): Promise<AppData> {
     db.streakDays.toArray(),
     db.routines.toArray(),
     db.routineLogs.toArray(),
+    db.hobbies.toArray(),
+    db.hobbySessions.toArray(),
   ])
 
-  // Filter out records with invalid/missing required date fields so sort() and format() don't crash.
-  // (Safeguard: cloud data from older app versions may lack these fields.)
   return {
     categories: [...categories].sort((a, b) => a.name.localeCompare(b.name)),
     subjects: [...subjects].sort((a, b) => a.name.localeCompare(b.name)),
@@ -106,6 +113,8 @@ async function loadAllData(): Promise<AppData> {
     streakDays: [...streakDays],
     routines: [...routines].sort((a, b) => a.name.localeCompare(b.name)),
     routineLogs: [...routineLogs].filter((l) => l.date),
+    hobbies: [...hobbies].sort((a, b) => a.name.localeCompare(b.name)),
+    hobbySessions: [...hobbySessions].sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
   }
 }
 
@@ -117,10 +126,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [scope, setScope] = useState<ScopeFilter>('all')
   const [rangePreset, setRangePreset] = useState<RangePreset>('week')
 
-  // Debounce loadData so rapid mutations (e.g. spam-deleting logs) coalesce
-  // into a single read instead of stacking 11-table scans on top of each other.
   const loadTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
-  const hasLoadedOnce = useRef(false)
   const loadData = useCallback(async () => {
     if (loadTimer.current) clearTimeout(loadTimer.current)
     loadTimer.current = setTimeout(async () => {
@@ -128,7 +134,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       try {
         const next = await loadAllData()
         setData(next)
-        hasLoadedOnce.current = true
       } catch (e) {
         console.error('loadAllData failed:', e)
       } finally {
@@ -142,13 +147,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     window.addEventListener('momentum-data-synced', onSynced)
     return () => window.removeEventListener('momentum-data-synced', onSynced)
   }, [loadData])
-  // On mount, if already signed in, pull fresh cloud data so this device
-  // shows whatever changes happened on other devices.
   useEffect(() => {
     const uid = localStorage.getItem('momentum-cloud-uid')
     if (!uid) return
     void pullAllData(uid).then(() => void loadData())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const value = useMemo(
     () => ({ data, isLoading: isInitialLoad, scope, rangePreset, setScope, setRangePreset, loadData }),
@@ -163,18 +165,13 @@ export function useData() {
   return context
 }
 
-/**
- * Subscribe to a single slice of AppData so re-renders only fire when that
- * slice changes (referential equality via shallow comparison).
- *
- * Example: `const sessions = useDataSelector(s => s.sessions)`
- */
 export function useDataSelector<T>(selector: (data: AppData) => T): T {
   const { data } = useData()
-  return useMemo(() => selector(data), [data]) // re-compute only when data object swaps
+  return useMemo(() => selector(data), [data])
 }
 
-/** Granular hooks — each page only subscribes to what it needs. */
 export function useSubjects()       { return useDataSelector(d => d.subjects) }
 export function useSessions()        { return useDataSelector(d => d.sessions) }
 export function useAssignments()     { return useDataSelector(d => d.assignments) }
+export function useHobbies()         { return useDataSelector(d => d.hobbies) }
+export function useHobbySessions()   { return useDataSelector(d => d.hobbySessions) }

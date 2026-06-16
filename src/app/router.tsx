@@ -11,6 +11,7 @@ import ReportsPage from '../features/reports/ReportsPage'
 import SettingsPage from '../features/settings/SettingsPage'
 import MarksPage from '../features/marks/MarksPage'
 import HabitsPage from '../features/habits/HabitsPage'
+import HobbiesPage from '../features/hobbies/HobbiesPage'
 import CalendarPage from '../features/calendar/CalendarPage'
 import CategoriesPage from '../features/categories/CategoriesPage'
 import GroupsPage from '../features/groups/GroupsPage'
@@ -31,6 +32,7 @@ export function AppRouter() {
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/marks" element={<MarksPage />} />
                 <Route path="/habits" element={<HabitsPage />} />
+                <Route path="/hobbies" element={<HobbiesPage />} />
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/categories" element={<CategoriesPage />} />
                 <Route path="/reports" element={<ReportsPage />} />

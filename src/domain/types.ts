@@ -180,3 +180,50 @@ export interface RoutineLog {
   completed: boolean         // true if actualMinutes >= targetMinutes
   createdAt: string
 }
+
+// Hobby tracker — non-academic activities (guitar, painting, cooking, sports).
+// Distinct from Subjects (academic, graded) and Habits (binary daily).
+// Tracks time spent, skill progression, and milestones.
+export type HobbyCategory = 'creative' | 'physical' | 'intellectual' | 'social' | 'other'
+
+export interface Hobby {
+  id: string
+  name: string
+  category: HobbyCategory
+  color: string
+  skillLevel: number // 0-100 (self-assessed or calculated from time)
+  targetHours: number // optional goal
+  notes: string // optional description
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string | null
+}
+
+export interface HobbySession {
+  id: string
+  hobbyId: string
+  durationMinutes: number
+  startAt: string // ISO datetime
+  endAt: string // ISO datetime
+  note: string // "Practiced scales", "Finished chapter 3"
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string | null
+}
+
+export const HOBBY_CATEGORIES: { value: HobbyCategory; label: string; color: string }[] = [
+  { value: 'creative', label: 'Creative', color: '#a855f7' },
+  { value: 'physical', label: 'Physical', color: '#10b981' },
+  { value: 'intellectual', label: 'Intellectual', color: '#3b82f6' },
+  { value: 'social', label: 'Social', color: '#f59e0b' },
+  { value: 'other', label: 'Other', color: '#64748b' },
+]
+
+/** Skill level label helpers */
+export function hobbySkillLevel(value: number): { label: string; color: string } {
+  if (value < 25) return { label: 'Beginner', color: 'text-slate-600 dark:text-slate-400' }
+  if (value < 50) return { label: 'Novice', color: 'text-blue-600 dark:text-blue-400' }
+  if (value < 75) return { label: 'Intermediate', color: 'text-amber-600 dark:text-amber-400' }
+  if (value < 90) return { label: 'Advanced', color: 'text-emerald-600 dark:text-emerald-400' }
+  return { label: 'Expert', color: 'text-purple-600 dark:text-purple-400' }
+}

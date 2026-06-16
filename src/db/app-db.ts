@@ -4,6 +4,8 @@ import type {
   Category,
   Habit,
   HabitLog,
+  Hobby,
+  HobbySession,
   Mark,
   Project,
   ProgressLog,
@@ -37,6 +39,8 @@ export class AppDB extends Dexie {
   streakDays!: Table<StreakDay, string>
   routines!: Table<Routine, string>
   routineLogs!: Table<RoutineLog, string>
+  hobbies!: Table<Hobby, string>
+  hobbySessions!: Table<HobbySession, string>
 
   constructor() {
     super('study-app')
@@ -66,6 +70,10 @@ export class AppDB extends Dexie {
     this.version(7).stores({
       routines: 'id, subjectId, name',
       routineLogs: 'id, routineId, date',
+    })
+    this.version(8).stores({
+      hobbies: 'id, category, name',
+      hobbySessions: 'id, hobbyId, startAt',
     })
   }
 }

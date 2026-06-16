@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/routines', label: 'Routines', icon: '📋' },
   { to: '/marks', label: 'Marks', icon: '📝' },
   { to: '/habits', label: 'Habits', icon: '🔥' },
+  { to: '/hobbies', label: 'Hobbies', icon: '🎨' },
   { to: '/groups', label: 'Groups', icon: '👥' },
   { to: '/calendar', label: 'Tasks', icon: '📅' },
   { to: '/categories', label: 'Categories', icon: '🗂️' },

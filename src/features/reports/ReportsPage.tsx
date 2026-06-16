@@ -532,6 +532,30 @@ export default function ReportsPage() {
         )}
       </Card>
 
+      {/* Hobby Hours */}
+      {data.hobbies.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Hobby Hours</CardTitle>
+          </CardHeader>
+          <div className="space-y-3">
+            {data.hobbies.map(h => {
+              const hobbySessions = data.hobbySessions.filter(s => s.hobbyId === h.id)
+              const totalMinutes = hobbySessions.reduce((acc, s) => acc + s.durationMinutes, 0)
+              return (
+                <div key={h.id} className="flex justify-between items-center text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: h.color }} />
+                    <span>{h.name}</span>
+                  </div>
+                  <span>{Math.floor(totalMinutes / 60)}h {totalMinutes % 60}m</span>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
+
       {/* 7. Insights */}
       <Card>
         <CardHeader>
@@ -542,6 +566,7 @@ export default function ReportsPage() {
         ) : (
           <ul className="space-y-1.5 text-sm text-slate-700 dark:text-slate-300">
             {insights.map((line, i) => (
+
               <li key={i}>• {line}</li>
             ))}
           </ul>

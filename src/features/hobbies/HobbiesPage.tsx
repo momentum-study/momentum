@@ -212,7 +212,7 @@ export default function HobbiesPage() {
             <div className="text-sm text-slate-500">
               Total time: {formatMinutes((hobbySessionsByHobby[hobby.id] || []).reduce((acc, s) => acc + s.durationMinutes, 0))}
             </div>
-            <Button variant="secondary" size="sm" className="w-full" onClick={(e) => { e.stopPropagation(); setLogHobbyId(hobby.id) }}>Log session</Button>
+            <Button variant="primary" size="sm" className="w-full" onClick={(e) => { e.stopPropagation(); setLogHobbyId(hobby.id) }}>Log session</Button>
           </Card>
         ))}
       </div>

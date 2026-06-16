@@ -116,12 +116,24 @@ export default function Dashboard() {
     return Math.max(1, ...vals)
   }, [minutesByDay, calendarMonth])
 
-  const [logSubjectId, setLogSubjectId] = useState('')
-  const [logProjectId, setLogProjectId] = useState('')
-  const [logTaskId, setLogTaskId] = useState('')
-  const [logDuration, setLogDuration] = useState(30)
-  const [logDate, setLogDate] = useState(todayStr)
-  const [logNote, setLogNote] = useState('')
+  const LOG_FORM_KEY = 'dash-log-form'
+  const persistedForm = (() => {
+    try { return JSON.parse(sessionStorage.getItem(LOG_FORM_KEY) ?? 'null') } catch { return null }
+  })()
+
+  const [logSubjectId, setLogSubjectId] = useState(persistedForm?.subjectId ?? '')
+  const [logProjectId, setLogProjectId] = useState(persistedForm?.projectId ?? '')
+  const [logTaskId, setLogTaskId] = useState(persistedForm?.taskId ?? '')
+  const [logDuration, setLogDuration] = useState(persistedForm?.duration ?? 30)
+  const [logDate, setLogDate] = useState(persistedForm?.date ?? todayStr)
+  const [logNote, setLogNote] = useState(persistedForm?.note ?? '')
+
+  useEffect(() => {
+    sessionStorage.setItem(LOG_FORM_KEY, JSON.stringify({
+      subjectId: logSubjectId, projectId: logProjectId, taskId: logTaskId,
+      duration: logDuration, date: logDate, note: logNote,
+    }))
+  }, [logSubjectId, logProjectId, logTaskId, logDuration, logDate, logNote])
 
   async function handleLogTime() {
     const project = logProjectId ? data.projects.find((p) => p.id === logProjectId) : undefined
@@ -155,6 +167,7 @@ export default function Dashboard() {
       undo: async () => { await db.sessions.delete(session.id); await revertStreakDayForSession(session); await loadData() },
       redo: async () => { await db.sessions.add(session); await updateStreakDayForSession(session); await loadData() },
     })
+    sessionStorage.removeItem(LOG_FORM_KEY)
     setLogSubjectId('')
     setLogProjectId('')
     setLogTaskId('')
@@ -238,6 +251,13 @@ export default function Dashboard() {
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Dashboard</h2>
         <Button variant="secondary" size="sm" onClick={() => setCustomizeOpen(true)}>Customise</Button>
       </div>
+      {isWidgetVisible('pomodoro') && (
+        <Collapsible id="dash-pomodoro" title="Study Timer" defaultOpen={true}>
+          <div className="rounded-lg border-2 border-primary-500 p-4">
+            <PomodoroTimer />
+          </div>
+        </Collapsible>
+      )}
 
       <Modal open={customizeOpen} onClose={() => setCustomizeOpen(false)} title="Customise Dashboard">
         <div className="space-y-2">
@@ -344,9 +364,17 @@ export default function Dashboard() {
           return { date: d, ds, minutes: minutesByDay[ds] ?? 0 }
         })
         const heatMax4w = Math.max(60, ...heatDays.map((d) => d.minutes))
-        const dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+        const dayLabels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
         // Layout: pad so first column is Sunday
         const firstDow = heatDays[0].date.getDay()
+        function getIntensityStep(minutes: number, max: number): number {
+          const intensity = max > 0 ? minutes / max : 0
+          if (intensity === 0) return 0
+          if (intensity < 0.2) return 1
+          if (intensity < 0.4) return 2
+          if (intensity < 0.6) return 3
+          return 4 // >= 0.6
+        }
         return (
         <Collapsible id="dash-streak-goal" title="Streak & Goal" defaultOpen={true}>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -362,27 +390,36 @@ export default function Dashboard() {
               </div>
               {streak === 0 && <p className="mt-2 text-sm text-slate-500">Log a session today to start your streak!</p>}
               <div className="mt-3">
-                <div className="mb-1 grid grid-cols-7 gap-1 text-[9px] text-slate-400">
+                <div className="mb-1 grid grid-cols-7 gap-px text-[10px] font-medium text-slate-400">
                   {dayLabels.map((l, i) => (
                     <div key={i} className="text-center">{l}</div>
                   ))}
                 </div>
-                <div className="grid grid-cols-7 gap-1">
+                <div className="grid grid-cols-7 gap-px rounded-sm border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 p-px">
                   {Array.from({ length: firstDow }).map((_, i) => <div key={`pad-${i}`} />)}
-                  {heatDays.map(({ date, ds, minutes }) => {
-                    const intensity = minutes === 0 ? 0 : 0.3 + (minutes / heatMax4w) * 0.7
+                  {heatDays.map(({ date, ds, minutes }, idx) => {
                     const isToday = ds === todayStr
+                    const isMissed = minutes === 0 && !isToday
+                    const step = getIntensityStep(minutes, heatMax4w)
                     return (
                       <div
                         key={ds}
-                        title={`${format(date, 'd MMM')}: ${formatMinutes(minutes)}`}
                         className={cn(
-                          'h-4 w-full rounded-sm transition-all',
-                          isToday && 'ring-2 ring-orange-400',
-                          minutes === 0 && 'bg-slate-100 dark:bg-slate-800',
+                          'group relative flex h-8 items-center justify-center text-[10px] font-medium transition-all',
+                          isToday && 'ring-2 ring-orange-400 ring-inset z-10',
+                          isMissed && 'bg-red-50 dark:bg-red-900/20',
+                          !isMissed && step === 0 && 'bg-white dark:bg-slate-800',
+                          step === 1 && 'bg-orange-200 dark:bg-orange-900/50',
+                          step === 2 && 'bg-orange-400 dark:bg-orange-800',
+                          step === 3 && 'bg-orange-600 text-white dark:bg-orange-700',
+                          step === 4 && 'bg-orange-800 text-white dark:bg-orange-900',
                         )}
-                        style={minutes > 0 ? { backgroundColor: `rgba(249, 115, 22, ${intensity})` } : undefined}
-                      />
+                      >
+                        <span>{idx + 1}</span>
+                        <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800">
+                          {format(date, 'd MMM')}: {minutes}m
+                        </div>
+                      </div>
                     )
                   })}
                 </div>
@@ -418,12 +455,11 @@ export default function Dashboard() {
         )
       })()}
 
-      {isWidgetVisible('pomodoro') && (
-        <Collapsible id="dash-pomodoro" title="Pomodoro Timer" defaultOpen={true}>
-          <PomodoroTimer />
+      {isWidgetVisible('quick-timer') && (
+        <Collapsible id="dash-quick-timer" title="Quick Timer" defaultOpen={true}>
+          <QuickTimer />
         </Collapsible>
       )}
-      {isWidgetVisible('quick-timer') && <QuickTimer />}
 
       {isWidgetVisible('calendar') && (
         <Collapsible id="dash-calendar" title="Study Calendar" defaultOpen={false}>
@@ -585,16 +621,34 @@ export default function Dashboard() {
       })()}
 
       {/* Floating Log Time button */}
-      <Button
-        className="fixed bottom-6 right-6 z-40 h-14 w-14 rounded-full p-0 text-2xl shadow-lg"
-        onClick={() => setLogModalOpen(true)}
-        aria-label="Log study time"
-      >
-        +
-      </Button>
+      <div className="fixed bottom-6 right-6 z-40 group">
+        <div className="mb-2 rounded bg-slate-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800 pointer-events-none absolute bottom-full right-0 whitespace-nowrap">
+          Log Study Time
+        </div>
+        <Button
+          className="h-14 w-14 rounded-full p-0 text-2xl shadow-lg"
+          onClick={() => setLogModalOpen(true)}
+          aria-label="Log study time"
+        >
+          ⏱
+        </Button>
+      </div>
 
       <Modal open={logModalOpen} onClose={() => setLogModalOpen(false)} title="Log Study Time">
         <div className="space-y-3">
+          {(() => {
+            const existingToday = data.sessions
+              .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
+              .reduce((sum, s) => sum + s.durationMinutes, 0)
+            const previewTotal = existingToday + logDuration
+            const target = settings.dailyTargetMinutes
+            const toGo = Math.max(0, target - previewTotal)
+            return (
+              <div className="text-sm text-slate-600 dark:text-slate-400">
+                Today: {formatMinutes(previewTotal)} (of {formatMinutes(target)} goal) — {toGo > 0 ? `${formatMinutes(toGo)} to go` : 'goal reached'}
+              </div>
+            )
+          })()}
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="label">Subject</label>
@@ -608,7 +662,7 @@ export default function Dashboard() {
                 <label className="label">Project (optional)</label>
                 <select className="input" value={logProjectId} onChange={(e) => { const pid = e.target.value; setLogProjectId(pid); setLogTaskId(''); if (pid) { const proj = data.projects.find((p) => p.id === pid); if (proj) setLogSubjectId(proj.subjectId) } }}>
                   <option value="">— Select project —</option>
-                  {data.projects.filter((p) => p.subjectId === logSubjectId).map((p) => (
+                  {data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>

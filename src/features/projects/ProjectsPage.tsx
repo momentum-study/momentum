@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
+import { useUndo } from '../../lib/use-undo'
 import { PageSpinner } from '../../components/ui/Spinner'
 import type { Project } from '../../domain/types'
 
@@ -32,6 +33,7 @@ const emptyFormData: ProjectFormData = {
 
 export default function ProjectsPage() {
   const { data, isLoading, loadData } = useData()
+  const { push: pushUndo } = useUndo()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [deleteProject, setDeleteProject] = useState<Project | null>(null)
@@ -115,8 +117,21 @@ export default function ProjectsPage() {
     if (!deleteProject) return
     setIsSaving(true)
     try {
-      await db.projects.delete(deleteProject.id)
+      const now = isoNow()
+      await db.projects.update(deleteProject.id, { deletedAt: now, updatedAt: now })
       await loadData()
+      const original = { ...deleteProject }
+      pushUndo({
+        description: `Deleted project "${original.name}"`,
+        undo: async () => {
+          await db.projects.update(original.id, { deletedAt: null, updatedAt: isoNow() })
+          await loadData()
+        },
+        redo: async () => {
+          await db.projects.update(original.id, { deletedAt: now, updatedAt: isoNow() })
+          await loadData()
+        },
+      })
       setDeleteProject(null)
     } finally {
       setIsSaving(false)
@@ -134,14 +149,14 @@ export default function ProjectsPage() {
         </Button>
       </div>
 
-      {data.projects.length === 0 ? (
+      {data.projects.filter((p) => !p.deletedAt).length === 0 ? (
         <EmptyState
           title="No projects yet"
           description="Add a project to track your study goals."
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.projects.map((project) => {
+          {data.projects.filter((p) => !p.deletedAt).map((project) => {
             const subject = data.subjects.find((s) => s.id === project.subjectId)
             const totalMinutes = data.sessions.filter((s) => s.projectId === project.id).reduce((sum, s) => sum + s.durationMinutes, 0)
             const openTasks = data.assignments.filter((a) => a.projectId === project.id && !a.completed && !a.deletedAt).length
@@ -313,7 +328,7 @@ export default function ProjectsPage() {
             <span className="font-semibold text-slate-800 dark:text-slate-100">
               {deleteProject?.name}
             </span>
-            ? This action cannot be undone.
+            ? This will archive the project.
           </p>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setDeleteProject(null)}>

@@ -273,11 +273,13 @@ export default function HabitsPage() {
   async function saveHabit() {
     if (!name.trim()) return
     try {
+      const trimmed = name.trim()
+      const finalName = kind === 'bad' && !trimmed.startsWith('Quitting ') ? `Quitting ${trimmed}` : trimmed
       const status: 'active' | 'potential' = parkForLater ? 'potential' : newHabitStatus
       if (editHabit) {
-        await db.habits.update(editHabit.id, { name: name.trim(), kind, color, archivedAfterDays, targetPerDay, updatedAt: isoNow() })
+        await db.habits.update(editHabit.id, { name: finalName, kind, color, archivedAfterDays, targetPerDay, updatedAt: isoNow() })
       } else {
-        await db.habits.add({ id: uuid(), name: name.trim(), kind, color, archivedAfterDays, targetPerDay, status, createdAt: isoNow(), updatedAt: isoNow() })
+        await db.habits.add({ id: uuid(), name: finalName, kind, color, archivedAfterDays, targetPerDay, status, createdAt: isoNow(), updatedAt: isoNow() })
       }
       setShowModal(false)
       await loadData()
@@ -614,7 +616,22 @@ export default function HabitsPage() {
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editHabit ? 'Edit Habit' : 'Add Habit'}>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <input className="input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                {kind === 'bad' ? 'What are you quitting?' : 'Name'}
+              </label>
+              <input
+                className="input"
+                placeholder={kind === 'bad' ? 'Quitting smoking' : 'Name'}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              {kind === 'bad' && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Bad habits track days you DON'T do the thing. Logging = you did it.
+                </p>
+              )}
+            </div>
             <select className="input" value={kind} onChange={(e) => setKind(e.target.value as Habit['kind'])}>
               <option value="good">Good</option>
               <option value="bad">Bad</option>

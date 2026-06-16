@@ -315,6 +315,13 @@ export default function CalendarPage() {
       await loadData()
     }
 
+  // Completed tasks
+  const completedTasks = useMemo(
+    () => activeTasks.filter((a) => a.completed).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')),
+    [activeTasks]
+  )
+  const [completedOpen, setCompletedOpen] = useState(false)
+
   const taskValid =
     form.title.trim() !== '' &&
     form.subjectId !== '' &&
@@ -654,6 +661,62 @@ export default function CalendarPage() {
         )}
       </Card>
 
+      {/* Completed tasks */}
+      {completedTasks.length > 0 && (
+        <Card>
+          <CardHeader>
+            <button
+              type="button"
+              onClick={() => setCompletedOpen(!completedOpen)}
+              className="flex w-full items-center justify-between text-left"
+            >
+              <CardTitle>Completed ({completedTasks.length})</CardTitle>
+              <span className={cn('text-slate-500 transition-transform', completedOpen && 'rotate-90')}>
+                ▶
+              </span>
+            </button>
+          </CardHeader>
+          {completedOpen && (
+            <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+              {completedTasks.map((a) => {
+                const subject = data.subjects.find((s) => s.id === a.subjectId)
+                return (
+                  <li key={a.id} className="flex items-center justify-between gap-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={true}
+                        onChange={() => void quickCompleteTask(a)}
+                        className="mt-1 h-4 w-4 cursor-pointer"
+                      />
+                      <div>
+                        <div className="font-medium text-slate-400 line-through dark:text-slate-500">
+                          {a.title}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <span>{subject?.name ?? 'No focus area'}</span>
+                          <span>·</span>
+                          <span>Completed {format(parseISO(a.updatedAt), 'MMM d')}</span>
+                          {a.dueDate && (
+                            <>
+                              <span>·</span>
+                              <span>Due {format(parseISO(a.dueDate), 'MMM d')}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="secondary" onClick={() => void quickCompleteTask(a)}>
+                      Reopen
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Card>
+      )}
+
       {/* Add / Edit Task modal */}
       <Modal title={editing ? 'Edit Task' : 'Add Task'} open={modalOpen} onClose={() => setModalOpen(false)}>
         <div className="space-y-3">
@@ -701,7 +764,7 @@ export default function CalendarPage() {
               }}
             >
               <option value="">— Select project —</option>
-              {data.projects.map((p) => (
+              {data.projects.filter((p) => !p.deletedAt).map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>

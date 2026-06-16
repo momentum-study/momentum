@@ -64,6 +64,9 @@ export function PomodoroTimer() {
   const [subjectId, setSubjectId] = useState<string>('')
   const [projectId, setProjectId] = useState<string>('')
   const [taskId, setTaskId] = useState<string>('')
+  const [changeSubjectOpen, setChangeSubjectOpen] = useState(false)
+  const [changeSubjectConfirmation, setChangeSubjectConfirmation] = useState('')
+  const changeSubjectConfirmationTimer = useRef<number | null>(null)
 
   // Mode — try to restore from localStorage
   const [mode, setMode] = useState<Mode>(() => {
@@ -213,11 +216,11 @@ export function PomodoroTimer() {
   }, [pomStartedAt, pomSeconds, pomPhase])
 
   // Cleanup on unmount: clear intervals but DON'T clear persisted state
-  // Cleanup on unmount: clear intervals but DON'T clear persisted state
   useEffect(() => {
     return () => {
       if (simpleIntervalRef.current) clearInterval(simpleIntervalRef.current)
       if (pomIntervalRef.current) clearInterval(pomIntervalRef.current)
+      if (changeSubjectConfirmationTimer.current) clearTimeout(changeSubjectConfirmationTimer.current)
     }
   }, [])
 
@@ -300,6 +303,111 @@ export function PomodoroTimer() {
       await loadData()
     }
     setSimpleSeconds(0)
+  }
+
+  async function changeSubject(newSubjectId: string) {
+    if (newSubjectId === subjectId) {
+      setChangeSubjectOpen(false)
+      return
+    }
+    const oldName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'
+    const newName = data.subjects.find((s) => s.id === newSubjectId)?.name ?? 'Unknown'
+    const elapsed = mode === 'simple' ? simpleSeconds : currentSeconds
+    if (mode === 'simple') {
+      // Save current simple session
+      const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId)?.subjectId ?? subjectId) : subjectId
+      if (elapsed >= 10 && actualSubjectId) {
+        const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
+        const project = projectId ? data.projects.find((p) => p.id === projectId) : undefined
+        const now = new Date()
+        const start = new Date(now.getTime() - elapsed * 1000)
+        const session = {
+          id: uuid(),
+          subjectId: actualSubjectId,
+          projectId: project?.id ?? null,
+          assignmentId: task?.id ?? null,
+          startAt: start.toISOString(),
+          endAt: now.toISOString(),
+          durationMinutes: Math.max(1, Math.round(elapsed / 60)),
+          note: task ? `Task: ${task.title}` : undefined,
+          source: 'timer' as const,
+          createdAt: isoNow(),
+          updatedAt: isoNow(),
+        }
+        await db.sessions.add(session)
+        const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
+        syncSession(session, subjectName)
+        await updateRoutineLogsForSession(session)
+        await updateStreakDayForSession(session)
+        await loadData()
+      }
+      setSimpleSeconds(0)
+    } else {
+      // Save current pomodoro focus session (only if focus phase and has been running)
+      if (pomPhase === 'focus' && pomStartedAt) {
+        const actualSubjId = projectId ? (data.projects.find((p) => p.id === projectId)?.subjectId ?? subjectId) : subjectId
+        if (actualSubjId) {
+          const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
+          const project = projectId ? data.projects.find((p) => p.id === projectId) : undefined
+          const startMs = pomStartedAt
+          const elapsedMs = Date.now() - startMs
+          const partialMinutes = Math.max(1, Math.round(elapsedMs / 60000))
+          const start = new Date(startMs)
+          const end = new Date()
+          const session = {
+            id: uuid(),
+            subjectId: actualSubjId,
+            projectId: project?.id ?? null,
+            assignmentId: task?.id ?? null,
+            startAt: start.toISOString(),
+            endAt: end.toISOString(),
+            durationMinutes: partialMinutes,
+            note: task ? `Task: ${task.title}` : undefined,
+            source: 'pomodoro' as const,
+            createdAt: isoNow(),
+            updatedAt: isoNow(),
+          }
+          await db.sessions.add(session)
+          const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
+          syncSession(session, subjectName)
+          await updateRoutineLogsForSession(session)
+          await updateStreakDayForSession(session)
+          await loadData()
+        }
+      }
+    }
+    // Switch subject and start new session
+    setSubjectId(newSubjectId)
+    setProjectId('')
+    setTaskId('')
+    const now = Date.now()
+    if (mode === 'simple') {
+      setSimpleStartedAt(now)
+      const state: PersistedTimerState = {
+        mode: 'simple',
+        startedAt: now,
+        phaseRemaining: null,
+        phase: 'focus',
+        cyclesCompleted: 0,
+        config: configRef.current,
+      }
+      saveTimerState(state)
+    } else {
+      setPomStartedAt(now)
+      const state: PersistedTimerState = {
+        mode: 'pomodoro',
+        startedAt: now,
+        phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
+        phase: pomPhase,
+        cyclesCompleted: pomCycles,
+        config: configRef.current,
+      }
+      saveTimerState(state)
+    }
+    setChangeSubjectOpen(false)
+    setChangeSubjectConfirmation(`Switched from ${oldName} to ${newName}`)
+    if (changeSubjectConfirmationTimer.current) clearTimeout(changeSubjectConfirmationTimer.current)
+    changeSubjectConfirmationTimer.current = window.setTimeout(() => setChangeSubjectConfirmation(''), 3000)
   }
 
   // Pomodoro timer
@@ -630,6 +738,45 @@ export function PomodoroTimer() {
           </>
         )}
       </div>
+
+      {/* Change Subject — only when timer is running */}
+      {isTimerActive && (
+        <div className="mt-2 flex flex-col items-center gap-1">
+          {!changeSubjectOpen ? (
+            <button
+              type="button"
+              onClick={() => setChangeSubjectOpen(true)}
+              className="text-xs text-primary-600 hover:underline dark:text-primary-400"
+            >
+              Change Subject
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <select
+                className="input w-48"
+                value={subjectId}
+                onChange={(e) => { void changeSubject(e.target.value) }}
+                autoFocus
+              >
+                <option value="">— Select new subject —</option>
+                {data.subjects.filter((s) => s.id !== subjectId).map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setChangeSubjectOpen(false)}
+                className="text-xs text-slate-500 hover:underline"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {changeSubjectConfirmation && (
+            <p className="text-xs text-green-600 dark:text-green-400">{changeSubjectConfirmation}</p>
+          )}
+        </div>
+      )}
 
       {!settings.pomodoroEnabled && (
         <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">

@@ -1,6 +1,6 @@
 // Group detail page — shows member stats, leaderboard, invites.
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../../app/auth-provider'
 import { groupService } from '../../lib/group-service'
@@ -15,16 +15,33 @@ import { doc, getDoc } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '../../lib/firebase'
 import { db as localDb } from '../../db/app-db'
 
+type WindowKey = 'today' | 'week' | 'month' | 'total' | 'streak'
+
+function getStoredWindow(groupId: string): WindowKey {
+  if (typeof localStorage === 'undefined') return 'today'
+  const v = localStorage.getItem(`momentum-group-window-${groupId}`)
+  if (v === 'today' || v === 'week' || v === 'month' || v === 'total' || v === 'streak') return v
+  return 'today'
+}
+
+function setStoredWindow(groupId: string, w: WindowKey) {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(`momentum-group-window-${groupId}`, w)
+}
+
 export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
   const [group, setGroup] = useState<Group | null>(null)
   const [stats, setStats] = useState<MemberStatsType[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [showLeave, setShowLeave] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
-  const [sortBy, setSortBy] = useState<'today' | 'week' | 'month' | 'total' | 'streak'>('today')
+  const [sortBy, setSortBy] = useState<WindowKey>('today')
+  const initialWindowLoaded = useRef(false)
+
 
   const fetchStats = useCallback(async (groupId: string, memberList: GroupMember[]) => {
     if (!isFirebaseConfigured || !db) return
@@ -72,6 +89,12 @@ export default function GroupDetailPage() {
 
   useEffect(() => {
     if (!id || !user) return
+    // Load stored window preference for this group
+    if (!initialWindowLoaded.current && id) {
+      const stored = getStoredWindow(id)
+      setSortBy(stored)
+      initialWindowLoaded.current = true
+    }
     void load(id)
   }, [id, user])
 
@@ -93,6 +116,22 @@ export default function GroupDetailPage() {
       setError(e instanceof Error ? e.message : 'Failed to load group')
     } finally {
       setLoading(false)
+    }
+  }
+
+  /** Called when user switches the time window. Re-fetches fresh session data for all members. */
+  async function switchWindow(w: WindowKey) {
+    setSortBy(w)
+    if (id) setStoredWindow(id, w)
+    if (!user || !id) return
+    setRefreshing(true)
+    try {
+      const memberList = await groupService.listMembers(id)
+      await fetchStats(id, memberList)
+    } catch {
+      // Silently fail — stale data is still displayed
+    } finally {
+      setRefreshing(false)
     }
   }
 
@@ -158,12 +197,11 @@ export default function GroupDetailPage() {
           </Button>
         </div>
       </div>
-
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {(['today', 'week', 'month', 'total', 'streak'] as const).map((s) => (
           <button
             key={s}
-            onClick={() => setSortBy(s)}
+            onClick={() => void switchWindow(s)}
             className={cn(
               'rounded px-3 py-1 text-xs font-medium transition-colors',
               sortBy === s
@@ -178,6 +216,9 @@ export default function GroupDetailPage() {
              : 'Streak'}
           </button>
         ))}
+        {refreshing && (
+          <span className="ml-2 text-xs text-slate-400 animate-pulse">Refreshing…</span>
+        )}
       </div>
 
       <div className="grid gap-4">

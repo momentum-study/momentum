@@ -81,6 +81,13 @@ export default function CalendarPage() {
   const [markingTask, setMarkingTask] = useState<Assignment | null>(null)
   const [markForm, setMarkForm] = useState<MarkForm>(emptyMarkForm)
   const [markSaving, setMarkSaving] = useState(false)
+    const [toast, setToast] = useState<{ id: string; title: string } | null>(null)
+    useEffect(() => {
+      if (toast) {
+        const t = setTimeout(() => setToast(null), 8000)
+        return () => clearTimeout(t)
+      }
+    }, [toast])
 
   // Category filter
   const [filterCategory, setFilterCategory] = useState<TaskCategory | ''>('')
@@ -269,26 +276,44 @@ export default function CalendarPage() {
     await loadData()
   }
 
-  async function toggleCompleted(a: Assignment) {
-    // If completing a task with weight > 0, prompt for mark first
-    if (!a.completed && a.weight > 0) {
-      openMarkModal(a)
-      return
+  
+    async function quickCompleteTask(a: Assignment) {
+      if (!a.completed && a.weight > 0) {
+        await db.assignments.put({ ...a, completed: true, updatedAt: isoNow() })
+        setToast({ id: a.id, title: a.title })
+        await loadData()
+      } else {
+        await db.assignments.put({ ...a, completed: !a.completed, updatedAt: isoNow() })
+        await loadData()
+      }
     }
-    await db.assignments.put({ ...a, completed: !a.completed, updatedAt: isoNow() })
-    await loadData()
-  }
 
   // upcoming tasks next 30 days
   const todayStr = isoNow().slice(0, 10)
   const in30 = addDays(new Date(), 30)
   const upcoming = filteredTasks
-    .filter((a) => {
-      if (!a.dueDate) return false
-      const d = parseISO(a.dueDate)
-      return d >= new Date(todayStr) && d <= in30
-    })
-    .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
+      .filter((a) => {
+        if (!a.dueDate) return false
+        const d = parseISO(a.dueDate)
+        return d >= new Date(todayStr) && d <= in30
+      })
+      .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
+  
+    const overdueTasks = filteredTasks
+      .filter((a) => {
+        if (!a.dueDate || a.completed) return false
+        return a.dueDate.slice(0, 10) < todayStr
+      })
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  
+    async function completeAllOverdue() {
+      if (overdueTasks.length === 0) return
+      const now = isoNow()
+      for (const t of overdueTasks) {
+        await db.assignments.put({ ...t, completed: true, updatedAt: now })
+      }
+      await loadData()
+    }
 
   const taskValid =
     form.title.trim() !== '' &&
@@ -305,6 +330,7 @@ export default function CalendarPage() {
   // Time spent per project (sum of session minutes)
 
   return (
+    <>
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Tasks</h2>
@@ -444,21 +470,29 @@ export default function CalendarPage() {
                     <div className="mt-2 flex-1 flex flex-col gap-1">
                       <div className="flex flex-wrap items-center gap-1">
                         {items.slice(0, 4).map((it) => (
-                          <button
-                            key={it.id}
-                            onClick={() => openEditModal(it)}
-                            title={it.title}
-                            className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-700"
-                          >
-                            <span
-                              className="inline-block h-2 w-2 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: catColor(it.category) }}
-                              aria-hidden="true"
+                          <div key={it.id} className="flex items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={it.completed}
+                              onChange={() => void quickCompleteTask(it)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-3 w-3 flex-shrink-0 cursor-pointer"
                             />
-                            <span className={cn('text-xs', it.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-100')}>
-                              {it.title}
-                            </span>
-                          </button>
+                            <button
+                              onClick={() => openEditModal(it)}
+                              title={it.title}
+                              className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              <span
+                                className="inline-block h-2 w-2 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: catColor(it.category) }}
+                                aria-hidden="true"
+                              />
+                              <span className={cn('text-xs', it.completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-100')}>
+                                {it.title}
+                              </span>
+                            </button>
+                          </div>
                         ))}
                         {items.length > 4 && <div className="text-xs text-slate-400">+{items.length - 4}</div>}
                       </div>
@@ -488,6 +522,64 @@ export default function CalendarPage() {
       </Card>
       )}
 
+      {/* Overdue tasks */}
+      {overdueTasks.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Overdue ({overdueTasks.length})</CardTitle>
+              <Button variant="secondary" size="sm" onClick={() => void completeAllOverdue()}>
+                Mark all done
+              </Button>
+            </div>
+          </CardHeader>
+          <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+            {overdueTasks.map((a) => {
+              const subject = data.subjects.find((s) => s.id === a.subjectId)
+              const daysOverdue = Math.floor(
+                (Date.now() - new Date(a.dueDate).getTime()) / (1000 * 60 * 60 * 24)
+              )
+              return (
+                <li key={a.id} className="flex items-center justify-between gap-4 py-3 px-4">
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={a.completed}
+                      onChange={() => void quickCompleteTask(a)}
+                      className="mt-1 h-4 w-4 cursor-pointer"
+                    />
+                    <div>
+                      <div className="font-medium text-slate-800 dark:text-slate-100">{a.title}</div>
+                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <span>{subject?.name ?? 'No focus area'}</span>
+                        <span>•</span>
+                        <span className="text-red-600 font-medium">Overdue {daysOverdue}d</span>
+                        {a.weight > 0 && (
+                          <>
+                            <span>•</span>
+                            <span className="text-slate-400">{a.weight}%</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                      style={{ backgroundColor: catColor(a.category) }}
+                    >
+                      {TASK_CATEGORIES.find((c) => c.value === a.category)?.label}
+                    </span>
+                    <Button size="sm" variant="secondary" onClick={() => openEditModal(a)}>Edit</Button>
+                    <Button size="sm" variant="danger" onClick={() => void deleteTask(a.id)}>Delete</Button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </Card>
+      )}
+
       {/* Upcoming tasks */}
       <Card>
         <CardHeader>
@@ -508,7 +600,7 @@ export default function CalendarPage() {
                     <input
                       type="checkbox"
                       checked={a.completed}
-                      onChange={() => void toggleCompleted(a)}
+                      onChange={() => void quickCompleteTask(a)}
                       className="mt-1 h-4 w-4"
                     />
                     <div>
@@ -729,5 +821,30 @@ export default function CalendarPage() {
         </div>
       </Modal>
     </div>
+      {toast && (
+        <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 transform">
+          <div className="flex items-center gap-3 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-100 dark:text-slate-900">
+            <span>{toast.title} marked complete!</span>
+            <button
+              onClick={() => {
+                const t = activeTasks.find(a => a.id === toast.id)
+                if (t) openMarkModal(t)
+                setToast(null)
+              }}
+              className="rounded bg-white/20 px-2 py-1 font-medium hover:bg-white/30 dark:bg-slate-900/20 dark:hover:bg-slate-900/30"
+            >
+              Record mark
+            </button>
+            <button
+              onClick={() => setToast(null)}
+              className="text-white/70 hover:text-white dark:text-slate-900/70 dark:hover:text-slate-900"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

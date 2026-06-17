@@ -16,6 +16,7 @@ import type {
   Subject,
   StudyArea,
   StudyReview,
+  PendingSyncOp,
 } from '../domain/types'
 
 const SEED_KEY = 'momentum-seeded'
@@ -43,6 +44,7 @@ export class AppDB extends Dexie {
   hobbySessions!: Table<HobbySession, string>
   studyAreas!: Table<StudyArea, string>
   studyReviews!: Table<StudyReview, string>
+  pendingSyncOps!: Table<PendingSyncOp, string>
 
   constructor() {
     super('study-app')
@@ -80,6 +82,9 @@ export class AppDB extends Dexie {
     this.version(9).stores({
       studyAreas: 'id, subjectId, deletedAt',
       studyReviews: 'id, areaId, reviewedAt',
+    })
+    this.version(10).stores({
+      pendingSyncOps: 'id, tableKey',
     })
   }
 }

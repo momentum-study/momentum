@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { parseISO } from 'date-fns'
 import { db } from '../db/app-db'
-import { pullAllData } from '../lib/data-sync'
+import { pullAllData, flushPendingDirtyTables } from '../lib/data-sync'
 
 import type {
   Assignment,
@@ -158,6 +158,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!uid) return
     void pullAllData(uid).then(() => void loadData())
   }, [])
+  // On startup, flush any dirty tables that survived from a previous session
+  flushPendingDirtyTables()
   const value = useMemo(
     () => ({ data, isLoading: isInitialLoad, scope, rangePreset, setScope, setRangePreset, loadData }),
     [data, isInitialLoad, scope, rangePreset, loadData],

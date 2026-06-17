@@ -255,3 +255,9 @@ export interface StudyReview {
   notes?: string         // what you did during review
   reviewedAt: string     // ISO timestamp
 }
+
+export interface PendingSyncOp {
+  id: string // uuid
+  tableKey: string
+  timestamp: string
+}

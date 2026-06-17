@@ -118,17 +118,40 @@ export default function ProjectsPage() {
     setIsSaving(true)
     try {
       const now = isoNow()
-      await db.projects.update(deleteProject.id, { deletedAt: now, updatedAt: now })
+      const originalProject = { ...deleteProject }
+      const projectId = deleteProject.id
+
+
+      // Soft-delete project, assignments, and sessions
+      await db.projects.update(projectId, { deletedAt: now, updatedAt: now })
+      await db.assignments.where('projectId').equals(projectId).modify({ deletedAt: now, updatedAt: now })
+      await db.sessions.where('projectId').equals(projectId).modify({ deletedAt: now, updatedAt: now })
       await loadData()
-      const original = { ...deleteProject }
+
       pushUndo({
-        description: `Deleted project "${original.name}"`,
+        description: `Deleted project "${originalProject.name}"`,
         undo: async () => {
-          await db.projects.update(original.id, { deletedAt: null, updatedAt: isoNow() })
+          await db.projects.update(projectId, { deletedAt: null, updatedAt: isoNow() })
+          await db.assignments.where('projectId').equals(projectId).modify({
+            deletedAt: null,
+            updatedAt: isoNow()
+          })
+          await db.sessions.where('projectId').equals(projectId).modify({
+            deletedAt: null,
+            updatedAt: isoNow()
+          })
           await loadData()
         },
         redo: async () => {
-          await db.projects.update(original.id, { deletedAt: now, updatedAt: isoNow() })
+          await db.projects.update(projectId, { deletedAt: now, updatedAt: isoNow() })
+          await db.assignments.where('projectId').equals(projectId).modify({
+            deletedAt: now,
+            updatedAt: isoNow()
+          })
+          await db.sessions.where('projectId').equals(projectId).modify({
+            deletedAt: now,
+            updatedAt: isoNow()
+          })
           await loadData()
         },
       })

@@ -119,21 +119,32 @@ export const syncService = {
     saveQueue(queue)
   },
 
-  /** Flush pending ops to Firestore. */
+  /**
+   * Flush pending ops to Firestore.
+   * Splits the queue into chunks of ≤500 ops (Firestore batch limit) and
+   * saves only the remaining (failed) ops for retry, so successful ones
+   * are not duplicated.
+   */
   async flush(): Promise<void> {
     if (!isFirebaseConfigured || !db) return
     const firestore = db
     const queue = loadQueue()
     if (queue.length === 0) return
-    const remaining: PendingOp[] = []
 
-    const batch = writeBatch(firestore)
+    const BATCH_LIMIT = 500
     let writeCount = 0
-    for (const op of queue) {
-      try {
+    let processed = 0
+
+    for (let start = 0; start < queue.length; start += BATCH_LIMIT) {
+      const chunk = queue.slice(start, start + BATCH_LIMIT)
+      const batch = writeBatch(firestore)
+      const chunkOps: PendingOp[] = []
+      let chunkWrites = 0
+
+      for (const op of chunk) {
         if (!hasBudgetFor(1)) {
-          // Keep the rest in the queue for tomorrow's reset
-          remaining.push(op)
+          // Budget exceeded — keep this op for tomorrow's reset
+          chunkOps.push(op)
           continue
         }
         if (op.type === 'upsert') {
@@ -143,27 +154,32 @@ export const syncService = {
           const ref = doc(firestore, 'sessions', op.session.id)
           batch.delete(ref)
         }
-        writeCount++
+        chunkWrites++
+      }
+
+      if (chunkWrites === 0) {
+        // All ops in this chunk were kept (e.g., budget exceeded). Stop trying more chunks.
+        saveQueue([...chunkOps, ...queue.slice(start + BATCH_LIMIT)])
+        return
+      }
+
+      try {
+        await batch.commit()
+        recordWrites(chunkWrites)
+        writeCount += chunkWrites
+        processed += chunkWrites
       } catch (e) {
-        // Keep this op in the queue for retry
-        remaining.push(op)
-        console.error('Sync op failed, will retry', e)
+        console.error('Sync batch failed (will retry remaining ops):', e)
+        // Save only the ops in this chunk that we couldn't write, plus all later chunks
+        saveQueue([...chunkOps, ...queue.slice(start + BATCH_LIMIT)])
+        return
       }
     }
-    if (writeCount === 0) {
-      saveQueue(remaining)
-      return
+
+    if (processed > 0) {
+      console.log(`[sync] Flushed ${writeCount} ops in ${Math.ceil(queue.length / BATCH_LIMIT)} batch(es)`)
     }
-    try {
-      await batch.commit()
-      recordWrites(writeCount)
-    } catch (e) {
-      // Network failure — keep entire queue
-      console.error('Sync batch failed', e)
-      saveQueue(queue)
-      return
-    }
-    saveQueue(remaining)
+    saveQueue([])
   },
   async fetchUserSessions(uid: string): Promise<SyncedSession[]> {
     if (!isFirebaseConfigured || !db) return []

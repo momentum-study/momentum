@@ -57,8 +57,9 @@ export default function ReportsPage() {
 
   // Scope filter first
   const scopeFiltered = useMemo(() => {
-    if (scope === 'all') return data.sessions
-    return data.sessions.filter((s) => getSessionScope(s, data.subjects, data.categories) === scope)
+    const active = data.sessions.filter((s) => !s.deletedAt)
+    if (scope === 'all') return active
+    return active.filter((s) => getSessionScope(s, data.subjects, data.categories) === scope)
   }, [data.sessions, data.subjects, data.categories, scope])
 
   // Period filter second

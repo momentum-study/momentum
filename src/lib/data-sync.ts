@@ -79,8 +79,25 @@ export async function pullAllData(uid: string): Promise<number> {
         if (!Array.isArray(cloudDoc.records) || cloudDoc.records.length === 0) continue
 
         const table = localDb.table(tableKey)
-        await table.bulkPut(cloudDoc.records as { id: string }[])
-        total += cloudDoc.records.length
+        // Merge: only overwrite local records if cloud record is newer (or local doesn't exist)
+        const cloudRecords = cloudDoc.records as { id: string; updatedAt?: string }[]
+        const localRecords = await table.toArray()
+        const localMap = new Map(localRecords.map((r) => [r.id, r as { id: string; updatedAt?: string }]))
+        const toWrite: { id: string; updatedAt?: string }[] = []
+        for (const cloudRec of cloudRecords) {
+          const local = localMap.get(cloudRec.id)
+          if (!local) {
+            toWrite.push(cloudRec)
+          } else {
+            const cloudTime = cloudRec.updatedAt ?? ''
+            const localTime = local.updatedAt ?? ''
+            if (cloudTime > localTime) toWrite.push(cloudRec)
+          }
+        }
+        if (toWrite.length > 0) {
+          await table.bulkPut(toWrite)
+          total += toWrite.length
+        }
       } catch (e) {
         console.warn(`Failed to pull table ${tableKey}:`, e)
       }
@@ -178,20 +195,45 @@ let syncDepth = 0
 function beginSync() { syncDepth++ }
 function endSync() { syncDepth-- }
 
-/** Disable all sync hooks. */
+/** Disable all sync hooks, cancel pending flush, and persist dirty tables for next session. */
 export function uninstallSyncHooks() {
   activeSyncUid = null
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
+  // Don't drop dirty tables — persist them so they survive sign-out/sign-in cycles
 }
 
 // ────────── Debounced push: coalesce rapid mutations into one table push ──────────
+// Dirty table keys are persisted to localStorage so they survive page closes.
+// On startup, flushDirtyTablesOnLoad() picks up any pending tables.
 
-const dirtyTables = new Set<TableKey>()
+const DIRTY_KEY = 'momentum-sync-dirty'
+
+function loadDirtyTables(): Set<TableKey> {
+  try {
+    const raw = localStorage.getItem(DIRTY_KEY)
+    if (!raw) return new Set()
+    return new Set(JSON.parse(raw) as TableKey[])
+  } catch {
+    return new Set()
+  }
+}
+
+function saveDirtyTables(tables: Set<TableKey>) {
+  if (tables.size === 0) {
+    localStorage.removeItem(DIRTY_KEY)
+  } else {
+    localStorage.setItem(DIRTY_KEY, JSON.stringify([...tables]))
+  }
+}
+
+const dirtyTables = loadDirtyTables()
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 const FLUSH_DELAY = 500
 
 function markDirty(tableKey: TableKey) {
   if (!activeSyncUid) return
   dirtyTables.add(tableKey)
+  saveDirtyTables(dirtyTables)
   if (!flushTimer) {
     flushTimer = setTimeout(flushDirtyTables, FLUSH_DELAY)
   }
@@ -199,15 +241,20 @@ function markDirty(tableKey: TableKey) {
 
 /** Flush pending dirty tables immediately (used on page close / tab hide). */
 export function flushNow() {
-  if (flushTimer) {
-    clearTimeout(flushTimer)
-    flushTimer = null
-  }
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
   if (!activeSyncUid || dirtyTables.size === 0) return
   const tables = [...dirtyTables]
+  // Clear and persist — if push succeeds, dirtyTables is emptied.
+  // If push fails (or browser kills the process), the tables remain
+  // in localStorage and are retried on next startup.
+  dirtyTables.clear()
+  saveDirtyTables(dirtyTables)
   for (const tableKey of tables) {
-    dirtyTables.delete(tableKey)
-    void pushTable(activeSyncUid, tableKey)
+    void pushTable(activeSyncUid, tableKey).catch(() => {
+      // Re-mark as dirty so it's picked up on next cycle
+      dirtyTables.add(tableKey)
+      saveDirtyTables(dirtyTables)
+    })
   }
 }
 
@@ -220,10 +267,24 @@ async function flushDirtyTables() {
     try {
       await pushTable(activeSyncUid, tableKey)
       dirtyTables.delete(tableKey)
+      saveDirtyTables(dirtyTables)
     } catch (e) {
       console.error(`[sync] Will retry ${tableKey} later`)
+      // Table stays in dirtyTables + localStorage for retry
     }
   }
+}
+
+/**
+ * On startup: flush any dirty tables that were persisted from a previous session
+ * (e.g. if the browser was killed before flushNow completed).
+ */
+export function flushPendingDirtyTables() {
+  if (dirtyTables.size === 0) return
+  const uid = localStorage.getItem('momentum-cloud-uid')
+  if (!uid) return
+  activeSyncUid = uid
+  void flushDirtyTables()
 }
 
 /** Enable sync hooks for the given user. */

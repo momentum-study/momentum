@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useUndo } from '../../lib/use-undo'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
@@ -29,6 +30,7 @@ export default function CategoriesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Category | null>(null)
   const [form, setForm] = useState<CategoryFormData>(emptyForm)
   const [saving, setSaving] = useState(false)
+  const { push } = useUndo()
 
   if (isLoading) return <PageSpinner />
 
@@ -80,8 +82,43 @@ export default function CategoriesPage() {
     if (!deleteConfirm) return
     setSaving(true)
     try {
-      await db.categories.delete(deleteConfirm.id)
+      const now = isoNow()
+      const catId = deleteConfirm.id
+      // Capture subjects that will be soft-deleted so we can restore them on undo.
+      const affectedSubjects = data.subjects
+        .filter((s) => s.categoryId === catId && !s.deletedAt)
+        .map((s) => ({ id: s.id, prevDeletedAt: s.deletedAt ?? null }))
+      await db.categories.update(catId, { deletedAt: now, updatedAt: now })
+      for (const subj of affectedSubjects) {
+        await db.subjects.update(subj.id, { deletedAt: now, updatedAt: now })
+      }
       await loadData()
+      const originalCat = { ...deleteConfirm }
+      const subjectCount = affectedSubjects.length
+      push({
+        description:
+          subjectCount === 0
+            ? `Deleted category "${originalCat.name}"`
+            : `Deleted category "${originalCat.name}" and ${subjectCount} focus area${subjectCount === 1 ? '' : 's'}`,
+        undo: async () => {
+          await db.categories.update(originalCat.id, { deletedAt: null, updatedAt: isoNow() })
+          for (const subj of affectedSubjects) {
+            await db.subjects.update(subj.id, {
+              deletedAt: subj.prevDeletedAt,
+              updatedAt: isoNow(),
+            })
+          }
+          await loadData()
+        },
+        redo: async () => {
+          const redoNow = isoNow()
+          await db.categories.update(originalCat.id, { deletedAt: redoNow, updatedAt: redoNow })
+          for (const subj of affectedSubjects) {
+            await db.subjects.update(subj.id, { deletedAt: redoNow, updatedAt: redoNow })
+          }
+          await loadData()
+        },
+      })
       setDeleteConfirm(null)
     } finally {
       setSaving(false)

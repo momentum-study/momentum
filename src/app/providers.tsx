@@ -18,7 +18,6 @@ import type {
   Session,
   StreakDay,
   Subject,
-  Task,
   StudyArea,
   StudyReview,
 } from '../domain/types'
@@ -27,7 +26,6 @@ export type AppData = {
   categories: Category[]
   subjects: Subject[]
   projects: Project[]
-  tasks: Task[]
   sessions: Session[]
   progressLogs: ProgressLog[]
   marks: Mark[]
@@ -60,7 +58,6 @@ const emptyData: AppData = {
   categories: [],
   subjects: [],
   projects: [],
-  tasks: [],
   sessions: [],
   progressLogs: [],
   marks: [],
@@ -78,7 +75,7 @@ const emptyData: AppData = {
 
 async function loadAllData(): Promise<AppData> {
   const [
-    categories, subjects, projects, tasks, sessions, progressLogs,
+    categories, subjects, projects, sessions, progressLogs,
     marks, assignments, habits, habitLogs, streakDays,
     routines, routineLogs, hobbies, hobbySessions,
     studyAreas, studyReviews,
@@ -86,7 +83,6 @@ async function loadAllData(): Promise<AppData> {
     db.categories.toArray(),
     db.subjects.toArray(),
     db.projects.toArray(),
-    db.tasks.toArray(),
     db.sessions.toArray(),
     db.progressLogs.toArray(),
     db.marks.toArray(),
@@ -106,7 +102,6 @@ async function loadAllData(): Promise<AppData> {
     categories: [...categories].sort((a, b) => a.name.localeCompare(b.name)),
     subjects: [...subjects].sort((a, b) => a.name.localeCompare(b.name)),
     projects: [...projects].sort((a, b) => a.name.localeCompare(b.name)),
-    tasks: [...tasks],
     sessions: [...sessions]
       .filter((s) => s.startAt && !isNaN(new Date(s.startAt).getTime()))
       .sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),

@@ -1,4 +1,5 @@
-import { HashRouter, Route, Routes } from 'react-router-dom'
+import { HashRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { AppLayout } from '../components/layout/AppLayout'
 import { DataProvider } from './providers'
 import { AuthProvider } from './auth-provider'
@@ -23,6 +24,35 @@ import ReviewSessionPage from '../features/study/ReviewSessionPage'
 import ReviewLogPage from '../features/study/ReviewLogPage'
 import ExamConfigPage from '../features/study/ExamConfigPage'
 
+function RouterContent() {
+  const location = useLocation()
+  return (
+    <ErrorBoundary resetKey={location.pathname}>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/subjects" element={<SubjectsPage />} />
+        <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/marks" element={<MarksPage />} />
+        <Route path="/habits" element={<HabitsPage />} />
+        <Route path="/hobbies" element={<HobbiesPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/categories" element={<CategoriesPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/reviews" element={<AIReviewPage />} />
+        <Route path="/study" element={<StudyPage />} />
+        <Route path="/study/review" element={<ReviewSessionPage />} />
+        <Route path="/study/log" element={<ReviewLogPage />} />
+        <Route path="/study/exam" element={<ExamConfigPage />} />
+        <Route path="/routines" element={<RoutinePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/groups" element={<GroupsPage />} />
+        <Route path="/groups/:id" element={<GroupDetailPage />} />
+        <Route path="/projects/:id" element={<ProjectDetailPage />} />
+      </Routes>
+    </ErrorBoundary>
+  )
+}
+
 export function AppRouter() {
   return (
     <HashRouter>
@@ -30,27 +60,7 @@ export function AppRouter() {
         <UndoProvider>
           <DataProvider>
             <AppLayout>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/subjects" element={<SubjectsPage />} />
-                <Route path="/projects" element={<ProjectsPage />} />
-                <Route path="/marks" element={<MarksPage />} />
-                <Route path="/habits" element={<HabitsPage />} />
-                <Route path="/hobbies" element={<HobbiesPage />} />
-                <Route path="/calendar" element={<CalendarPage />} />
-                <Route path="/categories" element={<CategoriesPage />} />
-                <Route path="/reports" element={<ReportsPage />} />
-                <Route path="/reviews" element={<AIReviewPage />} />
-                <Route path="/study" element={<StudyPage />} />
-                <Route path="/study/review" element={<ReviewSessionPage />} />
-                <Route path="/study/log" element={<ReviewLogPage />} />
-                <Route path="/study/exam" element={<ExamConfigPage />} />
-                <Route path="/routines" element={<RoutinePage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/groups" element={<GroupsPage />} />
-                <Route path="/groups/:id" element={<GroupDetailPage />} />
-                <Route path="/projects/:id" element={<ProjectDetailPage />} />
-              </Routes>
+              <RouterContent />
             </AppLayout>
           </DataProvider>
         </UndoProvider>

@@ -39,16 +39,6 @@ export interface Project {
   deletedAt?: string | null
 }
 
-export interface Task {
-  id: string
-  projectId: string
-  name: string
-  orderIndex: number
-  done: boolean
-  createdAt: string
-  updatedAt: string
-  deletedAt?: string | null
-}
 
 export interface Session {
   id: string

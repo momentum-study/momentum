@@ -96,6 +96,13 @@ export function PomodoroTimer() {
   })
   const [pomSeconds, setPomSeconds] = useState(() => {
     const saved = loadTimerState()
+    if (saved?.mode === 'pomodoro' && saved.startedAt) {
+      // Compute remaining time from wall clock to avoid 00:00 → real value flicker
+      const cfg = saved.config ?? settings
+      const duration = getPhaseDuration(saved.phase, cfg)
+      const elapsed = Math.floor((Date.now() - saved.startedAt) / 1000)
+      return Math.max(0, duration - elapsed)
+    }
     if (saved?.mode === 'pomodoro' && saved.phaseRemaining) return saved.phaseRemaining
     return settings.pomodoroFocusMinutes * 60
   })
@@ -111,8 +118,8 @@ export function PomodoroTimer() {
 
   const stateRef = useRef({ pomPhase, subjectId, projectId, taskId, pomCycles })
   stateRef.current = { pomPhase, subjectId, projectId, taskId, pomCycles }
-
-
+  const dataRef = useRef(data)
+  dataRef.current = data
 
   useEffect(() => {
     if (!subjectId && data.subjects[0]) setSubjectId(data.subjects[0].id)
@@ -153,13 +160,16 @@ export function PomodoroTimer() {
     if (configRef.current.soundEnabled) playNotificationSound()
     const st = stateRef.current
     const cfg = configRef.current
+    const subjects = dataRef.current.subjects
+    const projects = dataRef.current.projects
+    const assignments = dataRef.current.assignments
 
     if (pomPhase === 'focus') {
       // Save the completed focus session
-      const actualSubjId = st.projectId ? (data.projects.find((p) => p.id === st.projectId)?.subjectId ?? st.subjectId) : st.subjectId
+      const actualSubjId = st.projectId ? (projects.find((p) => p.id === st.projectId)?.subjectId ?? st.subjectId) : st.subjectId
       if (actualSubjId) {
-        const task = st.taskId ? data.assignments.find((a) => a.id === st.taskId) : undefined
-        const project = st.projectId ? data.projects.find((p) => p.id === st.projectId) : undefined
+        const task = st.taskId ? assignments.find((a) => a.id === st.taskId) : undefined
+        const project = st.projectId ? projects.find((p) => p.id === st.projectId) : undefined
         const end = new Date()
         const start = new Date(end.getTime() - cfg.focusMinutes * 60 * 1000)
         const session = {
@@ -176,7 +186,7 @@ export function PomodoroTimer() {
           updatedAt: isoNow(),
         }
         void db.sessions.add(session).then(async () => {
-          const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
+          const subjectName = subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
           syncSession(session, subjectName)
           await updateRoutineLogsForSession(session)
           await updateStreakDayForSession(session)
@@ -214,6 +224,7 @@ export function PomodoroTimer() {
       saveTimerState(newState)
     }
   }, [pomStartedAt, pomSeconds, pomPhase])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 
   // Cleanup on unmount: clear intervals but DON'T clear persisted state
   useEffect(() => {
@@ -616,7 +627,8 @@ export function PomodoroTimer() {
       {mode === 'pomodoro' && settings.pomodoroEnabled && (
         <div className="mt-2 flex justify-center gap-2">
           {Array.from({ length: config.cycles }, (_, i) => {
-            const completed = i < (pomCycles % config.cycles)
+            const completedCycles = pomCycles % config.cycles
+            const completed = i < completedCycles
             return (
               <div
                 key={i}

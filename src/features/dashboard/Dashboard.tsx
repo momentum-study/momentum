@@ -391,13 +391,14 @@ export default function Dashboard() {
       )}
 
       {isWidgetVisible('streak-goal') && (() => {
-        // 28-day heatmap data: column = day-of-week, row = week (most recent at bottom)
-        const heatDays = Array.from({ length: 28 }, (_, i) => {
-          const d = subDays(new Date(), 27 - i)
+        // 90-day heatmap data — column = day-of-week, row = week (most recent at bottom)
+        const HEATMAP_DAYS = 90
+        const heatDays = Array.from({ length: HEATMAP_DAYS }, (_, i) => {
+          const d = subDays(new Date(), HEATMAP_DAYS - 1 - i)
           const ds = format(d, 'yyyy-MM-dd')
           return { date: d, ds, minutes: minutesByDay[ds] ?? 0 }
         })
-        const heatMax4w = Math.max(60, ...heatDays.map((d) => d.minutes))
+        const heatMax90 = Math.max(60, ...heatDays.map((d) => d.minutes))
         const dayLabels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
         // Layout: pad so first column is Sunday
         const firstDow = heatDays[0].date.getDay()
@@ -434,7 +435,7 @@ export default function Dashboard() {
                   {heatDays.map(({ date, ds, minutes }) => {
                     const isToday = ds === todayStr
                     const isMissed = minutes === 0 && !isToday
-                    const step = getIntensityStep(minutes, heatMax4w)
+                    const step = getIntensityStep(minutes, heatMax90)
                     return (
                       <div
                         key={ds}

@@ -17,7 +17,6 @@ const TABLE_KEYS: (keyof AppData)[] = [
   'categories',
   'subjects',
   'projects',
-  'tasks',
   'sessions',
   'progressLogs',
   'marks',
@@ -25,6 +24,12 @@ const TABLE_KEYS: (keyof AppData)[] = [
   'habits',
   'habitLogs',
   'streakDays',
+  'routines',
+  'routineLogs',
+  'hobbies',
+  'hobbySessions',
+  'studyAreas',
+  'studyReviews',
 ]
 
 /** Read all data from the DB into a serialisable payload. */

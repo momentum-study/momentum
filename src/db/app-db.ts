@@ -14,7 +14,6 @@ import type {
   Session,
   StreakDay,
   Subject,
-  Task,
   StudyArea,
   StudyReview,
 } from '../domain/types'
@@ -31,7 +30,6 @@ export class AppDB extends Dexie {
   categories!: Table<Category, string>
   subjects!: Table<Subject, string>
   projects!: Table<Project, string>
-  tasks!: Table<Task, string>
   sessions!: Table<Session, string>
   progressLogs!: Table<ProgressLog, string>
   marks!: Table<Mark, string>

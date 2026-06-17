@@ -40,7 +40,6 @@ export const SYNC_TABLES: TableKey[] = [
   'categories',
   'subjects',
   'projects',
-  'tasks',
   'sessions',
   'progressLogs',
   'marks',
@@ -175,16 +174,9 @@ export async function pushFullBackup(uid: string): Promise<void> {
 // whether they actually push to Firestore (set on sign-in, cleared on sign-out).
 
 let activeSyncUid: string | null = null
-/** Guard: when true, local Dexie hooks suppress push (cloud-initiated writes). */
-let isSyncing = false
-/** Call before a cloud-initiated bulkPut / bulkAdd to suppress push hooks. */
-export function beginSync() { isSyncing = true }
-export function endSync() { isSyncing = false }
-
-/** Enable sync hooks for the given user. */
-export function installSyncHooks(uid: string) {
-  activeSyncUid = uid
-}
+let syncDepth = 0
+function beginSync() { syncDepth++ }
+function endSync() { syncDepth-- }
 
 /** Disable all sync hooks. */
 export function uninstallSyncHooks() {
@@ -192,13 +184,10 @@ export function uninstallSyncHooks() {
 }
 
 // ────────── Debounced push: coalesce rapid mutations into one table push ──────────
-// Instead of pushing each record individually (getDoc + setDoc per mutation),
-// dirty tables are flushed as a whole after a short delay. This avoids
-// downloading/re-uploading the entire table array on every single click.
 
 const dirtyTables = new Set<TableKey>()
 let flushTimer: ReturnType<typeof setTimeout> | null = null
-const FLUSH_DELAY = 500 // coalesce mutations within 500ms
+const FLUSH_DELAY = 500
 
 function markDirty(tableKey: TableKey) {
   if (!activeSyncUid) return
@@ -207,6 +196,7 @@ function markDirty(tableKey: TableKey) {
     flushTimer = setTimeout(flushDirtyTables, FLUSH_DELAY)
   }
 }
+
 /** Flush pending dirty tables immediately (used on page close / tab hide). */
 export function flushNow() {
   if (flushTimer) {
@@ -215,7 +205,6 @@ export function flushNow() {
   }
   if (!activeSyncUid || dirtyTables.size === 0) return
   const tables = [...dirtyTables]
-  // Don't clear — let push failures keep tables dirty. The caller (beforeunload) won't wait anyway.
   for (const tableKey of tables) {
     dirtyTables.delete(tableKey)
     void pushTable(activeSyncUid, tableKey)
@@ -227,40 +216,37 @@ async function flushDirtyTables() {
   flushTimer = null
   if (!activeSyncUid || dirtyTables.size === 0) return
   const tables = [...dirtyTables]
-  
-  // Try flushing each table, keep ones that fail in the dirty set so they're retried.
-  // Clear only the ones that succeed.
   for (const tableKey of tables) {
     try {
       await pushTable(activeSyncUid, tableKey)
       dirtyTables.delete(tableKey)
     } catch (e) {
-      // Table stays in dirtyTables — will be retried on next markDirty or page close
       console.error(`[sync] Will retry ${tableKey} later`)
     }
   }
 }
 
-// Install hooks once — they check activeSyncUid at call time.
-if (typeof window !== 'undefined') {
+/** Enable sync hooks for the given user. */
+export function installSyncHooks(uid: string) {
+  activeSyncUid = uid
   for (const tableKey of SYNC_TABLES) {
     localDb.table(tableKey).hook('creating', () => {
-      if (!isSyncing && activeSyncUid) markDirty(tableKey)
+      if (syncDepth > 0 || !activeSyncUid) return
+      markDirty(tableKey)
     })
     localDb.table(tableKey).hook('updating', () => {
-      if (!isSyncing && activeSyncUid) markDirty(tableKey)
+      if (syncDepth > 0 || !activeSyncUid) return
+      markDirty(tableKey)
     })
     localDb.table(tableKey).hook('deleting', () => {
-      if (!isSyncing && activeSyncUid) markDirty(tableKey)
+      if (syncDepth > 0 || !activeSyncUid) return
+      markDirty(tableKey)
     })
   }
 
-  // Flush pending changes when the tab is hidden (user switches to another tab/device).
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flushNow()
   })
-
-  // Flush pending changes before the page unloads.
   window.addEventListener('beforeunload', () => {
     flushNow()
   })

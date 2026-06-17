@@ -84,34 +84,34 @@ export default function QuickTimer() {
     setRunning(false)
 
     const total = seconds
-    if (total >= 10) {
-      // For a quick timer without a subject, we need a fallback subject ID.
-      // Assuming there's always at least one category/subject, or defaulting to a "Quick Timer" subject if I could create one.
-      // Since I can't create a subject, I'll pick the first subject as a fallback or if no subject exists, skip saving.
-      const subjectId = data.subjects[0]?.id
-      if (subjectId) {
-        const now = new Date()
-        const start = new Date(now.getTime() - total * 1000)
-        const session = {
-          id: uuid(),
-          subjectId,
-          projectId: null,
-          assignmentId: null,
-          startAt: start.toISOString(),
-          endAt: now.toISOString(),
-          durationMinutes: Math.max(1, Math.round(total / 60)),
-          note: label || undefined,
-          source: 'timer' as const,
-          createdAt: isoNow(),
-          updatedAt: isoNow(),
-        }
-        await db.sessions.add(session)
-        syncSession(session, data.subjects[0].name)
-        await updateRoutineLogsForSession(session)
-        await updateStreakDayForSession(session)
-        await loadData()
-      }
+    if (total < 10) return
+
+    const subject = data.subjects[0]
+    if (!subject) {
+      // No subjects exist — notify the user instead of silently dropping the session
+      window.alert('No subjects found. Please create a subject first so your session can be logged.')
+      return
     }
+    const now = new Date()
+    const start = new Date(now.getTime() - total * 1000)
+    const session = {
+      id: uuid(),
+      subjectId: subject.id,
+      projectId: null,
+      assignmentId: null,
+      startAt: start.toISOString(),
+      endAt: now.toISOString(),
+      durationMinutes: Math.max(1, Math.round(total / 60)),
+      note: label || undefined,
+      source: 'timer' as const,
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
+    }
+    await db.sessions.add(session)
+    syncSession(session, subject.name)
+    await updateRoutineLogsForSession(session)
+    await updateStreakDayForSession(session)
+    await loadData()
   }
 
   function reset() {

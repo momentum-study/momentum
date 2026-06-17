@@ -44,8 +44,6 @@ export interface SyncedSession {
 
 // Aggregated stats for a group member, computed from synced sessions.
 // Used for the group leaderboard — avoids querying every session every time.
-// Aggregated stats for a group member, computed from synced sessions.
-// Used for the group leaderboard — avoids querying every session every time.
 export interface MemberStats {
   uid: string
   displayName: string
@@ -61,9 +59,16 @@ export interface MemberStats {
   monthMinutes: number
   // Total study minutes all-time
   totalMinutes: number
-  // Total pomodoro sessions count
+  // Total sessions today (since midnight local time). Optional for
+  // backward compat with cached groupStats docs written before this field
+  // existed — readers fall back to totalSessions.
+  todaySessions?: number
+  // Total sessions this week (Monday-Sunday). Optional for backward compat.
+  weekSessions?: number
+  // Total sessions this month. Optional for backward compat.
+  monthSessions?: number
+  // Total sessions all-time
   totalSessions: number
-  // ISO timestamp of last session
   lastSessionAt: string | null
   updatedAt: string
 }

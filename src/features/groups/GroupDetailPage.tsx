@@ -16,6 +16,16 @@ import { db as localDb } from '../../db/app-db'
 
 type WindowKey = 'today' | 'week' | 'month' | 'total' | 'streak'
 
+function windowSessionCount(s: MemberStatsType, w: WindowKey): number {
+  switch (w) {
+    case 'today': return s.todaySessions ?? s.totalSessions
+    case 'week': return s.weekSessions ?? s.totalSessions
+    case 'month': return s.monthSessions ?? s.totalSessions
+    case 'total': return s.totalSessions
+    case 'streak': return s.totalSessions
+  }
+}
+
 function getStoredWindow(groupId: string): WindowKey {
   if (typeof localStorage === 'undefined') return 'today'
   const v = localStorage.getItem(`momentum-group-window-${groupId}`)
@@ -225,7 +235,7 @@ export default function GroupDetailPage() {
                 </div>
                 <div className="flex gap-3 text-xs text-slate-500">
                   <span>🔥 {s.currentStreak} day streak</span>
-                  <span>📅 {s.totalSessions} sessions</span>
+                  <span>📅 {windowSessionCount(s, sortBy)} sessions</span>
                 </div>
               </div>
               <div className="text-right">

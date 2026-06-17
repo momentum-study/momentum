@@ -92,6 +92,9 @@ function computeMemberStats(
   todayStart.setHours(0, 0, 0, 0)
 
   const totalMinutes = own.reduce((sum, s) => sum + s.minutes, 0)
+  const todaySessions = own.filter((s) => new Date(s.startAt) >= todayStart).length
+  const weekSessions = own.filter((s) => new Date(s.startAt) >= weekStart).length
+  const monthSessions = own.filter((s) => new Date(s.startAt) >= monthStart).length
   const todayMinutes = own
     .filter((s) => new Date(s.startAt) >= todayStart)
     .reduce((sum, s) => sum + s.minutes, 0)
@@ -131,6 +134,9 @@ function computeMemberStats(
     weekMinutes,
     monthMinutes,
     totalMinutes,
+    todaySessions,
+    weekSessions,
+    monthSessions,
     totalSessions: own.length,
     lastSessionAt,
     updatedAt: isoNow(),

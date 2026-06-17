@@ -227,3 +227,41 @@ export function hobbySkillLevel(value: number): { label: string; color: string }
   if (value < 90) return { label: 'Advanced', color: 'text-emerald-600 dark:text-emerald-400' }
   return { label: 'Expert', color: 'text-purple-600 dark:text-purple-400' }
 }
+// Study Areas — FSRS-based spaced repetition for conceptual topics
+
+export type ReviewRating = 1 | 2 | 3 | 4  // again, hard, good, easy
+
+export interface FsrsState {
+  state: 'new' | 'learning' | 'review' | 'relearning'
+  stability: number     // how long memory lasts (days)
+  difficulty: number    // how hard the content is (1-10)
+  lastReview: string | null  // ISO date
+  nextReview: string    // ISO date — due when <= today
+  interval: number      // current interval in days
+  repetitions: number   // successful reviews count
+}
+
+export interface StudyArea {
+  id: string
+  subjectId: string
+  name: string           // e.g., "Japanese particles"
+  description?: string   // optional notes/links
+  tags?: string[]        // e.g., ["grammar", "n5"]
+  fsrs: FsrsState
+  examMode?: {
+    enabled: boolean
+    dueDate: string      // exam date
+  } | null
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string | null
+}
+
+export interface StudyReview {
+  id: string
+  areaId: string
+  rating: ReviewRating
+  minutesSpent: number   // how long you spent reviewing
+  notes?: string         // what you did during review
+  reviewedAt: string     // ISO timestamp
+}

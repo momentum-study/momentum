@@ -7,6 +7,7 @@ export const DASHBOARD_WIDGETS: { id: string; label: string }[] = [
   { id: 'pomodoro',     label: 'Study Timer' },
   { id: 'quick-timer',  label: 'Quick Timer' },
   { id: 'log-time',     label: 'Log Study Time' },
+  { id: 'study-review', label: 'Study Review' },
   { id: 'calendar',     label: 'Study Calendar' },
   { id: 'recent',       label: 'Recent Sessions' },
 ]

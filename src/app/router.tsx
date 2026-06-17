@@ -18,6 +18,10 @@ import GroupsPage from '../features/groups/GroupsPage'
 import GroupDetailPage from '../features/groups/GroupDetailPage'
 import RoutinePage from '../features/routines/RoutinePage'
 import AIReviewPage from '../features/reviews/AIReviewPage'
+import StudyPage from '../features/study/StudyPage'
+import ReviewSessionPage from '../features/study/ReviewSessionPage'
+import ReviewLogPage from '../features/study/ReviewLogPage'
+import ExamConfigPage from '../features/study/ExamConfigPage'
 
 export function AppRouter() {
   return (
@@ -37,6 +41,10 @@ export function AppRouter() {
                 <Route path="/categories" element={<CategoriesPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/reviews" element={<AIReviewPage />} />
+                <Route path="/study" element={<StudyPage />} />
+                <Route path="/study/review" element={<ReviewSessionPage />} />
+                <Route path="/study/log" element={<ReviewLogPage />} />
+                <Route path="/study/exam" element={<ExamConfigPage />} />
                 <Route path="/routines" element={<RoutinePage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/groups" element={<GroupsPage />} />

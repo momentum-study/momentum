@@ -15,6 +15,8 @@ import type {
   StreakDay,
   Subject,
   Task,
+  StudyArea,
+  StudyReview,
 } from '../domain/types'
 
 const SEED_KEY = 'momentum-seeded'
@@ -41,6 +43,8 @@ export class AppDB extends Dexie {
   routineLogs!: Table<RoutineLog, string>
   hobbies!: Table<Hobby, string>
   hobbySessions!: Table<HobbySession, string>
+  studyAreas!: Table<StudyArea, string>
+  studyReviews!: Table<StudyReview, string>
 
   constructor() {
     super('study-app')
@@ -74,6 +78,10 @@ export class AppDB extends Dexie {
     this.version(8).stores({
       hobbies: 'id, category, name',
       hobbySessions: 'id, hobbyId, startAt',
+    })
+    this.version(9).stores({
+      studyAreas: 'id, subjectId, deletedAt',
+      studyReviews: 'id, areaId, reviewedAt',
     })
   }
 }

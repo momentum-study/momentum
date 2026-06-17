@@ -19,6 +19,8 @@ import type {
   StreakDay,
   Subject,
   Task,
+  StudyArea,
+  StudyReview,
 } from '../domain/types'
 
 export type AppData = {
@@ -37,6 +39,8 @@ export type AppData = {
   routineLogs: RoutineLog[]
   hobbies: Hobby[]
   hobbySessions: HobbySession[]
+  studyAreas: StudyArea[]
+  studyReviews: StudyReview[]
 }
 
 type ScopeFilter = 'all' | 'academic' | 'nonAcademic'
@@ -68,6 +72,8 @@ const emptyData: AppData = {
   routineLogs: [],
   hobbies: [],
   hobbySessions: [],
+  studyAreas: [],
+  studyReviews: [],
 }
 
 async function loadAllData(): Promise<AppData> {
@@ -75,6 +81,7 @@ async function loadAllData(): Promise<AppData> {
     categories, subjects, projects, tasks, sessions, progressLogs,
     marks, assignments, habits, habitLogs, streakDays,
     routines, routineLogs, hobbies, hobbySessions,
+    studyAreas, studyReviews,
   ] = await Promise.all([
     db.categories.toArray(),
     db.subjects.toArray(),
@@ -91,6 +98,8 @@ async function loadAllData(): Promise<AppData> {
     db.routineLogs.toArray(),
     db.hobbies.toArray(),
     db.hobbySessions.toArray(),
+    db.studyAreas.toArray(),
+    db.studyReviews.toArray(),
   ])
 
   return {
@@ -115,6 +124,8 @@ async function loadAllData(): Promise<AppData> {
     routineLogs: [...routineLogs].filter((l) => l.date),
     hobbies: [...hobbies].sort((a, b) => a.name.localeCompare(b.name)),
     hobbySessions: [...hobbySessions].sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
+    studyAreas: [...studyAreas].sort((a, b) => a.name.localeCompare(b.name)),
+    studyReviews: [...studyReviews].sort((a, b) => parseISO(b.reviewedAt).getTime() - parseISO(a.reviewedAt).getTime()),
   }
 }
 

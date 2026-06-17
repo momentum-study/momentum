@@ -14,6 +14,7 @@ import { cn, formatMinutes, getSessionScope, isoNow } from '../../lib/utils'
 import { loadSettings } from '../settings/SettingsPage'
 import { db } from '../../db/app-db'
 import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakDayForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
+import { getDueCount } from '../../lib/fsrs-scheduler'
 import { useSessionSync } from '../../lib/use-session-sync'
 import type { Session, DayOfWeek, RoutineLog, HobbySession } from '../../domain/types'
 import { Link } from 'react-router-dom'
@@ -491,6 +492,44 @@ export default function Dashboard() {
       {isWidgetVisible('quick-timer') && (
         <Collapsible id="dash-quick-timer" title="Quick Timer" defaultOpen={true}>
           <QuickTimer />
+        </Collapsible>
+      )}
+      {isWidgetVisible('study-review') && (
+        <Collapsible id="dash-study-review" title="Study Review" defaultOpen={true}>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                <Link to="/study/review" className="hover:underline">Study Review</Link>
+              </CardTitle>
+            </CardHeader>
+            <div className="px-6 pb-4">
+              {(() => {
+                const activeAreas = data.studyAreas.filter(a => !a.deletedAt)
+                const dueCount = getDueCount(activeAreas)
+                if (activeAreas.length === 0) {
+                  return (
+                    <div className="text-sm text-slate-500">
+                      No study areas yet. <Link to="/study" className="text-primary-600 hover:underline">Add your first area</Link>.
+                    </div>
+                  )
+                }
+                if (dueCount === 0) {
+                  return <div className="text-sm text-slate-500">No areas due today. Check back later.</div>
+                }
+                return (
+                  <div>
+                    <p className="text-3xl font-bold text-amber-600">{dueCount}</p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      area{dueCount === 1 ? '' : 's'} due today
+                    </p>
+                    <Link to="/study/review">
+                      <Button size="sm" className="mt-3">Start Review</Button>
+                    </Link>
+                  </div>
+                )
+              })()}
+            </div>
+          </Card>
         </Collapsible>
       )}
 

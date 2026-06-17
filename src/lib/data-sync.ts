@@ -1,6 +1,7 @@
 // Full data sync: mirrors local Dexie tables ↔ Firestore user/{uid}/data/{table}.
 // On sign-in, pulls cloud data and merges into local DB.
 // On mutations, pushes changed records to Firestore.
+import { recordWrites, hasBudgetFor, warnIfNearLimit, resetIfNewDay } from './write-budget'
 import {
   doc,
   getDoc,
@@ -49,6 +50,10 @@ export const SYNC_TABLES: TableKey[] = [
   'streakDays',
   'routines',
   'routineLogs',
+  'hobbies',
+  'hobbySessions',
+  'studyAreas',
+  'studyReviews',
 ]
 
 interface CloudTableDoc {
@@ -97,6 +102,11 @@ export async function pushTable(uid: string, tableKey: TableKey): Promise<void> 
   const records = (await localDb.table(tableKey).toArray())
   if (records.length === 0) return
   try {
+    if (!hasBudgetFor(1)) {
+      syncStatus.notifyFailure('Write quota exceeded')
+      return
+    }
+    warnIfNearLimit()
     await setDoc(doc(firestore, DATA_COLLECTION, `${uid}_${tableKey}`), {
       uid,
       tableName: tableKey,
@@ -104,6 +114,7 @@ export async function pushTable(uid: string, tableKey: TableKey): Promise<void> 
       updatedAt: isoNow(),
     } satisfies CloudTableDoc)
     console.log(`[sync] Pushed ${tableKey}: ${records.length} records`)
+    recordWrites(1)
     syncStatus.notifySuccess()
   } catch (e) {
     const err = e as { code?: string; message?: string }
@@ -212,6 +223,7 @@ export function flushNow() {
 }
 
 async function flushDirtyTables() {
+  resetIfNewDay()
   flushTimer = null
   if (!activeSyncUid || dirtyTables.size === 0) return
   const tables = [...dirtyTables]

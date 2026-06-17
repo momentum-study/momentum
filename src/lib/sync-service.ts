@@ -12,6 +12,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
+import { recordWrites, hasBudgetFor } from './write-budget'
 import { db, isFirebaseConfigured } from './firebase'
 import { isoNow } from './utils'
 import type { SyncedSession } from '../domain/cloud-types'
@@ -126,10 +127,15 @@ export const syncService = {
     if (queue.length === 0) return
     const remaining: PendingOp[] = []
 
-    // Batch the writes for efficiency
     const batch = writeBatch(firestore)
+    let writeCount = 0
     for (const op of queue) {
       try {
+        if (!hasBudgetFor(1)) {
+          // Keep the rest in the queue for tomorrow's reset
+          remaining.push(op)
+          continue
+        }
         if (op.type === 'upsert') {
           const ref = doc(firestore, 'sessions', op.session.id)
           batch.set(ref, op.session, { merge: true })
@@ -137,14 +143,20 @@ export const syncService = {
           const ref = doc(firestore, 'sessions', op.session.id)
           batch.delete(ref)
         }
+        writeCount++
       } catch (e) {
         // Keep this op in the queue for retry
         remaining.push(op)
         console.error('Sync op failed, will retry', e)
       }
     }
+    if (writeCount === 0) {
+      saveQueue(remaining)
+      return
+    }
     try {
       await batch.commit()
+      recordWrites(writeCount)
     } catch (e) {
       // Network failure — keep entire queue
       console.error('Sync batch failed', e)
@@ -153,7 +165,6 @@ export const syncService = {
     }
     saveQueue(remaining)
   },
-
   async fetchUserSessions(uid: string): Promise<SyncedSession[]> {
     if (!isFirebaseConfigured || !db) return []
     const firestore = db

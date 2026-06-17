@@ -103,9 +103,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await setDoc(ref, newProfile)
             setProfile(newProfile)
 
-            // Bulk sync existing sessions
+            // Bulk sync existing sessions — capped to avoid draining quota on first sign-in.
+            // Sessions older than BOOTSTRAP_SESSION_LIMIT are skipped; user can re-trigger from
+            // Settings if needed (future: add "Force full sync" button).
+            const BOOTSTRAP_SESSION_LIMIT = 200
             const allLocalSessions = await localDb.sessions.toArray()
-            for (const s of allLocalSessions) {
+            const toSync = allLocalSessions.slice(-BOOTSTRAP_SESSION_LIMIT) // most recent N
+            for (const s of toSync) {
               const subjectName = (await localDb.subjects.get(s.subjectId))?.name ?? 'Unknown Subject'
               syncService.enqueueUpsert({
                 id: s.id,
@@ -116,6 +120,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 endAt: s.endAt,
                 createdAt: s.createdAt,
               })
+            }
+            if (allLocalSessions.length > BOOTSTRAP_SESSION_LIMIT) {
+              console.warn(`[Auth] Bootstrap synced ${BOOTSTRAP_SESSION_LIMIT} of ${allLocalSessions.length} sessions to stay under quota`)
             }
             void syncService.flush()
           }

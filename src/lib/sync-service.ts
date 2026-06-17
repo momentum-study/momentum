@@ -61,6 +61,17 @@ function saveQueue(queue: PendingOp[]) {
   localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
 }
 
+/** Extract the local-date YYYY-MM-DD from an ISO timestamp. Consistent
+ * with `todayStart`/`weekStart`/`monthStart` so streak agrees with the
+ * today/week/month time-window totals. */
+function localDateStr(iso: string): string {
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 /** Compute member stats from a list of sessions. */
 function computeMemberStats(
   sessions: SyncedSession[],
@@ -91,12 +102,13 @@ function computeMemberStats(
     .filter((s) => new Date(s.startAt) >= monthStart)
     .reduce((sum, s) => sum + s.minutes, 0)
 
-  // Compute current streak
-  const dateSet = new Set(own.map((s) => s.startAt.slice(0, 10)))
+  // Compute current streak using local-date strings so it agrees with the
+  // today/week/month totals (which all use local-time boundaries).
+  const dateSet = new Set(own.map((s) => localDateStr(s.startAt)))
   let streak = 0
   const cur = new Date()
   while (true) {
-    const ds = cur.toISOString().slice(0, 10)
+    const ds = localDateStr(cur.toISOString())
     if (dateSet.has(ds)) {
       streak++
       cur.setDate(cur.getDate() - 1)

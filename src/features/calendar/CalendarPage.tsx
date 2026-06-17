@@ -289,7 +289,7 @@ export default function CalendarPage() {
     }
 
   // upcoming tasks next 30 days
-  const todayStr = isoNow().slice(0, 10)
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
   const in30 = addDays(new Date(), 30)
   const upcoming = filteredTasks
       .filter((a) => {

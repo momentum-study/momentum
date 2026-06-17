@@ -287,10 +287,10 @@ export function PomodoroTimer() {
     setSimpleStartedAt(null)
     clearTimerState()
     const total = simpleSeconds
-    const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId)?.subjectId ?? subjectId) : subjectId
+    const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
     if (total >= 10 && actualSubjectId) {
       const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
-      const project = projectId ? data.projects.find((p) => p.id === projectId) : undefined
+      const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
       const now = new Date()
       const start = new Date(now.getTime() - total * 1000)
       const session = {
@@ -326,10 +326,10 @@ export function PomodoroTimer() {
     const elapsed = mode === 'simple' ? simpleSeconds : currentSeconds
     if (mode === 'simple') {
       // Save current simple session
-      const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId)?.subjectId ?? subjectId) : subjectId
+      const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
       if (elapsed >= 10 && actualSubjectId) {
         const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
-        const project = projectId ? data.projects.find((p) => p.id === projectId) : undefined
+        const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
         const now = new Date()
         const start = new Date(now.getTime() - elapsed * 1000)
         const session = {
@@ -356,10 +356,10 @@ export function PomodoroTimer() {
     } else {
       // Save current pomodoro focus session (only if focus phase and has been running)
       if (pomPhase === 'focus' && pomStartedAt) {
-        const actualSubjId = projectId ? (data.projects.find((p) => p.id === projectId)?.subjectId ?? subjectId) : subjectId
+        const actualSubjId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
         if (actualSubjId) {
           const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
-          const project = projectId ? data.projects.find((p) => p.id === projectId) : undefined
+          const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
           const startMs = pomStartedAt
           const elapsedMs = Date.now() - startMs
           const partialMinutes = Math.max(1, Math.round(elapsedMs / 60000))
@@ -449,7 +449,39 @@ export function PomodoroTimer() {
     saveTimerState(state)
   }
 
-  function resetPomodoro() {
+  async function resetPomodoro() {
+    // Save partial focus session before discarding
+    if (pomPhase === 'focus' && pomStartedAt) {
+      const actualSubjId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
+      if (actualSubjId) {
+        const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
+        const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
+        const startMs = pomStartedAt
+        const elapsedMs = Date.now() - startMs
+        const partialMinutes = Math.max(1, Math.round(elapsedMs / 60000))
+        const start = new Date(startMs)
+        const end = new Date()
+        const session = {
+          id: uuid(),
+          subjectId: actualSubjId,
+          projectId: project?.id ?? null,
+          assignmentId: task?.id ?? null,
+          startAt: start.toISOString(),
+          endAt: end.toISOString(),
+          durationMinutes: partialMinutes,
+          note: task ? `Task: ${task.title}` : undefined,
+          source: 'pomodoro' as const,
+          createdAt: isoNow(),
+          updatedAt: isoNow(),
+        }
+        await db.sessions.add(session)
+        const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
+        syncSession(session, subjectName)
+        await updateRoutineLogsForSession(session)
+        await updateStreakDayForSession(session)
+        await loadData()
+      }
+    }
     setPomStartedAt(null)
     clearTimerState()
     setPomPhase('focus')
@@ -674,49 +706,58 @@ export function PomodoroTimer() {
         </div>
       )}
 
-      {/* Focus Area selectors */}
+      {/* Focus Area selectors — collapse when timer is running */}
       <div className="mt-3 space-y-2">
-        <div>
-          <label className="label">Focus Area</label>
-          <select
-            className="input"
-            value={subjectId}
-            onChange={(e) => { setSubjectId(e.target.value); setProjectId(''); setTaskId('') }}
-          >
-            <option value="">— Select focus area —</option>
-            {data.subjects.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        </div>
-        {subjectId && (
-          <div>
-            <label className="label">Project (optional)</label>
-            <select
-              className="input"
-              value={projectId}
-              onChange={(e) => { setProjectId(e.target.value); setTaskId('') }}
-            >
-              <option value="">— Select project —</option>
-              {data.projects.filter((p) => p.subjectId === subjectId).map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-        {projectId && (
-          <div>
-            <label className="label">Task (optional)</label>
-            <select
-              className="input"
-              value={taskId}
-              onChange={(e) => setTaskId(e.target.value)}
-            >
-              <option value="">— Select task —</option>
-              {data.assignments.filter((a) => a.projectId === projectId && !a.completed && !a.deletedAt).map((a) => (
-                <option key={a.id} value={a.id}>{a.title}</option>
-              ))}
-            </select>
+        {(!pomStartedAt && !simpleStartedAt) ? (
+          <>
+            <div>
+              <label className="label">Focus Area</label>
+              <select
+                className="input"
+                value={subjectId}
+                onChange={(e) => { setSubjectId(e.target.value); setProjectId(''); setTaskId('') }}
+              >
+                <option value="">— Select focus area —</option>
+                {data.subjects.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            {subjectId && (
+              <div>
+                <label className="label">Project (optional)</label>
+                <select
+                  className="input"
+                  value={projectId}
+                  onChange={(e) => { setProjectId(e.target.value); setTaskId('') }}
+                >
+                  <option value="">— Select project —</option>
+                  {data.projects.filter((p) => p.subjectId === subjectId && !p.deletedAt).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {projectId && (
+              <div>
+                <label className="label">Task (optional)</label>
+                <select
+                  className="input"
+                  value={taskId}
+                  onChange={(e) => setTaskId(e.target.value)}
+                >
+                  <option value="">— Select task —</option>
+                  {data.assignments.filter((a) => a.projectId === projectId && !a.completed && !a.deletedAt).map((a) => (
+                    <option key={a.id} value={a.id}>{a.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-sm text-slate-600 dark:text-slate-300">
+            Studying <span className="font-semibold">{data.subjects.find((s) => s.id === subjectId)?.name}</span>
+            {projectId && <span> — {data.projects.find((p) => p.id === projectId)?.name}</span>}
           </div>
         )}
       </div>

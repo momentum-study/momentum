@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
 import { SYNC_FAILURE_EVENT } from '../../lib/sync-status'
-import { useAuth } from '../../app/auth-provider'
 
 const DISMISS_KEY = 'momentum-sync-banner-dismissed'
 
 export function SyncBanner() {
-  const { user } = useAuth()
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [adBlockDismissed, setAdBlockDismissed] = useState(false)
 
@@ -19,7 +17,7 @@ export function SyncBanner() {
     return () => window.removeEventListener(SYNC_FAILURE_EVENT, onSyncFailure)
   }, [])
 
-  const showAdBlockWarning = user && !adBlockDismissed
+  const showAdBlockWarning = !adBlockDismissed
 
   if (!errorMessage && !showAdBlockWarning) return null
 

@@ -110,11 +110,13 @@ export const TASK_CATEGORIES: { value: TaskCategory; label: string; color: strin
 
 // Habit tracker
 export type HabitKind = 'good' | 'bad'
+export type HabitMode = 'count' | 'tick'
 
 export interface Habit {
   id: string
   name: string
   kind: HabitKind
+  mode: HabitMode
   color: string
   createdAt: string
   updatedAt: string

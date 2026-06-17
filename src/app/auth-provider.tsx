@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               // is '' when never saved locally.
               const localSettings = loadSettings()
               const localUpdatedAt = localSettings.settingsUpdatedAt
-              if (localUpdatedAt && localUpdatedAt >= cloudPrefs.updatedAt) {
+              if (localUpdatedAt && new Date(localUpdatedAt).getTime() >= new Date(cloudPrefs.updatedAt).getTime()) {
                 // Local is newer or equal — keep local values
               } else {
                 localStorage.setItem('momentum-settings', JSON.stringify(cloudPrefs.settings))

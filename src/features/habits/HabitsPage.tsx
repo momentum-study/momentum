@@ -27,6 +27,7 @@ export default function HabitsPage() {
   const [editHabit, setEditHabit] = useState<Habit | null>(null)
   const [name, setName] = useState('')
   const [kind, setKind] = useState<Habit['kind']>('good')
+  const [habitMode, setHabitMode] = useState<Habit['mode']>('count')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [archivedAfterDays, setArchivedAfterDays] = useState<number | null>(null)
   const [targetPerDay, setTargetPerDay] = useState(1)
@@ -84,6 +85,10 @@ export default function HabitsPage() {
   function getStreak(habitId: string): number {
     const habit = data.habits.find((h) => h.id === habitId)
     const isBad = habit?.kind === 'bad'
+    if (isBad && habit?.createdAt) {
+      const createdDate = format(new Date(habit.createdAt), 'yyyy-MM-dd')
+      if (todayStr === createdDate) return 0
+    }
     const logDates = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
     // For bad habits with no logs, every day "counts" as a streak day → infinite loop without a cap.
     // Cap at the habit's age or 365 days, whichever is smaller.
@@ -173,17 +178,16 @@ export default function HabitsPage() {
   async function saveLog() {
     if (!selectedId) return
     const habit = data.habits.find((h) => h.id === selectedId)
-    const parsedValue = logValue.trim() ? Number(logValue) : undefined
+    const parsedValue = logValue.trim() ? (isNaN(Number(logValue)) ? undefined : Number(logValue)) : undefined
     try {
       if (editLog) {
         const prevLog = await db.habitLogs.get(editLog.id)
-        await db.habitLogs.update(editLog.id, {
-          date: logDate,
-          time: logTime || undefined,
-          note: logNote.trim() || undefined,
-          value: parsedValue,
-          updatedAt: isoNow(),
-        })
+        // Avoid writing undefined fields — Firestore rejects them and Dexie can lose them
+        const update: Partial<HabitLog> = { date: logDate, updatedAt: isoNow() }
+        if (logTime) update.time = logTime
+        if (logNote.trim()) update.note = logNote.trim()
+        if (parsedValue !== undefined) update.value = parsedValue
+        await db.habitLogs.update(editLog.id, update)
         await loadData()
         setShowAddLog(false)
         setEditLog(null)
@@ -195,16 +199,16 @@ export default function HabitsPage() {
           })
         }
       } else {
-        const newLog = {
+        const newLog: HabitLog = {
           id: uuid(),
           habitId: selectedId,
           date: logDate,
-          time: logTime || undefined,
-          note: logNote.trim() || undefined,
-          value: parsedValue,
           createdAt: isoNow(),
           updatedAt: isoNow(),
         }
+        if (logTime) newLog.time = logTime
+        if (logNote.trim()) newLog.note = logNote.trim()
+        if (parsedValue !== undefined) newLog.value = parsedValue
         await db.habitLogs.add(newLog)
         await loadData()
         setShowAddLog(false)
@@ -277,9 +281,9 @@ export default function HabitsPage() {
       const finalName = kind === 'bad' && !trimmed.startsWith('Quitting ') ? `Quitting ${trimmed}` : trimmed
       const status: 'active' | 'potential' = parkForLater ? 'potential' : newHabitStatus
       if (editHabit) {
-        await db.habits.update(editHabit.id, { name: finalName, kind, color, archivedAfterDays, targetPerDay, updatedAt: isoNow() })
+        await db.habits.update(editHabit.id, { name: finalName, kind, mode: habitMode, color, archivedAfterDays, targetPerDay, updatedAt: isoNow() })
       } else {
-        await db.habits.add({ id: uuid(), name: finalName, kind, color, archivedAfterDays, targetPerDay, status, createdAt: isoNow(), updatedAt: isoNow() })
+        await db.habits.add({ id: uuid(), name: finalName, kind, mode: habitMode, color, archivedAfterDays, targetPerDay, status, createdAt: isoNow(), updatedAt: isoNow() })
       }
       setShowModal(false)
       await loadData()
@@ -663,6 +667,20 @@ export default function HabitsPage() {
                 setArchivedAfterDays(v === '' ? null : Number(v))
               }}
             />
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Tracking mode</label>
+            <select
+              className="input"
+              value={habitMode}
+              onChange={(e) => setHabitMode(e.target.value as Habit['mode'])}
+            >
+              <option value="count">Count — log every occurrence</option>
+              <option value="tick">Tick once per day</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              {habitMode === 'tick' ? 'One log per day, with an uncheck option to remove it.' : 'Log each time the habit happens (e.g. glasses of water).'}
+            </p>
+          </div>
           </div>
           {!editHabit && (
             <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">

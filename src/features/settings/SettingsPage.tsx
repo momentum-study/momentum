@@ -101,7 +101,7 @@ function SettingsField({ label, children }: { label: string; children: ReactNode
 }
 
 function NumberInput({ value, onChange, min = 0 }: { value: number; onChange: (n: number) => void; min?: number }) {
-  const display = value === 0 ? '' : String(value)
+  const display = String(value)
   return (
     <input
       type="text"

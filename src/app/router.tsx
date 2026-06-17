@@ -1,4 +1,4 @@
-import { HashRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { HashRouter, Link, Route, Routes, useLocation } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { AppLayout } from '../components/layout/AppLayout'
 import { DataProvider } from './providers'
@@ -48,6 +48,7 @@ function RouterContent() {
         <Route path="/groups" element={<GroupsPage />} />
         <Route path="/groups/:id" element={<GroupDetailPage />} />
         <Route path="/projects/:id" element={<ProjectDetailPage />} />
+        <Route path="*" element={<div className="flex flex-col items-center justify-center p-8 text-center"><h1 className="text-2xl font-bold text-slate-800 dark:text-white">Page Not Found</h1><p className="mt-2 text-slate-500">The page you're looking for doesn't exist.</p><Link to="/" className="mt-4 text-primary-600 hover:underline">Go to Dashboard</Link></div>} />
       </Routes>
     </ErrorBoundary>
   )

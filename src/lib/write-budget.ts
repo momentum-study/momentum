@@ -46,7 +46,7 @@ export function resetIfNewDay(): void {
 
 export function recordWrites(count: number): void {
   const budget = getBudget()
-  budget.used = Math.min(budget.used + count, HARD_CAP + 1000) // cap to avoid overflow
+  budget.used = Math.min(budget.used + count, HARD_CAP) // cap to avoid overflow
   saveBudget(budget)
 }
 

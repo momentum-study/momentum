@@ -147,17 +147,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     }, 80)
   }, [])
-  useEffect(() => { void loadData() }, [loadData])
+  // On mount: pull cloud data first (if signed in), then load. Avoids the race where
+  // a separate loadData() fires before pullAllData completes, showing stale local data.
+  useEffect(() => {
+    async function init() {
+      const uid = localStorage.getItem('momentum-cloud-uid')
+      if (uid) await pullAllData(uid)
+      await loadData()
+    }
+    void init()
+  }, [loadData])
   useEffect(() => {
     function onSynced() { void loadData() }
     window.addEventListener('momentum-data-synced', onSynced)
     return () => window.removeEventListener('momentum-data-synced', onSynced)
   }, [loadData])
-  useEffect(() => {
-    const uid = localStorage.getItem('momentum-cloud-uid')
-    if (!uid) return
-    void pullAllData(uid).then(() => void loadData())
-  }, [])
   // On startup, flush any dirty tables that survived from a previous session
   flushPendingDirtyTables()
   const value = useMemo(

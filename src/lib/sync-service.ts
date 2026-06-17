@@ -18,6 +18,28 @@ import { isoNow } from './utils'
 import type { SyncedSession } from '../domain/cloud-types'
 
 const QUEUE_KEY = 'momentum-sync-queue'
+const BACKOFF_KEY = 'momentum-sync-backoff'
+const MAX_BACKOFF_MS = 5 * 60 * 1000 // 5 min
+
+function getBackoffMs(): number {
+  try {
+    const raw = localStorage.getItem(BACKOFF_KEY)
+    if (!raw) return 0
+    const next = Number(raw)
+    if (isNaN(next)) return 0
+    return Math.max(0, next - Date.now())
+  } catch { return 0 }
+}
+
+function setBackoff(attempts: number) {
+  const delay = Math.min(MAX_BACKOFF_MS, 1000 * Math.pow(2, attempts))
+  localStorage.setItem(BACKOFF_KEY, String(Date.now() + delay))
+}
+
+function clearBackoff() {
+  localStorage.removeItem(BACKOFF_KEY)
+}
+
 
 interface PendingOp {
   type: 'upsert' | 'delete'
@@ -103,6 +125,7 @@ function computeMemberStats(
   }
 }
 
+  /** Flush pending ops to Firestore with exponential backoff on failure. */
 export const syncService = {
   /** Enqueue an upsert for a session. Returns immediately; flushed in background. */
   enqueueUpsert(session: SyncedSession) {
@@ -123,10 +146,16 @@ export const syncService = {
    * Flush pending ops to Firestore.
    * Splits the queue into chunks of ≤500 ops (Firestore batch limit) and
    * saves only the remaining (failed) ops for retry, so successful ones
-   * are not duplicated.
+   * are not duplicated. Applies exponential backoff on consecutive failures.
    */
   async flush(): Promise<void> {
     if (!isFirebaseConfigured || !db) return
+    // Respect backoff window
+    const backoff = getBackoffMs()
+    if (backoff > 0) {
+      console.log(`[sync] Flush deferred (backoff: ${Math.round(backoff / 1000)}s)`)
+      return
+    }
     const firestore = db
     const queue = loadQueue()
     if (queue.length === 0) return
@@ -134,6 +163,7 @@ export const syncService = {
     const BATCH_LIMIT = 500
     let writeCount = 0
     let processed = 0
+    let failed = false
 
     for (let start = 0; start < queue.length; start += BATCH_LIMIT) {
       const chunk = queue.slice(start, start + BATCH_LIMIT)
@@ -158,7 +188,6 @@ export const syncService = {
       }
 
       if (chunkWrites === 0) {
-        // All ops in this chunk were kept (e.g., budget exceeded). Stop trying more chunks.
         saveQueue([...chunkOps, ...queue.slice(start + BATCH_LIMIT)])
         return
       }
@@ -169,17 +198,27 @@ export const syncService = {
         writeCount += chunkWrites
         processed += chunkWrites
       } catch (e) {
+        failed = true
         console.error('Sync batch failed (will retry remaining ops):', e)
-        // Save only the ops in this chunk that we couldn't write, plus all later chunks
         saveQueue([...chunkOps, ...queue.slice(start + BATCH_LIMIT)])
-        return
+        break
       }
     }
 
-    if (processed > 0) {
-      console.log(`[sync] Flushed ${writeCount} ops in ${Math.ceil(queue.length / BATCH_LIMIT)} batch(es)`)
+    if (processed > 0) clearBackoff()
+    if (failed) {
+      const attempts = Number(localStorage.getItem('momentum-sync-attempts') ?? '0') + 1
+      localStorage.setItem('momentum-sync-attempts', String(attempts))
+      setBackoff(attempts)
+      console.warn(`[sync] Flush failed, backoff set (attempt ${attempts})`)
     }
-    saveQueue([])
+    if (processed > 0 && !failed) {
+      console.log(`[sync] Flushed ${writeCount} ops in ${Math.ceil(queue.length / BATCH_LIMIT)} batch(es)`)
+      saveQueue([])
+    } else if (!failed) {
+      // All kept (e.g., budget exceeded); preserve queue
+      saveQueue(queue)
+    }
   },
   async fetchUserSessions(uid: string): Promise<SyncedSession[]> {
     if (!isFirebaseConfigured || !db) return []

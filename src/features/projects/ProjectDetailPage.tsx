@@ -155,7 +155,9 @@ export default function ProjectDetailPage() {
     setTimeTaskId('')
   }
 
-  const goalPct = project.goalMinutes ? Math.min(100, Math.round((totalMinutes / project.goalMinutes) * 100)) : 0
+  const goalTarget = project.dailyTargetMinutes ?? project.weeklyTargetMinutes ?? project.totalTargetMinutes ?? 0
+  const goalPct = goalTarget > 0 ? Math.min(100, Math.round((totalMinutes / goalTarget) * 100)) : 0
+  const goalLabel = project.dailyTargetMinutes ? 'daily' : project.weeklyTargetMinutes ? 'weekly' : 'total'
 
   return (
     <div className="space-y-6">
@@ -171,10 +173,12 @@ export default function ProjectDetailPage() {
           <Button variant="primary" size="sm" onClick={() => setShowTimeModal(true)}>Log Time</Button>
         </div>
       </div>
-      {project.goalMinutes && project.goalMinutes > 0 && (
+      {goalTarget > 0 && (
         <Card>
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Progress: {formatMinutes(totalMinutes)} / {formatMinutes(project.goalMinutes)}</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              Progress: {formatMinutes(totalMinutes)} / {formatMinutes(goalTarget)} · {goalLabel} goal
+            </span>
             <span className="text-lg font-bold text-primary-600 dark:text-primary-400">{goalPct}%</span>
           </div>
           <div className="mt-2 h-3 w-full rounded-full bg-slate-200 dark:bg-slate-700">

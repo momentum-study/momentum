@@ -45,6 +45,7 @@ export interface Session {
   subjectId: string
   projectId?: string | null
   assignmentId?: string | null
+  routineId?: string | null
   startAt: string // ISO
   endAt: string // ISO
   durationMinutes: number

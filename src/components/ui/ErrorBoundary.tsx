@@ -23,12 +23,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   retry = () => this.setState({ hasError: false, error: null })
   render() {
     if (this.state.hasError) {
+      const stack = this.state.error?.stack ?? ''
       return (
         <div className="flex h-screen flex-col items-center justify-center p-4 text-center">
           <h1 className="text-xl font-bold text-red-600">Something went wrong</h1>
           <p className="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-300">
             {this.state.error?.message ?? 'Unknown error'}
           </p>
+          {stack && (
+            <details className="mt-2 max-w-md text-left text-xs text-slate-500 dark:text-slate-400">
+              <summary className="cursor-pointer select-none">Stack trace</summary>
+              <pre className="mt-1 max-h-40 overflow-auto rounded bg-slate-100 p-2 text-left text-[10px] dark:bg-slate-800">{stack}</pre>
+            </details>
+          )}
           <div className="mt-4 flex gap-2">
             <button
               type="button"

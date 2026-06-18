@@ -239,22 +239,23 @@ function markDirty(tableKey: TableKey) {
   }
 }
 
-/** Flush pending dirty tables immediately (used on page close / tab hide). */
-export function flushNow() {
+/** Flush pending dirty tables immediately (used on page close / tab hide).
+ * Unlike the previous version, this does NOT clear dirtyTables upfront —
+ * only removes entries after a successful push. If the browser kills the
+ * process mid-flush, surviving dirty tables remain in localStorage for
+ * retry on next startup via flushPendingDirtyTables(). */
+export async function flushNow(): Promise<void> {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
   if (!activeSyncUid || dirtyTables.size === 0) return
   const tables = [...dirtyTables]
-  // Clear and persist — if push succeeds, dirtyTables is emptied.
-  // If push fails (or browser kills the process), the tables remain
-  // in localStorage and are retried on next startup.
-  dirtyTables.clear()
-  saveDirtyTables(dirtyTables)
   for (const tableKey of tables) {
-    void pushTable(activeSyncUid, tableKey).catch(() => {
-      // Re-mark as dirty so it's picked up on next cycle
-      dirtyTables.add(tableKey)
+    try {
+      await pushTable(activeSyncUid, tableKey)
+      dirtyTables.delete(tableKey)
       saveDirtyTables(dirtyTables)
-    })
+    } catch (e) {
+      console.error(`[sync] Flush failed for ${tableKey}, will retry later`)
+    }
   }
 }
 
@@ -306,10 +307,10 @@ export function installSyncHooks(uid: string) {
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushNow()
+    if (document.visibilityState === 'hidden') void flushNow()
   })
   window.addEventListener('beforeunload', () => {
-    flushNow()
+    void flushNow()
   })
 }
 

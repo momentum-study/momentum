@@ -201,7 +201,7 @@ export default function ReviewSessionPage() {
                 <input
                   type="number"
                   value={minutesSpent}
-                  onChange={(e) => setMinutesSpent(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={(e) => setMinutesSpent(Math.min(180, Math.max(1, parseInt(e.target.value) || 1)))}
                   min={1}
                   max={180}
                   className="w-24 px-3 py-2 border rounded-md dark:bg-slate-800 dark:border-slate-700"

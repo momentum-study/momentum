@@ -358,7 +358,14 @@ function CategoriesManager() {
     if (!deleteConfirm) return
     setSaving(true)
     try {
-      await db.categories.delete(deleteConfirm.id)
+      const now = isoNow()
+      const catId = deleteConfirm.id
+      const affectedSubjects = data.subjects
+        .filter((s) => s.categoryId === catId && !s.deletedAt)
+      await db.categories.update(catId, { deletedAt: now, updatedAt: now })
+      for (const subj of affectedSubjects) {
+        await db.subjects.update(subj.id, { deletedAt: now, updatedAt: now })
+      }
       await loadData()
       setDeleteConfirm(null)
     } finally {

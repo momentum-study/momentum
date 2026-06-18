@@ -26,6 +26,10 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
     if (r.projectId && r.projectId !== session.projectId) return false
     return true
   })
+    // Tag the session with the first matching routine
+    if (matching.length > 0) {
+      await db.sessions.update(session.id, { routineId: matching[0].id, updatedAt: isoNow() })
+    }
 
   if (matching.length === 0) return
 

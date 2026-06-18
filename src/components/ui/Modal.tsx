@@ -50,6 +50,22 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
         'dark:border-slate-700 dark:bg-slate-800',
         className
       )}
+      onKeyDown={(e) => {
+        if (e.key !== 'Tab') return
+        const el = dialogRef.current
+        if (!el) return
+        const focusable = el.querySelectorAll<HTMLElement>(
+          'button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey) {
+          if (document.activeElement === first) { e.preventDefault(); last.focus() }
+        } else {
+          if (document.activeElement === last) { e.preventDefault(); first.focus() }
+        }
+      }}
     >
       {title && (
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">

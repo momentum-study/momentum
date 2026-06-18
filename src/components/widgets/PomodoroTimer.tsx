@@ -234,6 +234,17 @@ export function PomodoroTimer() {
       if (changeSubjectConfirmationTimer.current) clearTimeout(changeSubjectConfirmationTimer.current)
     }
   }, [])
+  // Auto-save on visibility change
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'hidden') {
+        if (simpleStartedAt) await stopSimple()
+        else if (pomStartedAt && pomPhase === 'focus') await resetPomodoro()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [simpleStartedAt, pomStartedAt, pomPhase])
 
   // Update document.title when timer is running
   const isRunning = simpleStartedAt !== null || pomStartedAt !== null
@@ -532,7 +543,7 @@ export function PomodoroTimer() {
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  value={config.focusMinutes === 1 ? '' : String(config.focusMinutes)}
+                  value={String(config.focusMinutes)}
                   onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ focusMinutes: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ focusMinutes: Math.max(1, n) }) }}
                   className="input w-16 text-center"
                 />
@@ -546,7 +557,7 @@ export function PomodoroTimer() {
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  value={config.breakMinutes === 1 ? '' : String(config.breakMinutes)}
+                  value={String(config.breakMinutes)}
                   onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ breakMinutes: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ breakMinutes: Math.max(1, n) }) }}
                   className="input w-16 text-center"
                 />
@@ -560,7 +571,7 @@ export function PomodoroTimer() {
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  value={config.longBreakMinutes === 1 ? '' : String(config.longBreakMinutes)}
+                  value={String(config.longBreakMinutes)}
                   onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ longBreakMinutes: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ longBreakMinutes: Math.max(1, n) }) }}
                   className="input w-16 text-center"
                 />
@@ -575,7 +586,7 @@ export function PomodoroTimer() {
                   inputMode="numeric"
                   pattern="[0-9]*"
                   max={12}
-                  value={config.cycles === 1 ? '' : String(config.cycles)}
+                  value={String(config.cycles)}
                   onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ cycles: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ cycles: Math.max(1, Math.min(12, n)) }) }}
                   className="input w-16 text-center"
                 />
@@ -718,7 +729,7 @@ export function PomodoroTimer() {
                 onChange={(e) => { setSubjectId(e.target.value); setProjectId(''); setTaskId('') }}
               >
                 <option value="">— Select focus area —</option>
-                {data.subjects.map((s) => (
+                {data.subjects.filter(s => !s.deletedAt).map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
@@ -812,7 +823,7 @@ export function PomodoroTimer() {
                 autoFocus
               >
                 <option value="">— Select new subject —</option>
-                {data.subjects.filter((s) => s.id !== subjectId).map((s) => (
+                {data.subjects.filter((s) => s.id !== subjectId && !s.deletedAt).map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>

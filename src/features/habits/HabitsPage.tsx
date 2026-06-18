@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, parseISO } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
@@ -92,15 +92,22 @@ export default function HabitsPage() {
     const logDates = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
     // For bad habits with no logs, every day "counts" as a streak day → infinite loop without a cap.
     // Cap at the habit's age or 365 days, whichever is smaller.
-    const maxDays = habit?.createdAt
-      ? Math.min(365, Math.ceil((Date.now() - new Date(habit.createdAt).getTime()) / 86400000))
+    const habitStart = habit?.createdAt ? new Date(habit.createdAt) : null
+    const daysSinceCreation = habitStart
+      ? Math.max(0, Math.floor((Date.now() - habitStart.getTime()) / 86400000))
       : 365
+    const maxDays = Math.min(365, daysSinceCreation)
+    // For good habits, today is the latest day to check; for bad habits we
+    // skip today (the streak is days you AVOIDED, and the day isn't over yet).
+    const todayCutoff = isBad ? subDays(new Date(), 1) : new Date()
     // Safety net: allow 1 missed day per week for good habits only.
     // For bad habits, a lapse resets the streak immediately.
     let streak = 0
     let missed = 0
-    let d = new Date()
+    let d = todayCutoff
     while (streak < maxDays) {
+      // Don't count days before the habit was created
+      if (habitStart && d < subDays(habitStart, 1)) break
       const ds = format(d, 'yyyy-MM-dd')
       const countsAsStreak = isBad ? !logDates.has(ds) : logDates.has(ds)
       if (countsAsStreak) {
@@ -155,13 +162,50 @@ export default function HabitsPage() {
 
   // One-click log: directly insert a timestamped log without opening a modal.
   // Undo is queued so the user can revert the mistake easily.
+  // In tick mode, the button toggles today's log on/off (one log per day).
   async function quickLogToday(habitId: string) {
     const habit = data.habits.find((h) => h.id === habitId)
     const now = new Date()
+    const todayDate = format(now, 'yyyy-MM-dd')
+
+    // Tick mode: toggle the day's log
+    if (habit?.mode === 'tick') {
+      const existing = data.habitLogs.find(
+        (l) => l.habitId === habitId && l.date === todayDate
+      )
+      if (existing) {
+        await db.habitLogs.delete(existing.id)
+        await loadData()
+        pushUndo({
+          description: `Unchecked ${habit?.kind === 'bad' ? 'lapse' : 'tick'}: ${habit?.name ?? 'habit'}`,
+          undo: async () => { await db.habitLogs.put(existing); await loadData() },
+          redo: async () => { await db.habitLogs.delete(existing.id); await loadData() },
+        })
+      } else {
+        const newLog = {
+          id: uuid(),
+          habitId,
+          date: todayDate,
+          time: format(now, 'HH:mm'),
+          createdAt: isoNow(),
+          updatedAt: isoNow(),
+        }
+        await db.habitLogs.add(newLog)
+        await loadData()
+        pushUndo({
+          description: `Checked ${habit?.kind === 'bad' ? 'lapse' : 'tick'}: ${habit?.name ?? 'habit'}`,
+          undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
+          redo: async () => { await db.habitLogs.add(newLog); await loadData() },
+        })
+      }
+      return
+    }
+
+    // Count mode: append a new log
     const newLog = {
       id: uuid(),
       habitId,
-      date: format(now, 'yyyy-MM-dd'),
+      date: todayDate,
       time: format(now, 'HH:mm'),
       createdAt: isoNow(),
       updatedAt: isoNow(),
@@ -348,6 +392,18 @@ export default function HabitsPage() {
     const daysLogged = getDaysLogged(habit.id)
     const archiveThreshold = habit.archivedAfterDays ?? settings.defaultArchiveDays
     const reachedThreshold = daysLogged >= archiveThreshold
+    const isTickMode = habit.mode === 'tick'
+    const isTickedToday = isTickMode && todayCount > 0
+    const [menuOpen, setMenuOpen] = useState(false)
+    const menuRef = useRef<HTMLDivElement>(null)
+    useEffect(() => {
+      if (!menuOpen) return
+      const handler = (e: MouseEvent) => {
+        if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+      }
+      document.addEventListener('mousedown', handler)
+      return () => document.removeEventListener('mousedown', handler)
+    }, [menuOpen])
     const last7 = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(new Date(), 6 - i)
       const ds = format(d, 'yyyy-MM-dd')
@@ -376,6 +432,12 @@ export default function HabitsPage() {
                   aria-label="About bad habit streaks"
                 >ⓘ</span>
               )}
+              {isTickMode && (
+                <span
+                  className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                  title="Tick mode: one log per day"
+                >tick</span>
+              )}
             </div>
             <div className="mt-0.5 text-xs text-slate-500">
               {streakLabel}
@@ -394,6 +456,56 @@ export default function HabitsPage() {
           {todayCount > 0 && (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{todayCount} today</span>
           )}
+          {/* Kebab menu */}
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              aria-label="Habit actions"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v) }}
+              className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <circle cx="3" cy="8" r="1.5" />
+                <circle cx="8" cy="8" r="1.5" />
+                <circle cx="13" cy="8" r="1.5" />
+              </svg>
+            </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                  onClick={() => { setMenuOpen(false); openEditHabit(habit) }}
+                >Edit</button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                  onClick={() => { setMenuOpen(false); demoteToPotential(habit.id) }}
+                >Park</button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                  onClick={() => { setMenuOpen(false); setArchiveConfirm(habit.id) }}
+                >Archive</button>
+                <div className="my-1 border-t border-slate-200 dark:border-slate-700" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                  onClick={() => { setMenuOpen(false); setDeleteConfirm(habit.id) }}
+                >Delete</button>
+              </div>
+            )}
+          </div>
         </div>
         <div className="mt-2 flex items-center justify-between">
           <div className="flex gap-1">
@@ -407,12 +519,31 @@ export default function HabitsPage() {
             ))}
           </div>
           <div className="flex gap-1">
-            <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); quickLogToday(habit.id) }}>
-              Quick Log
-            </Button>
-            <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
-              {isBad ? 'Log lapse' : 'Log with note'}
-            </Button>
+            {isTickMode ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}
+                aria-pressed={isTickedToday}
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded border-2 text-base font-bold transition-colors',
+                  isTickedToday
+                    ? 'border-primary-600 bg-primary-600 text-white'
+                    : 'border-slate-300 bg-white text-slate-400 hover:border-primary-400 hover:text-primary-500 dark:border-slate-600 dark:bg-slate-800'
+                )}
+                title={isTickedToday ? 'Uncheck for today' : 'Check for today'}
+              >
+                ✓
+              </button>
+            ) : (
+              <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}>
+                Quick Log
+              </Button>
+            )}
+            {!isTickMode && (
+              <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
+                {isBad ? 'Log lapse' : 'Log with note'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -426,13 +557,6 @@ export default function HabitsPage() {
             >archiving</button>.
           </p>
         )}
-
-        <div className="mt-2 flex flex-wrap gap-1">
-          <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); openEditHabit(habit) }}>Edit</Button>
-          <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); demoteToPotential(habit.id) }} title="Move to potential list — pick this up later">Park</Button>
-          <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setArchiveConfirm(habit.id) }}>Archive</Button>
-          <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(habit.id) }}>Delete</Button>
-        </div>
       </Card>
     )
   }

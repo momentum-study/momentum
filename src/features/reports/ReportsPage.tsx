@@ -243,8 +243,10 @@ export default function ReportsPage() {
               onClick={() => setScope(opt.value)}
               className={
                 active
-                  ? 'rounded-full bg-primary-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition-colors'
-                  : 'rounded-full px-4 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                  ? opt.value === 'all'
+                    ? 'rounded-full bg-slate-300 px-4 py-1.5 text-sm font-medium text-slate-900 shadow-sm transition-colors dark:bg-slate-300 dark:text-slate-900'
+                    : 'rounded-full bg-primary-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition-colors'
+                  : 'rounded-full bg-white px-4 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
               }
             >
               {opt.label}
@@ -267,7 +269,7 @@ export default function ReportsPage() {
               className={
                 active
                   ? 'rounded-full bg-primary-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition-colors'
-                  : 'rounded-full px-4 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                  : 'rounded-full bg-white px-4 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
               }
             >
               {opt.label}

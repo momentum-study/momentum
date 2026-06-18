@@ -288,4 +288,19 @@ if (typeof window !== 'undefined') {
     console.log('[Sync] Back online, flushing pending ops...')
     void syncService.flush()
   })
+
+  // Flush any pending ops that survived a page close (e.g. browser kill mid-flush).
+  // Also retry periodically while the page is open so backoff windows don't stall
+  // the queue indefinitely.
+  const pending = loadQueue()
+  if (pending.length > 0) {
+    console.log(`[Sync] ${pending.length} pending ops from previous session, flushing...`)
+    void syncService.flush()
+  }
+
+  // Periodic retry: every 60s, flush any remaining queue (respects backoff).
+  setInterval(() => {
+    const q = loadQueue()
+    if (q.length > 0) void syncService.flush()
+  }, 60_000)
 }

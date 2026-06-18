@@ -43,7 +43,7 @@ export default function RoutinePage() {
   const routineLogsToday = useMemo(() => {
     const map: Record<string, RoutineLog> = {}
     data.routineLogs.forEach((log) => {
-      if (log.date === todayStr) {
+      if (!log.deletedAt && log.date === todayStr) {
         map[log.routineId] = log
       }
     })

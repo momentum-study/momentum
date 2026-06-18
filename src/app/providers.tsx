@@ -133,7 +133,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [rangePreset, setRangePreset] = useState<RangePreset>('week')
 
   const loadTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const pullInProgress = useRef(false)
   const loadData = useCallback(async () => {
+    if (pullInProgress.current) return  // Skip: pullAllData will call loadData when done
     if (loadTimer.current) clearTimeout(loadTimer.current)
     loadTimer.current = setTimeout(async () => {
       loadTimer.current = null
@@ -151,8 +153,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // a separate loadData() fires before pullAllData completes, showing stale local data.
   useEffect(() => {
     async function init() {
-      const uid = localStorage.getItem('momentum-cloud-uid')
-      if (uid) await pullAllData(uid)
+      pullInProgress.current = true
+      try {
+        const uid = localStorage.getItem('momentum-cloud-uid')
+        if (uid) await pullAllData(uid)
+      } finally {
+        pullInProgress.current = false
+      }
       await loadData()
     }
     void init()

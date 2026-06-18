@@ -106,7 +106,23 @@ export default function SubjectsPage() {
     if (!deleteSubject) return
     setIsSaving(true)
     try {
-      await db.subjects.delete(deleteSubject.id)
+      const now = isoNow()
+      const subjId = deleteSubject.id
+      // Soft-delete the subject and cascade to its projects, sessions, and assignments
+      // so consumers that filter by !deletedAt don't see dangling references.
+      await db.subjects.update(subjId, { deletedAt: now, updatedAt: now })
+      const projectsToSoft = await db.projects.where('subjectId').equals(subjId).toArray()
+      for (const p of projectsToSoft) {
+        await db.projects.update(p.id, { deletedAt: now, updatedAt: now })
+      }
+      const sessionsToSoft = await db.sessions.where('subjectId').equals(subjId).toArray()
+      for (const s of sessionsToSoft) {
+        await db.sessions.update(s.id, { deletedAt: now, updatedAt: now })
+      }
+      const assignmentsToSoft = await db.assignments.where('subjectId').equals(subjId).toArray()
+      for (const a of assignmentsToSoft) {
+        await db.assignments.update(a.id, { deletedAt: now, updatedAt: now })
+      }
       await loadData()
       setDeleteSubject(null)
     } finally {

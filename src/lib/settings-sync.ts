@@ -8,11 +8,16 @@ import type { Settings } from '../features/settings/SettingsPage'
 
 const CLOUD_COLLECTION = 'userSettings'
 
+export interface NavPrefs {
+  order: string[]
+  hidden: string[]
+}
+
 export interface CloudPrefsPayload {
   uid: string
   settings: Settings
   dashboardWidgets: string[]
-  navPrefs: string[]
+  navPrefs: NavPrefs
   updatedAt: string
 }
 
@@ -21,7 +26,7 @@ export async function pushSettings(
   uid: string,
   settings: Settings,
   dashboardWidgets: string[],
-  navPrefs: string[],
+  navPrefs: NavPrefs,
 ): Promise<void> {
   if (!isFirebaseConfigured || !firestore) return
   try {

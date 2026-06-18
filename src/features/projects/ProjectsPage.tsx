@@ -106,8 +106,6 @@ export default function ProjectsPage() {
       }
       await loadData()
       handleCloseModal()
-      await loadData()
-      handleCloseModal()
     } finally {
       setIsSaving(false)
     }

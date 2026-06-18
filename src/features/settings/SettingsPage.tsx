@@ -101,7 +101,10 @@ function SettingsField({ label, children }: { label: string; children: ReactNode
 }
 
 function NumberInput({ value, onChange, min = 0 }: { value: number; onChange: (n: number) => void; min?: number }) {
-  const display = String(value)
+  // Local display state so the user can clear the field without it snapping to min.
+  // The committed value is still passed through to onChange.
+  const [draft, setDraft] = useState<string | null>(null)
+  const display = draft ?? String(value)
   return (
     <input
       type="text"
@@ -110,10 +113,20 @@ function NumberInput({ value, onChange, min = 0 }: { value: number; onChange: (n
       value={display}
       onChange={(e) => {
         const v = e.target.value
-        if (v === '') { onChange(min); return }
+        if (v === '') {
+          // Allow empty draft; defer clamping until blur
+          setDraft('')
+          return
+        }
+        if (!/^\d*$/.test(v)) return
+        setDraft(null)
         const n = Number(v)
         if (isNaN(n)) return
         onChange(Math.max(min, n))
+      }}
+      onBlur={() => {
+        // On blur, if the field is empty, snap back to current value
+        if (draft === '') setDraft(null)
       }}
       className="input w-24 text-right"
     />

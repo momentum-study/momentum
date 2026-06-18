@@ -34,9 +34,9 @@ export default function Dashboard() {
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
-
+  // Exclude soft-deleted sessions from streak / stats calculations.
   const academicSessions = useMemo(
-    () => data.sessions.filter((s) => getSessionScope(s, data.subjects, data.categories) === 'academic'),
+    () => data.sessions.filter((s) => !s.deletedAt && getSessionScope(s, data.subjects, data.categories) === 'academic'),
     [data.sessions, data.subjects, data.categories]
   )
 

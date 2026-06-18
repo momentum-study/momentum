@@ -23,6 +23,14 @@ export default function HabitsPage() {
   const { data, loadData } = useData()
   const { push: pushUndo } = useUndo()
   const settings = loadSettings()
+  // Debounce guard for quickLogToday: prevents double-click race conditions
+  // when toggling tick-mode habits.
+  const quickLogInFlightRef = useRef<Set<string>>(new Set())
+
+  // Re-fetch latest habit data to avoid stale closure issues
+  const latestDataRef = useRef(data)
+  useEffect(() => { latestDataRef.current = data }, [data])
+
   const [showModal, setShowModal] = useState(false)
   const [editHabit, setEditHabit] = useState<Habit | null>(null)
   const [name, setName] = useState('')
@@ -164,59 +172,69 @@ export default function HabitsPage() {
   // Undo is queued so the user can revert the mistake easily.
   // In tick mode, the button toggles today's log on/off (one log per day).
   async function quickLogToday(habitId: string) {
-    const habit = data.habits.find((h) => h.id === habitId)
-    const now = new Date()
-    const todayDate = format(now, 'yyyy-MM-dd')
-
-    // Tick mode: toggle the day's log
-    if (habit?.mode === 'tick') {
-      const existing = data.habitLogs.find(
-        (l) => l.habitId === habitId && l.date === todayDate
-      )
-      if (existing) {
-        await db.habitLogs.delete(existing.id)
-        await loadData()
-        pushUndo({
-          description: `Unchecked ${habit?.kind === 'bad' ? 'lapse' : 'tick'}: ${habit?.name ?? 'habit'}`,
-          undo: async () => { await db.habitLogs.put(existing); await loadData() },
-          redo: async () => { await db.habitLogs.delete(existing.id); await loadData() },
-        })
-      } else {
-        const newLog = {
-          id: uuid(),
-          habitId,
-          date: todayDate,
-          time: format(now, 'HH:mm'),
-          createdAt: isoNow(),
-          updatedAt: isoNow(),
+    // Re-entrancy guard: drop double-clicks while a toggle is in flight
+    if (quickLogInFlightRef.current.has(habitId)) return
+    quickLogInFlightRef.current.add(habitId)
+    try {
+      // Read latest data to avoid stale closures after a previous toggle
+      const live = latestDataRef.current
+      const habit = live.habits.find((h) => h.id === habitId)
+      const now = new Date()
+      const todayDate = format(now, 'yyyy-MM-dd')
+      const isTick = habit?.mode === 'tick'
+      const subject = habit?.kind === 'bad' ? `Quitting ${habit.name}` : (habit?.name ?? 'habit')
+      if (isTick) {
+        const existing = live.habitLogs.find(
+          (l) => l.habitId === habitId && l.date === todayDate
+        )
+        if (existing) {
+          await db.habitLogs.delete(existing.id)
+          await loadData()
+          pushUndo({
+            description: `Unchecked: ${subject}`,
+            undo: async () => { await db.habitLogs.put(existing); await loadData() },
+            redo: async () => { await db.habitLogs.delete(existing.id); await loadData() },
+          })
+        } else {
+          const newLog = {
+            id: uuid(),
+            habitId,
+            date: todayDate,
+            time: format(now, 'HH:mm'),
+            createdAt: isoNow(),
+            updatedAt: isoNow(),
+          }
+          await db.habitLogs.add(newLog)
+          await loadData()
+          pushUndo({
+            description: `Ticked: ${subject}`,
+            undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
+            redo: async () => { await db.habitLogs.add(newLog); await loadData() },
+          })
         }
-        await db.habitLogs.add(newLog)
-        await loadData()
-        pushUndo({
-          description: `Checked ${habit?.kind === 'bad' ? 'lapse' : 'tick'}: ${habit?.name ?? 'habit'}`,
-          undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
-          redo: async () => { await db.habitLogs.add(newLog); await loadData() },
-        })
+        return
       }
-      return
-    }
 
-    // Count mode: append a new log
-    const newLog = {
-      id: uuid(),
-      habitId,
-      date: todayDate,
-      time: format(now, 'HH:mm'),
-      createdAt: isoNow(),
-      updatedAt: isoNow(),
+      // Count mode: append a new log
+      const newLog = {
+        id: uuid(),
+        habitId,
+        date: todayDate,
+        time: format(now, 'HH:mm'),
+        createdAt: isoNow(),
+        updatedAt: isoNow(),
+      }
+      await db.habitLogs.add(newLog)
+      await loadData()
+      pushUndo({
+        description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${subject}`,
+        undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
+        redo: async () => { await db.habitLogs.add(newLog); await loadData() },
+      })
+    } finally {
+      // Release the debounce lock
+      quickLogInFlightRef.current.delete(habitId)
     }
-    await db.habitLogs.add(newLog)
-    await loadData()
-    pushUndo({
-      description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${habit?.name ?? 'habit'}`,
-      undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
-      redo: async () => { await db.habitLogs.add(newLog); await loadData() },
-    })
   }
 
   async function saveLog() {
@@ -257,8 +275,10 @@ export default function HabitsPage() {
         await loadData()
         setShowAddLog(false)
         setEditLog(null)
+        const saveLogVerb = habit?.mode === 'tick' ? 'ticked' : (habit?.kind === 'bad' ? 'lapse' : 'occurrence')
+        const saveLogSubject = habit?.kind === 'bad' && habit ? `Quitting ${habit.name}` : (habit?.name ?? 'habit')
         pushUndo({
-          description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${habit?.name ?? 'habit'}`,
+          description: `Logged ${saveLogVerb}: ${saveLogSubject}`,
           undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
           redo: async () => { await db.habitLogs.add(newLog); await loadData() },
         })
@@ -453,7 +473,7 @@ export default function HabitsPage() {
               )}
             </div>
           </div>
-          {todayCount > 0 && (
+          {!isTickMode && todayCount > 0 && (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{todayCount} today</span>
           )}
           {/* Kebab menu */}
@@ -660,9 +680,13 @@ export default function HabitsPage() {
                 const dayLogs = logsByDate[dateStr] ?? []
                 const count = dayLogs.length
                 const totalValue = dayLogs.reduce((sum, l) => sum + (l.value ?? 0), 0)
+                const isTickMode = selectedHabit.mode === 'tick'
                 const target = selectedHabit.targetPerDay ?? 1
+                // Tick mode is binary: either the day is checked (full intensity) or not.
                 const intensity = count === 0
                   ? 0
+                  : isTickMode
+                  ? 4
                   : count >= target * 4
                   ? 4
                   : count >= target * 2
@@ -670,7 +694,7 @@ export default function HabitsPage() {
                   : count >= target
                   ? 2
                   : 1
-                const opacity = intensity === 0 ? undefined : 0.2 + (intensity * 0.2)
+                const opacity = intensity === 0 ? undefined : isTickMode ? 0.8 : 0.2 + (intensity * 0.2)
                 const isFuture = dateStr > todayStr
                 const isBeforeStart = dateStr < habitStartDate
                 const isToday = dateStr === todayStr
@@ -698,7 +722,7 @@ export default function HabitsPage() {
                   <button
                     key={dateStr}
                     onClick={() => setDayDetailDate(dateStr)}
-                    title={muted ? dateStr : totalValue > 0 ? `${dateStr} — ${count} log${count !== 1 ? 's' : ''} (${totalValue} total)` : isForgiven ? `${dateStr} — forgiven` : isMissed ? `${dateStr} — missed` : `${dateStr}${count > 0 ? ` — ${count} log${count !== 1 ? 's' : ''}` : ''}`}
+                    title={muted ? dateStr : isTickMode ? `${dateStr} — ${hasLogs ? '✓' : 'missed'}` : totalValue > 0 ? `${dateStr} — ${count} log${count !== 1 ? 's' : ''} (${totalValue} total)` : isForgiven ? `${dateStr} — forgiven` : isMissed ? `${dateStr} — missed` : `${dateStr}${count > 0 ? ` — ${count} log${count !== 1 ? 's' : ''}` : ''}`}
                     aria-label={muted ? dateStr : hasLogs ? `Logged` : isForgiven ? `Forgiven` : isMissed ? `Missed` : `No study logged`}
                     className={cn(
                       'flex h-9 w-full flex-col items-center justify-center rounded text-xs font-medium transition-all',
@@ -716,7 +740,8 @@ export default function HabitsPage() {
                     <span>{format(day, 'd')}</span>
                     {isMissed && !muted && <span className="text-[9px] text-red-400">×</span>}
                     {isForgiven && <span className="text-[9px]">♡</span>}
-                    {hasLogs && <span className="text-[9px] opacity-90">×{count}{totalValue > 0 ? ` ${totalValue}` : ''}</span>}
+                    {hasLogs && isTickMode && <span className="text-[9px] opacity-90">✓</span>}
+                    {hasLogs && !isTickMode && <span className="text-[9px] opacity-90">×{count}{totalValue > 0 ? ` ${totalValue}` : ''}</span>}
                   </button>
                 )
                 })

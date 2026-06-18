@@ -35,13 +35,3 @@ export function useDashboardWidgets() {
 
   return { visibleWidgets, setVisibleWidgets }
 }
-
-export function loadDashboardWidgets(): string[] {
-  return DEFAULT_WIDGETS
-}
-
-export function saveDashboardWidgets(order: string[]) {
-  try {
-    localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(order))
-  } catch { /* ignore */ }
-}

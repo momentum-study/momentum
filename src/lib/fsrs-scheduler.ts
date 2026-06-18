@@ -186,11 +186,14 @@ function buildResult(
   examMode?: { enabled: boolean; dueDate: string } | null,
 ): ScheduledState {
   // Exam mode: compress intervals so reviews complete before the exam
+  // Only honor exam mode if the due date is actually in the future relative to
+  // the review date — past dates would either produce negative intervals or
+  // collapse the schedule incorrectly.
   if (examMode?.enabled && examMode.dueDate) {
     const examDate = new Date(examMode.dueDate)
     const remainingDays = (examDate.getTime() - reviewed.getTime()) / DAY_MS
 
-    if (remainingDays > 0) {
+    if (Number.isFinite(remainingDays) && remainingDays > 0) {
       // Force interval into remaining window
       // New/learning areas get accelerated
       if (state === 'new' || state === 'learning') {

@@ -26,8 +26,8 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
     if (r.projectId && r.projectId !== session.projectId) return false
     return true
   })
-    // Tag the session with the first matching routine
-    if (matching.length > 0) {
+    // Tag the session with the first matching routine (only if not already tagged)
+    if (matching.length > 0 && !session.routineId) {
       await db.sessions.update(session.id, { routineId: matching[0].id, updatedAt: isoNow() })
     }
 
@@ -105,11 +105,18 @@ export async function updateStreakDayForSession(session: Session): Promise<void>
   const settings = loadSettings()
   const target = settings.dailyTargetMinutes
 
-  // Sum all academic session minutes for this date
-  const allSessions = await db.sessions.toArray()
+  // Use the startAt index to bound the query to just this calendar day, instead
+  // of pulling the entire sessions table. Avoids O(n) scans on large datasets.
+  const dayStart = `${dateKey}T00:00:00.000Z`
+  const dayEnd = `${dateKey}T23:59:59.999Z`
+  const todaysSessions = await db.sessions
+    .where('startAt')
+    .between(dayStart, dayEnd, true, true)
+    .toArray()
+
   let totalMinutes = 0
-  for (const s of allSessions) {
-    if (s.startAt.slice(0, 10) !== dateKey) continue
+  for (const s of todaysSessions) {
+    if (s.deletedAt) continue
     if (getSessionScope(s, subjects, categories) !== 'academic') continue
     totalMinutes += s.durationMinutes
   }

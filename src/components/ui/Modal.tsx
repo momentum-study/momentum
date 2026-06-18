@@ -41,6 +41,10 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
     <dialog
       ref={dialogRef}
       onClose={onClose}
+      // The native dialog fires `cancel` (ESC) and `click` on the backdrop pseudo-element.
+      // We handle cancel explicitly here, so suppress the default native close to avoid the
+      // double-fire of the onClose handler.
+      onCancel={(e) => { e.preventDefault(); onClose() }}
       onClick={(e) => {
         // Backdrop click closes the dialog
         if (e.target === e.currentTarget) onClose()

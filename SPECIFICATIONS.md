@@ -15,18 +15,28 @@
 
 **Momentum** — branded in the sidebar and `<title>`.
 
-## 3. Routes (9)
+## 3. Routes (19)
 
 | Path | Page | Description |
 |------|------|-------------|
 | `/` | Dashboard | Stats, streak, daily goal, timer widget, heatmap, recent sessions |
 | `/subjects` | SubjectsPage | CRUD subjects with category, color, routine, weekly target |
 | `/projects` | ProjectsPage | CRUD projects with subject, description, goal minutes |
+| `/projects/:id` | ProjectDetailPage | Per-project sessions, assignments, and progress |
+| `/routines` | RoutinePage | Daily routine scheduler with weekly progress |
 | `/marks` | MarksPage | Mark tracker for academic subjects with weighted average |
 | `/habits` | HabitsPage | Good/bad habit tracker with streaks, 7-day view, 90-day heatmap |
+| `/hobbies` | HobbiesPage | Non-academic activity tracker |
+| `/study` | StudyPage | Spaced-repetition area overview |
+| `/study/review` | ReviewSessionPage | FSRS review session for study areas |
+| `/study/log` | ReviewLogPage | Log study area activity |
+| `/study/exam` | ExamConfigPage | Configure exam-mode compression |
+| `/groups` | GroupsPage | Group leaderboards and cloud session sharing |
+| `/groups/:id` | GroupDetailPage | Per-group session list and member stats |
 | `/calendar` | CalendarPage | Monthly calendar with assignments + upcoming list |
 | `/categories` | CategoriesPage | CRUD categories (academic/general) with color picker |
 | `/reports` | ReportsPage | Overview stats and time-by-subject breakdown |
+| `/reviews` | AIReviewPage | AI-powered study review and feedback |
 | `/settings` | SettingsPage | Dark mode, pomodoro config, daily target, sound, reset |
 
 ## 4. Data Model

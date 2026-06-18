@@ -95,12 +95,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
     mql.addEventListener('change', onChange)
     return () => mql.removeEventListener('change', onChange)
   }, [])
+  // Close mobile sidebar on Escape so users can dismiss it without finding the close button
+  useEffect(() => {
+    if (!mobileSidebarOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMobileSidebarOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mobileSidebarOpen])
   const [prefs, setPrefs] = useState<NavPrefs>(() => loadPrefs())
   const [draftPrefs, setDraftPrefs] = useState<NavPrefs | null>(null)
   const location = useLocation()
 
   const visibleItems = applyPrefs(NAV_ITEMS, prefs)
-
   function openCustomizer() {
     // Seed draft with current effective state so the dialog reflects what's live.
     const visibleTos = new Set(visibleItems.map((i) => i.to))

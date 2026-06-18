@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils'
 const COLOR_PRESETS = [
   '#6366f1', '#8b5cf6', '#3b82f6', '#06b6d4',
   '#10b981', '#f59e0b', '#ef4444', '#ec4899',
-  '#14b8a6', '#f97316', '#a855f7', '#64748b',
+  '#14b8a6', '#f97316', '#84cc16', '#64748b',
 ]
 
 interface ColorPickerProps {

@@ -173,7 +173,7 @@ export default function HobbiesPage() {
                     type="button"
                     aria-label="More actions"
                     onClick={(e) => { e.stopPropagation(); setMenuHobbyId(menuHobbyId === hobby.id ? null : hobby.id) }}
-                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
+                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600"
                   >
                     <span className="block text-lg leading-none">⋯</span>
                   </button>
@@ -183,14 +183,14 @@ export default function HobbiesPage() {
                       <div className="absolute right-0 z-30 mt-1 w-36 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
-                          className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                          className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-300"
                           onClick={() => { openEditModal(hobby); setMenuHobbyId(null) }}
                         >
                           Edit
                         </button>
                         <button
                           type="button"
-                          className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700"
+                          className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-300"
                           onClick={() => handleDeleteHobby(hobby)}
                         >
                           Delete

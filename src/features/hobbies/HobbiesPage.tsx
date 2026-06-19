@@ -167,7 +167,7 @@ export default function HobbiesPage() {
                 <span className="font-medium">{hobby.name}</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-xs px-2 py-0.5 rounded bg-slate-100">{HOBBY_CATEGORIES.find(c => c.value === hobby.category)?.label}</span>
+                <span className="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 dark:text-slate-300">{HOBBY_CATEGORIES.find(c => c.value === hobby.category)?.label}</span>
                 <div className="relative">
                   <button
                     type="button"

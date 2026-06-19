@@ -55,15 +55,18 @@ export function ReloadPrompt() {
     setOfflineReady(false)
     setNeedRefresh(false)
     setBroadcastUpdate(false)
+    setPollStopped(true)
   }, [setOfflineReady, setNeedRefresh])
 
   // Periodically force an update check every 60s to detect new versions.
   // HashRouter means no real page navigations occur, so SW won't auto-check.
-  // Stop the poll once the user has dismissed the prompt — no point hammering
-  // the SW after they've already chosen to stay on the current version.
+  // The poll runs continuously while the page is open. Once the user has
+  // dismissed the prompt (close() called), we stop polling — no point
+  // hammering the SW after they've chosen to stay on the current version.
+  const [pollStopped, setPollStopped] = useState(false)
   const showPrompt = needRefresh || broadcastUpdate
   useEffect(() => {
-    if (!showPrompt && !offlineReady) return
+    if (pollStopped) return
     const id = setInterval(() => {
       navigator.serviceWorker
         .getRegistrations()
@@ -71,7 +74,7 @@ export function ReloadPrompt() {
         .catch(() => {})
     }, 60_000)
     return () => clearInterval(id)
-  }, [showPrompt, offlineReady])
+  }, [pollStopped])
 
   if (!offlineReady && !showPrompt) return null
 

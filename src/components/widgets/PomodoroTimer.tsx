@@ -10,8 +10,8 @@ import { loadSettings, saveSettings } from '../../features/settings/SettingsPage
 import type { Settings } from '../../features/settings/SettingsPage'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
-import { clearTimerState, loadTimerState, saveTimerState } from '../../lib/timer-persistence'
-import type { PersistedTimerState } from '../../lib/timer-persistence'
+import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession } from '../../lib/timer-persistence'
+import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
 
 type Mode = 'pomodoro' | 'simple'
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
@@ -125,6 +125,34 @@ export function PomodoroTimer() {
     if (!subjectId && data.subjects[0]) setSubjectId(data.subjects[0].id)
   }, [data.subjects, subjectId])
 
+  // Recover any session that was saved to localStorage on page close but not
+  // yet committed to Dexie (e.g. browser killed the tab before the async write).
+  useEffect(() => {
+    const pending = loadPendingSession()
+    if (!pending) return
+    clearPendingSession()
+    const session = {
+      id: uuid(),
+      subjectId: pending.subjectId,
+      projectId: pending.projectId,
+      assignmentId: pending.assignmentId,
+      startAt: pending.startAt,
+      endAt: pending.endAt,
+      durationMinutes: pending.durationMinutes,
+      note: pending.note,
+      source: pending.source,
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
+    }
+    void db.sessions.add(session).then(async () => {
+      const subjectName = data.subjects.find((s) => s.id === pending.subjectId)?.name ?? 'Unknown Subject'
+      syncSession(session, subjectName)
+      await updateRoutineLogsForSession(session)
+      await updateStreakDayForSession(session)
+      await loadData()
+    })
+  }, [])
+
   // Simple timer tick — compute elapsed from wall clock
   useEffect(() => {
     if (!simpleStartedAt) return
@@ -234,17 +262,77 @@ export function PomodoroTimer() {
       if (changeSubjectConfirmationTimer.current) clearTimeout(changeSubjectConfirmationTimer.current)
     }
   }, [])
-  // Auto-save on visibility change
+  // Auto-save on visibility change / page close.
+  // The Dexie write is async, so the browser may not wait for it before
+  // killing the tab. We save a synchronous pending session to localStorage
+  // FIRST so the data is never lost, then attempt the async Dexie write.
+  // On next mount, the pending session is recovered and committed.
   useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'hidden') {
-        if (simpleStartedAt) await stopSimple()
-        else if (pomStartedAt && pomPhase === 'focus') await resetPomodoro()
+    function buildPendingSession(): PendingSession | null {
+      if (simpleStartedAt) {
+        const total = simpleSeconds
+        const actualSubjId = projectId
+          ? (dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId)
+          : subjectId
+        if (total >= 10 && actualSubjId) {
+          const project = projectId ? dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
+          const task = taskId ? dataRef.current.assignments.find((a) => a.id === taskId) : undefined
+          const now = new Date()
+          const start = new Date(now.getTime() - total * 1000)
+          return {
+            subjectId: actualSubjId,
+            projectId: project?.id ?? null,
+            assignmentId: task?.id ?? null,
+            startAt: start.toISOString(),
+            endAt: now.toISOString(),
+            durationMinutes: Math.max(1, Math.round(total / 60)),
+            note: task ? `Task: ${task.title}` : undefined,
+            source: 'timer',
+          }
+        }
+      } else if (pomStartedAt && pomPhase === 'focus') {
+        const actualSubjId = projectId
+          ? (dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId)
+          : subjectId
+        if (actualSubjId) {
+          const project = projectId ? dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
+          const task = taskId ? dataRef.current.assignments.find((a) => a.id === taskId) : undefined
+          const elapsedMs = Date.now() - pomStartedAt
+          const start = new Date(pomStartedAt)
+          const end = new Date()
+          return {
+            subjectId: actualSubjId,
+            projectId: project?.id ?? null,
+            assignmentId: task?.id ?? null,
+            startAt: start.toISOString(),
+            endAt: end.toISOString(),
+            durationMinutes: Math.max(1, Math.round(elapsedMs / 60000)),
+            note: task ? `Task: ${task.title}` : undefined,
+            source: 'pomodoro',
+          }
+        }
       }
+      return null
+    }
+    function handleVisibilityChange() {
+      if (document.visibilityState !== 'hidden') return
+      const pending = buildPendingSession()
+      if (pending) savePendingSession(pending)
+      // Best-effort async commit; pending session covers us if it doesn't complete
+      if (simpleStartedAt) void stopSimple()
+      else if (pomStartedAt && pomPhase === 'focus') void resetPomodoro()
+    }
+    function handleBeforeUnload() {
+      const pending = buildPendingSession()
+      if (pending) savePendingSession(pending)
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [simpleStartedAt, pomStartedAt, pomPhase])
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [simpleStartedAt, pomStartedAt, pomPhase, simpleSeconds, subjectId, projectId, taskId])
 
   // Update document.title when timer is running
   const isRunning = simpleStartedAt !== null || pomStartedAt !== null
@@ -768,7 +856,6 @@ export function PomodoroTimer() {
         ) : (
           <div className="text-sm text-slate-600 dark:text-slate-300">
             Studying <span className="font-semibold">{data.subjects.find((s) => s.id === subjectId)?.name}</span>
-            {projectId && <span> — {data.projects.find((p) => p.id === projectId)?.name}</span>}
           </div>
         )}
       </div>

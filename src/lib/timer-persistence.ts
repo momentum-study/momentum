@@ -2,6 +2,39 @@
 // We store a start timestamp in localStorage and compute elapsed time from the wall clock,
 // so the timer is accurate regardless of when the component mounts/unmounts.
 const STORAGE_KEY = 'momentum-timer-state'
+/** Key for a session that was saved synchronously on page close but not yet
+ * committed to Dexie. The PomodoroTimer component checks this on mount and
+ * saves it to Dexie asynchronously. */
+const PENDING_SESSION_KEY = 'momentum-pending-session'
+
+export interface PendingSession {
+  subjectId: string
+  projectId: string | null
+  assignmentId: string | null
+  startAt: string
+  endAt: string
+  durationMinutes: number
+  note: string | undefined
+  source: 'timer' | 'pomodoro'
+}
+
+export function savePendingSession(session: PendingSession): void {
+  try {
+    localStorage.setItem(PENDING_SESSION_KEY, JSON.stringify(session))
+  } catch { /* ignore */ }
+}
+
+export function loadPendingSession(): PendingSession | null {
+  try {
+    const raw = localStorage.getItem(PENDING_SESSION_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as PendingSession
+  } catch { return null }
+}
+
+export function clearPendingSession(): void {
+  try { localStorage.removeItem(PENDING_SESSION_KEY) } catch { /* ignore */ }
+}
 
 export type TimerMode = 'simple' | 'pomodoro'
 export type TimerPhase = 'focus' | 'shortBreak' | 'longBreak'

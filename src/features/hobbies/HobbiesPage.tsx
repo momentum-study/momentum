@@ -154,7 +154,7 @@ export default function HobbiesPage() {
       <div className="flex gap-2">
         <button onClick={() => setFilter('')} className={cn('px-3 py-1 rounded-full text-xs transition-colors', filter === '' ? 'bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600')}>All</button>
         {HOBBY_CATEGORIES.map(c => (
-          <button key={c.value} onClick={() => setFilter(c.value)} className={cn('px-3 py-1 rounded-full text-xs transition-colors', filter === c.value ? 'text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600')} style={{backgroundColor: filter === c.value ? c.color : undefined}}>{c.label}</button>
+          <button key={c.value} onClick={() => setFilter(c.value)} className={cn('px-3 py-1 rounded-full text-xs transition-colors', filter === c.value ? 'text-white shadow-sm dark:text-slate-900' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600')} style={{backgroundColor: filter === c.value ? c.color : undefined}}>{c.label}</button>
         ))}
       </div>
 

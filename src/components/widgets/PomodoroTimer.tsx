@@ -6,6 +6,7 @@ import { db } from '../../db/app-db'
 import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { cn, isoNow } from '../../lib/utils'
+import { formatTotalToday } from '../../lib/timer-utils'
 import { loadSettings, saveSettings } from '../../features/settings/SettingsPage'
 import type { Settings } from '../../features/settings/SettingsPage'
 import { useSessionSync } from '../../lib/use-session-sync'
@@ -20,14 +21,6 @@ function fmt(seconds: number): string {
   const m = Math.floor(seconds / 60).toString().padStart(2, '0')
   const s = (seconds % 60).toString().padStart(2, '0')
   return `${m}:${s}`
-}
-
-function formatTotalToday(minutes: number): string {
-  const total = Math.round(minutes)
-  if (total < 60) return `${total}m`
-  const h = Math.floor(total / 60)
-  const m = total % 60
-  return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
 function playNotificationSound() {
@@ -955,7 +948,7 @@ export function PomodoroTimer() {
             {fmt(simpleSeconds)}
           </div>
           <div className="text-center text-sm text-slate-500 dark:text-slate-400">
-            Total today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatTotalToday(totalTodayMinutes)}</span>
+            Total today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatTotalToday(totalTodayMinutes, isTimerActive && mode === 'simple')}</span>
           </div>
           <div className="flex justify-center gap-2">
             {simpleStartedAt !== null ? (

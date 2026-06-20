@@ -1,4 +1,5 @@
 import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
+import { formatTotalToday, getLiveTimerSeconds, isTimerActive } from '../../lib/timer-utils'
 import { useEffect, useMemo, useState } from 'react'
 import { format, formatDistanceToNow, subDays, differenceInCalendarDays } from 'date-fns'
 import { v4 as uuid } from 'uuid'
@@ -215,6 +216,14 @@ export default function Dashboard() {
   const [editLog, setEditLog] = useState<Session | null>(null)
   const [editDuration, setEditDuration] = useState(30)
   const [editDate, setEditDate] = useState(todayStr)
+  const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
+  useEffect(() => {
+    if (!isTimerActive()) { setLiveTimerSeconds(0); return }
+    const tick = () => setLiveTimerSeconds(getLiveTimerSeconds())
+    tick()
+    const interval = window.setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [])
   const [editSubjectId, setEditSubjectId] = useState('')
 
   async function saveEditLog() {
@@ -259,6 +268,7 @@ export default function Dashboard() {
   const todayMinutes = academicSessions
     .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
     .reduce((sum, s) => sum + s.durationMinutes, 0)
+  const liveTotalTodayMinutes = todayMinutes + liveTimerSeconds / 60
   const weekStart = new Date()
   weekStart.setDate(weekStart.getDate() - weekStart.getDay())
   weekStart.setHours(0, 0, 0, 0)
@@ -315,6 +325,33 @@ export default function Dashboard() {
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Dashboard</h2>
         <Button variant="secondary" size="sm" onClick={() => setCustomizeOpen(true)}>Customise</Button>
       </div>
+
+      {/* Today's Study Time — prominent card */}
+      <Card className="border-primary-200 bg-primary-50 dark:border-primary-800 dark:bg-primary-900/20">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-primary-600 dark:text-primary-400">
+              Today's Study Time
+            </div>
+            <div className="mt-1 text-3xl font-bold text-slate-800 dark:text-slate-100">
+              {formatTotalToday(liveTotalTodayMinutes, isTimerActive())}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-slate-500 dark:text-slate-400">Daily target</div>
+            <div className="text-lg font-semibold text-slate-700 dark:text-slate-300">
+              {formatMinutes(settings.dailyTargetMinutes)}
+            </div>
+            {goalPct >= 100 ? (
+              <div className="text-xs font-medium text-green-600 dark:text-green-400">Target reached!</div>
+            ) : (
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {formatMinutes(settings.dailyTargetMinutes - Math.round(liveTotalTodayMinutes))} remaining
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
       {isWidgetVisible('pomodoro') && (
         <Collapsible id="dash-pomodoro" title="Study Timer" defaultOpen={true}>
           <div className="rounded-lg border-2 border-primary-500 p-4">

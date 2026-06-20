@@ -36,7 +36,7 @@ export default function RoutinePage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [logMinutesRoutineId, setLogMinutesRoutineId] = useState<string | null>(null)
   const [logMinutesValue, setLogMinutesValue] = useState(0)
-  const [scheduleGridSaved, setScheduleGridSaved] = useState(false)
+  const [isEditingSchedule, setIsEditingSchedule] = useState(false)
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, { minutes: string; notes: string }>>({})
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({})
 
@@ -435,7 +435,7 @@ export default function RoutinePage() {
         })
       }
     }
-    setScheduleGridSaved(true)
+    setIsEditingSchedule(false)
     setScheduleDrafts({})
     await loadData()
   }
@@ -485,15 +485,27 @@ export default function RoutinePage() {
                   const draft = getDraft(subject.id, d)
                   return (
                     <td key={d} className="py-1 px-2">
-                      <input type="text" inputMode="numeric" pattern="[0-9]*"
-                        className="w-16 text-center rounded border border-slate-200 bg-white px-1 py-1 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                        placeholder="min"
-                        value={draft.minutes}
-                        onChange={(e) => { setDraft(subject.id, d, 'minutes', e.target.value); setScheduleGridSaved(false) }} />
-                      <input type="text" className="mt-0.5 block w-16 rounded border border-slate-200 bg-white px-1 text-[10px] leading-tight dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                        placeholder="notes"
-                        value={draft.notes}
-                        onChange={(e) => setDraft(subject.id, d, 'notes', e.target.value)} />
+                      {isEditingSchedule ? (
+                        <>
+                          <input type="text" inputMode="numeric" pattern="[0-9]*"
+                            className="w-16 text-center rounded border border-slate-200 bg-white px-1 py-1 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                            placeholder="min"
+                            value={draft.minutes}
+                            onChange={(e) => setDraft(subject.id, d, 'minutes', e.target.value)} />
+                          <input type="text" className="mt-0.5 block w-16 rounded border border-slate-200 bg-white px-1 text-[10px] leading-tight dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            placeholder="notes"
+                            value={draft.notes}
+                            onChange={(e) => setDraft(subject.id, d, 'notes', e.target.value)} />
+                        </>
+                      ) : (
+                        <span className="block text-center text-xs text-slate-700 dark:text-slate-300">
+                          {(() => {
+                            const saved = getSaved(subject.id, d)
+                            if (!saved) return '—'
+                            return `${saved.targetMinutes}m` + (saved.notes ? ` · ${saved.notes}` : '')
+                          })()}
+                        </span>
+                      )}
                     </td>
                   )
                 })}
@@ -501,8 +513,11 @@ export default function RoutinePage() {
             ))}
           </tbody>
         </table>
-        <Button variant="primary" size="sm" className="mt-3" onClick={saveSchedule}>Save Schedule</Button>
-        {scheduleGridSaved && <span className="ml-2 text-xs text-green-600 dark:text-green-400">Saved</span>}
+        {isEditingSchedule && (
+          <Button variant="primary" size="sm" className="mt-3" onClick={() => { saveSchedule(); setIsEditingSchedule(false) }}>
+            Save Schedule
+          </Button>
+        )}
       </div>
     )
   }
@@ -529,6 +544,9 @@ export default function RoutinePage() {
       {tab === 'schedule' && (
         <>
           {/* Today's Schedule */}
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Plan your week by allocating time per subject per day.
+          </p>
           {todaysSchedule.length > 0 && (
             <Card>
               <CardHeader><CardTitle>Today's Schedule</CardTitle></CardHeader>
@@ -556,7 +574,9 @@ export default function RoutinePage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Weekly Schedule</CardTitle>
-                <Button variant="secondary" size="sm" onClick={() => setScheduleGridSaved(false)}>Edit</Button>
+                <Button variant="secondary" size="sm" onClick={() => setIsEditingSchedule(!isEditingSchedule)}>
+                  {isEditingSchedule ? 'Save Schedule' : 'Edit Schedule'}
+                </Button>
               </div>
             </CardHeader>
             <ScheduleGrid />
@@ -567,6 +587,9 @@ export default function RoutinePage() {
       {/* ── Routines Tab ── */}
       {tab === 'routines' && (
         <>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Set daily targets for recurring goals (e.g., 30 mins reading).
+      </p>
       {todaysRoutines.length > 0 && (
         <Card className="bg-primary-50 dark:bg-primary-900/20">
           <CardHeader>

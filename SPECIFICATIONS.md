@@ -163,6 +163,23 @@ type Settings = {
 ## 9. Build
 
 ```bash
-cd study-app && npm install && npm run dev   # dev server on :5173
-cd study-app && npm run build                 # production build
+cd momentum && npm install && npm run dev     # dev server on :5173
+cd momentum && npm run build                  # production build
 ```
+
+## 10. Deployment
+
+- **Canonical repo**: `https://github.com/momentum-study/momentum.git`
+- **Canonical live URL**: `https://momentum-study.github.io/momentum/`
+- The local repo may also have a personal-fork remote (`origin`) pointing at `leightonmascord/momentum`, but **future pushes and deployments must target `momentum-study`**.
+- Recommended remote names:
+  - `org` → `https://github.com/momentum-study/momentum.git`
+  - `origin` → personal fork (optional)
+- Release flow:
+
+```bash
+git push org main
+npm run deploy
+```
+
+- If README or comments mention `leightonmascord.github.io/momentum`, that is stale and should be corrected to `momentum-study.github.io/momentum`.

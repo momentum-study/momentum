@@ -6,7 +6,7 @@ All data is stored in your browser — no accounts, no server, no cloud. Works o
 
 ## Live
 
-Use it now at **https://leightonmascord.github.io/momentum/**
+Use it now at **https://momentum-study.github.io/momentum/**
 
 Works on desktop and mobile. Installable as a PWA from your browser's address bar.
 
@@ -27,7 +27,7 @@ Works on desktop and mobile. Installable as a PWA from your browser's address ba
 Requires [Node.js](https://nodejs.org/) 18+ and npm.
 
 ```bash
-git clone https://github.com/leightonmascord/momentum.git
+git clone https://github.com/momentum-study/momentum.git
 cd momentum
 npm install
 ```
@@ -55,6 +55,22 @@ To deploy to GitHub Pages:
 ```bash
 npm run deploy
 ```
+
+## Deployment
+
+**Canonical repo**: `https://github.com/momentum-study/momentum.git` (remote name: `org`)
+
+The repo has two remotes:
+- `org` — canonical repo at `github.com/momentum-study/momentum` (push target for deployment)
+- `origin` — personal fork at `github.com/leightonmascord/momentum` (development)
+
+Always push to `org` before deploying:
+```bash
+git push org main
+npm run deploy
+```
+
+Live URL: **https://momentum-study.github.io/momentum/**
 
 ## Tech Stack
 

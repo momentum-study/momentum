@@ -815,9 +815,7 @@ export default function Dashboard() {
       <Modal open={logModalOpen} onClose={() => setLogModalOpen(false)} title="Log Study Time">
         <div className="space-y-3">
           {(() => {
-            const existingToday = data.sessions
-              .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
-              .reduce((sum, s) => sum + s.durationMinutes, 0)
+            const existingToday = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
             const previewTotal = existingToday + logDuration
             const target = settings.dailyTargetMinutes
             const toGo = Math.max(0, target - previewTotal)

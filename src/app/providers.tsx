@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { parseISO } from 'date-fns'
 import { db } from '../db/app-db'
 import { pullAllData, flushPendingDirtyTables } from '../lib/data-sync'
@@ -15,13 +15,13 @@ import type {
   ProgressLog,
   Routine,
   RoutineLog,
+  ScheduleEntry,
   Session,
   StreakDay,
   Subject,
   StudyArea,
   StudyReview,
 } from '../domain/types'
-
 export type AppData = {
   categories: Category[]
   subjects: Subject[]
@@ -35,6 +35,7 @@ export type AppData = {
   streakDays: StreakDay[]
   routines: Routine[]
   routineLogs: RoutineLog[]
+  scheduleEntries: ScheduleEntry[]
   hobbies: Hobby[]
   hobbySessions: HobbySession[]
   studyAreas: StudyArea[]
@@ -67,6 +68,7 @@ const emptyData: AppData = {
   streakDays: [],
   routines: [],
   routineLogs: [],
+  scheduleEntries: [],
   hobbies: [],
   hobbySessions: [],
   studyAreas: [],
@@ -77,7 +79,7 @@ async function loadAllData(): Promise<AppData> {
   const [
     categories, subjects, projects, sessions, progressLogs,
     marks, assignments, habits, habitLogs, streakDays,
-    routines, routineLogs, hobbies, hobbySessions,
+    routines, routineLogs, scheduleEntries, hobbies, hobbySessions,
     studyAreas, studyReviews,
   ] = await Promise.all([
     db.categories.toArray(),
@@ -92,6 +94,7 @@ async function loadAllData(): Promise<AppData> {
     db.streakDays.toArray(),
     db.routines.toArray(),
     db.routineLogs.toArray(),
+    db.scheduleEntries.toArray(),
     db.hobbies.toArray(),
     db.hobbySessions.toArray(),
     db.studyAreas.toArray(),
@@ -101,10 +104,10 @@ async function loadAllData(): Promise<AppData> {
   return {
     categories: [...categories].sort((a, b) => a.name.localeCompare(b.name)),
     subjects: [...subjects].sort((a, b) => a.name.localeCompare(b.name)),
-    projects: [...projects].sort((a, b) => a.name.localeCompare(b.name)),
     sessions: [...sessions]
       .filter((s) => s.startAt && !isNaN(new Date(s.startAt).getTime()))
       .sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
+    projects: [...projects].sort((a, b) => a.name.localeCompare(b.name)),
     progressLogs: [...progressLogs]
       .filter((l) => l.loggedAt && !isNaN(new Date(l.loggedAt).getTime()))
       .sort((a, b) => parseISO(b.loggedAt).getTime() - parseISO(a.loggedAt).getTime()),
@@ -116,14 +119,17 @@ async function loadAllData(): Promise<AppData> {
     habitLogs: [...habitLogs].filter((l) => l.date),
     streakDays: [...streakDays],
     routines: [...routines].sort((a, b) => a.name.localeCompare(b.name)),
-    routineLogs: [...routineLogs].filter((l) => l.date),
-    hobbies: [...hobbies].sort((a, b) => a.name.localeCompare(b.name)),
-    hobbySessions: [...hobbySessions].sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
-    studyAreas: [...studyAreas].sort((a, b) => a.name.localeCompare(b.name)),
-    studyReviews: [...studyReviews].sort((a, b) => parseISO(b.reviewedAt).getTime() - parseISO(a.reviewedAt).getTime()),
+    routineLogs: [...routineLogs].sort((a, b) => b.date.localeCompare(a.date)),
+    scheduleEntries: [...scheduleEntries].sort((a, b) => {
+      if (a.subjectId !== b.subjectId) return a.subjectId.localeCompare(b.subjectId)
+      return a.dayOfWeek - b.dayOfWeek
+    }),
+    hobbies: [...hobbies].sort(((a, b) => a.name.localeCompare(b.name))),
+    hobbySessions: [...hobbySessions].sort(((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime())),
+    studyAreas: [...studyAreas].sort(((a, b) => a.name.localeCompare(b.name))),
+    studyReviews: [...studyReviews].sort(((a, b) => parseISO(b.reviewedAt).getTime() - parseISO(a.reviewedAt).getTime())),
   }
 }
-
 const DataContext = createContext<DataContextValue | null>(null)
 
 export function DataProvider({ children }: { children: ReactNode }) {

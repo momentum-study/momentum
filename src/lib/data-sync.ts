@@ -15,7 +15,7 @@ import { isoNow } from './utils'
 import { syncStatus } from './sync-status'
 import type { AppData } from '../app/providers'
 
-type TableKey = keyof AppData
+type TableKey = Extract<keyof AppData, string>
 
 const DATA_COLLECTION = 'userData'
 /** Firestore rejects `undefined` field values. Strip them recursively before setDoc. */
@@ -49,6 +49,7 @@ export const SYNC_TABLES: TableKey[] = [
   'streakDays',
   'routines',
   'routineLogs',
+  'scheduleEntries',
   'hobbies',
   'hobbySessions',
   'studyAreas',

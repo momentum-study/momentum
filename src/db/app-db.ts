@@ -11,6 +11,7 @@ import type {
   ProgressLog,
   Routine,
   RoutineLog,
+  ScheduleEntry,
   Session,
   StreakDay,
   Subject,
@@ -40,6 +41,7 @@ export class AppDB extends Dexie {
   streakDays!: Table<StreakDay, string>
   routines!: Table<Routine, string>
   routineLogs!: Table<RoutineLog, string>
+  scheduleEntries!: Table<ScheduleEntry, string>
   hobbies!: Table<Hobby, string>
   hobbySessions!: Table<HobbySession, string>
   studyAreas!: Table<StudyArea, string>
@@ -85,6 +87,10 @@ export class AppDB extends Dexie {
     })
     this.version(10).stores({
       pendingSyncOps: 'id, tableKey',
+    })
+    // v11: add schedule entries table for per-day subject planning
+    this.version(11).stores({
+      scheduleEntries: 'id, subjectId, dayOfWeek, [subjectId+dayOfWeek]',
     })
   }
 }

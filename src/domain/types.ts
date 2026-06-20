@@ -50,7 +50,7 @@ export interface Session {
   endAt: string // ISO
   durationMinutes: number
   note?: string
-  source: 'manual' | 'timer' | 'pomodoro' | 'quickLog'
+  source: 'manual' | 'timer' | 'pomodoro' | 'quickLog' | 'autoRoutine'
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -160,6 +160,11 @@ export interface Routine {
   targetMinutes: number       // goal for this routine block
   days: DayOfWeek[]           // which days this applies e.g. [1, 3, 5] for Mon/Wed/Fri
   color: string               // hex color for display
+  notes?: string              // optional routine notes
+  autoLog?: boolean           // auto-create placeholder session on scheduled day
+  autoLogMinutes?: number     // duration of auto-created session
+  scheduledTime?: string      // optional HH:mm for display only
+  skippedWeekStart?: string   // ISO date of week start user skipped
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -172,6 +177,20 @@ export interface RoutineLog {
   actualMinutes: number      // how much was actually studied
   completed: boolean         // true if actualMinutes >= targetMinutes
   createdAt: string
+}
+
+/** One row = a subject's planned minutes for a specific day of the week. */
+export interface ScheduleEntry {
+  id: string
+  subjectId: string
+  /** 0=Sun 1=Mon ... 6=Sat */
+  dayOfWeek: DayOfWeek
+  /** Planned minutes for this subject on this day */
+  targetMinutes: number
+  /** Optional notes for this slot (e.g. "focus on chapter 5") */
+  notes: string
+  createdAt: string
+  updatedAt: string
 }
 
 // Hobby tracker — non-academic activities (guitar, painting, cooking, sports).

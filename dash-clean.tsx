@@ -654,17 +654,6 @@ export default function Dashboard() {
               <p className="text-sm text-slate-500">No sessions yet. Start studying!</p>
             ) : (
               <div className="space-y-3">
-                {allRecent.length > 5 && (
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-primary-600 hover:underline"
-                      onClick={() => setShowAllRecent((v) => !v)}
-                    >
-                      {showAllRecent ? 'Show less' : `Show all (${allRecent.length})`}
-                    </button>
-                  </div>
-                )}
                 {groups.map((g) => (
                   <div key={g.label}>
                     <div className="sticky top-0 z-10 -mx-1 bg-white/90 px-1 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500 backdrop-blur dark:bg-slate-800/90">{g.label}</div>
@@ -729,7 +718,15 @@ export default function Dashboard() {
                     </ul>
                   </div>
                 ))}
-
+                {allRecent.length > 5 && (
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary-600 hover:underline"
+                    onClick={() => setShowAllRecent((v) => !v)}
+                  >
+                    {showAllRecent ? 'Show less' : `Show all (${allRecent.length})`}
+                  </button>
+                )}
               </div>
             )}
           </Card>

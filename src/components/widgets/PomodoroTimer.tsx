@@ -15,6 +15,7 @@ import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, lo
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
 
 type Mode = 'pomodoro' | 'simple'
+const LAST_SUBJECT_KEY = 'momentum-last-subject'
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
 
 function fmt(seconds: number): string {
@@ -131,9 +132,13 @@ export function PomodoroTimer() {
   stateRef.current = { pomPhase, subjectId, projectId, taskId, pomCycles }
   const dataRef = useRef(data)
   dataRef.current = data
-
   useEffect(() => {
-    if (!subjectId && data.subjects[0]) setSubjectId(data.subjects[0].id)
+    if (subjectId) return
+    const last = localStorage.getItem(LAST_SUBJECT_KEY)
+    if (last && data.subjects.some(s => s.id === last && !s.deletedAt)) {
+      setSubjectId(last)
+    }
+    // Don't auto-select first — leave empty
   }, [data.subjects, subjectId])
 
   // Recover any session that was saved to localStorage on page close but not
@@ -400,6 +405,7 @@ export function PomodoroTimer() {
       simplePausedOffset: 0,
     }
     saveTimerState(state)
+    if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
     // Update presence: let group members know you are studying
     const presenceUid = localStorage.getItem('momentum-cloud-uid')
     const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'
@@ -585,13 +591,13 @@ export function PomodoroTimer() {
       }
       saveTimerState(state)
     }
+    localStorage.setItem(LAST_SUBJECT_KEY, newSubjectId)
     setChangeSubjectOpen(false)
     setChangeSubjectConfirmation(`Switched from ${oldName} to ${newName}`)
     if (changeSubjectConfirmationTimer.current) clearTimeout(changeSubjectConfirmationTimer.current)
     changeSubjectConfirmationTimer.current = window.setTimeout(() => setChangeSubjectConfirmation(''), 3000)
   }
 
-  // Pomodoro timer
   function startPomodoro() {
     const now = Date.now()
     setPomStartedAt(now)
@@ -606,6 +612,7 @@ export function PomodoroTimer() {
       config: configRef.current,
     }
     saveTimerState(state)
+    if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
   }
 
   function pausePomodoro() {

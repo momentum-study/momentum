@@ -157,7 +157,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (routine.skippedWeekStart && weekStart <= routine.skippedWeekStart) continue
         const exists = snapshot.sessions.some((s) => s.routineId === routine.id && s.startAt.slice(0, 10) === todayStr)
         if (exists) continue
-        const startAt = new Date(today)
+        const now = new Date()
+        const startAt = new Date(now)
         startAt.setHours(0, 0, 0, 0)
         const endAt = new Date(startAt.getTime() + (routine.autoLogMinutes ?? routine.targetMinutes) * 60_000)
         await db.sessions.add({
@@ -165,7 +166,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           subjectId: routine.subjectId,
           projectId: routine.projectId ?? null,
           routineId: routine.id,
-          startAt: startAt.toISOString(),
+          startAt: now.toISOString(),
           endAt: endAt.toISOString(),
           durationMinutes: routine.autoLogMinutes ?? routine.targetMinutes,
           note: routine.notes || routine.name,

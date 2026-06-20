@@ -5,7 +5,7 @@ import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
-import { cn, isoNow } from '../../lib/utils'
+import { cn, formatMinutes, isoNow } from '../../lib/utils'
 import { loadSettings, saveSettings } from '../../features/settings/SettingsPage'
 import type { Settings } from '../../features/settings/SettingsPage'
 import { useSessionSync } from '../../lib/use-session-sync'
@@ -20,14 +20,6 @@ function fmt(seconds: number): string {
   const m = Math.floor(seconds / 60).toString().padStart(2, '0')
   const s = (seconds % 60).toString().padStart(2, '0')
   return `${m}:${s}`
-}
-
-function formatTotalToday(minutes: number): string {
-  const total = Math.round(minutes)
-  if (total < 60) return `${total}m`
-  const h = Math.floor(total / 60)
-  const m = total % 60
-  return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
 function playNotificationSound() {
@@ -668,16 +660,9 @@ export function PomodoroTimer() {
     const committed = data.sessions
       .filter((s) => !s.deletedAt && s.startAt.slice(0, 10) === todayStr)
       .reduce((sum, s) => sum + s.durationMinutes, 0)
-    let live = 0
-    if (simpleStartedAt !== null) {
-      live = simpleSeconds / 60
-    } else if (pomStartedAt !== null && pomPhase === 'focus') {
-      const focusDuration = config.focusMinutes * 60
-      const elapsed = focusDuration - pomSeconds
-      live = elapsed / 60
-    }
-    return committed + live + (simplePausedOffset / 60)
-  }, [data.sessions, simpleSeconds, pomSeconds, simplePausedOffset, simpleStartedAt, pomStartedAt, pomPhase, config.focusMinutes])
+    const live = Math.floor(simpleSeconds / 60)
+    return committed + live
+  }, [data.sessions, simpleSeconds])
 
 
   return (
@@ -953,7 +938,7 @@ export function PomodoroTimer() {
             {fmt(simpleSeconds)}
           </div>
           <div className="text-center text-sm text-slate-500 dark:text-slate-400">
-            Total today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatTotalToday(totalTodayMinutes)}</span>
+            Today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatMinutes(totalTodayMinutes)}</span> studied
           </div>
           <div className="flex justify-center gap-2">
             {simpleStartedAt !== null ? (

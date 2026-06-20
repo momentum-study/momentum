@@ -15,6 +15,7 @@ interface PersistedTimerState {
   cyclesCompleted: number
   config: { focusMinutes: number; shortBreakMinutes: number; longBreakMinutes: number; cycles: number }
   simplePausedOffset: number
+  subjectId?: string
 }
 
 /** Read the current timer state from localStorage. */
@@ -49,6 +50,12 @@ export function getLiveTimerSeconds(): number {
   }
 
   return 0
+}
+
+/** Get the subjectId of the currently active timer session. */
+export function getLiveTimerSubjectId(): string | null {
+  const state = loadTimerState()
+  return state?.subjectId ?? null
 }
 
 /** Check if a timer is currently running (not paused, not stopped). */

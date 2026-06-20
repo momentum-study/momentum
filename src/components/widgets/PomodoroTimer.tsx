@@ -243,6 +243,7 @@ export function PomodoroTimer() {
       setPomStartedAt(now)
       const newState: PersistedTimerState = {
         mode: 'pomodoro',
+      subjectId: subjectId,
       simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: getPhaseDuration(nextPhase, cfg),
@@ -258,6 +259,7 @@ export function PomodoroTimer() {
       setPomStartedAt(now)
       const newState: PersistedTimerState = {
         mode: 'pomodoro',
+      subjectId: subjectId,
       simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: cfg.focusMinutes * 60,
@@ -389,6 +391,7 @@ export function PomodoroTimer() {
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
       mode: 'simple',
+    subjectId: subjectId,
       startedAt: now,
       phaseRemaining: null,
       phase: 'focus',
@@ -411,6 +414,7 @@ export function PomodoroTimer() {
     setSimpleStartedAt(null)
     const state: PersistedTimerState = {
       mode: 'simple',
+    subjectId: subjectId,
       startedAt: null,
       phaseRemaining: null,
       phase: 'focus',
@@ -431,6 +435,7 @@ export function PomodoroTimer() {
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
       mode: 'simple',
+    subjectId: subjectId,
       startedAt: now,
       phaseRemaining: null,
       phase: 'focus',
@@ -557,6 +562,7 @@ export function PomodoroTimer() {
       setSimpleStartedAt(now)
       const state: PersistedTimerState = {
         mode: 'simple',
+      subjectId: subjectId,
       simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: null,
@@ -569,6 +575,7 @@ export function PomodoroTimer() {
       setPomStartedAt(now)
       const state: PersistedTimerState = {
         mode: 'pomodoro',
+      subjectId: subjectId,
       simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
@@ -590,6 +597,7 @@ export function PomodoroTimer() {
     setPomStartedAt(now)
     const state: PersistedTimerState = {
       mode: 'pomodoro',
+    subjectId: subjectId,
     simplePausedOffset: 0,
       startedAt: now,
       phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
@@ -604,6 +612,7 @@ export function PomodoroTimer() {
     setPomStartedAt(null)
     const state: PersistedTimerState = {
       mode: 'pomodoro',
+    subjectId: subjectId,
     simplePausedOffset: 0,
       startedAt: null,
       phaseRemaining: pomSeconds,

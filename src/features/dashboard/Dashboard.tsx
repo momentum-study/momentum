@@ -1,5 +1,6 @@
 import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
-import { formatTotalToday, getLiveTimerSeconds, isTimerActive } from '../../lib/timer-utils'
+import { SubjectBreakdown } from '../../components/widgets/SubjectBreakdown'
+import { formatTotalToday, getLiveTimerSeconds, getLiveTimerSubjectId, isTimerActive } from '../../lib/timer-utils'
 import { useEffect, useMemo, useState } from 'react'
 import { format, formatDistanceToNow, subDays, differenceInCalendarDays } from 'date-fns'
 import { v4 as uuid } from 'uuid'
@@ -217,9 +218,13 @@ export default function Dashboard() {
   const [editDuration, setEditDuration] = useState(30)
   const [editDate, setEditDate] = useState(todayStr)
   const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
+  const [liveTimerSubjectId, setLiveTimerSubjectId] = useState<string | null>(null)
   useEffect(() => {
-    if (!isTimerActive()) { setLiveTimerSeconds(0); return }
-    const tick = () => setLiveTimerSeconds(getLiveTimerSeconds())
+    if (!isTimerActive()) { setLiveTimerSeconds(0); setLiveTimerSubjectId(null); return }
+    const tick = () => {
+      setLiveTimerSeconds(getLiveTimerSeconds())
+      setLiveTimerSubjectId(getLiveTimerSubjectId())
+    }
     tick()
     const interval = window.setInterval(tick, 1000)
     return () => clearInterval(interval)
@@ -460,6 +465,20 @@ export default function Dashboard() {
                   )
                 })()}
               </div>
+            </div>
+
+            {/* Subject breakdown */}
+            <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Today by Subject</span>
+              </div>
+              <SubjectBreakdown
+                sessions={academicSessions}
+                subjects={data.subjects}
+                todayStr={todayStr}
+                liveTimerSeconds={liveTimerSeconds}
+                liveTimerSubjectId={liveTimerSubjectId}
+              />
             </div>
           </Card>
         </Collapsible>

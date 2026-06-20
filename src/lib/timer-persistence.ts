@@ -58,8 +58,8 @@ export interface PersistedTimerState {
   config: TimerConfig
   /** Simple timer: total seconds accumulated before the most recent pause (0 if not paused). */
   simplePausedOffset: number
+  subjectId?: string
 }
-
 export function saveTimerState(state: PersistedTimerState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))

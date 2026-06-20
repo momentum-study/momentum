@@ -324,12 +324,12 @@ export function PomodoroTimer() {
       return null
     }
     function handleVisibilityChange() {
-      if (document.hidden) {
-        // Save a pending session as crash safety net only.
-        // Do NOT stop or clear the timer — the user may return.
-        const pending = buildPendingSession()
-        if (pending) savePendingSession(pending)
-      }
+      if (document.visibilityState !== 'hidden') return
+      const pending = buildPendingSession()
+      if (pending) savePendingSession(pending)
+      // Best-effort async commit; pending session covers us if it doesn't complete
+      if (simpleStartedAt) void stopSimple()
+      else if (pomStartedAt && pomPhase === 'focus') void resetPomodoro()
     }
     function handleBeforeUnload() {
       const pending = buildPendingSession()

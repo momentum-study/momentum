@@ -192,11 +192,10 @@ export default function CategoriesPage() {
             <label className="label">Scope</label>
             <select className="input" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value as Category['scope'] })}>
               <option value="academic">Academic</option>
-              <option value="nonAcademic">General</option>
+              <option value="nonAcademic" title="Non-academic subjects count toward study time and appear in the timer, dashboard, routines, and group presence. Use this for structured practice like piano lessons or coding.">General</option>
             </select>
           </div>
           <div>
-            <label className="label">Colour</label>
             <ColorPicker value={form.color} onChange={(c) => setForm({ ...form, color: c })} />
           </div>
           <div className="flex justify-end gap-2 pt-2">

@@ -486,7 +486,7 @@ export default function Dashboard() {
 
       {isWidgetVisible('streak-goal') && (() => {
         // 90-day heatmap data — column = day-of-week, row = week (most recent at bottom)
-        const HEATMAP_DAYS = 90
+        const HEATMAP_DAYS = 60
         const heatDays = Array.from({ length: HEATMAP_DAYS }, (_, i) => {
           const d = subDays(new Date(), HEATMAP_DAYS - 1 - i)
           const ds = format(d, 'yyyy-MM-dd')
@@ -534,7 +534,7 @@ export default function Dashboard() {
                       <div
                         key={ds}
                         className={cn(
-                          'group relative flex h-8 items-center justify-center text-[10px] font-medium transition-all',
+                          'group relative flex h-4 items-center justify-center text-[10px] font-medium transition-all',
                           isToday && 'ring-2 ring-orange-400 ring-inset z-10',
                           isMissed && 'bg-red-50 dark:bg-red-900/20',
                           !isMissed && step === 0 && 'bg-white dark:bg-slate-800',

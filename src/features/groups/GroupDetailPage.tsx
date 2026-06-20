@@ -50,6 +50,11 @@ export default function GroupDetailPage() {
   const [error, setError] = useState('')
   const [sortBy, setSortBy] = useState<WindowKey>('today')
   const [presence, setPresence] = useState<GroupPresence[]>([])
+  const presenceByUid = useMemo(() => {
+    const m = new Map<string, GroupPresence>()
+    for (const p of presence) m.set(p.uid, p)
+    return m
+  }, [presence])
   const initialWindowLoaded = useRef(false)
 
   const fetchStats = useCallback(async (groupId: string, memberList: GroupMember[]) => {
@@ -183,11 +188,6 @@ export default function GroupDetailPage() {
     }
   })
 
-  const presenceByUid = useMemo(() => {
-    const m = new Map<string, GroupPresence>()
-    for (const p of presence) m.set(p.uid, p)
-    return m
-  }, [presence])
 
   return (
     <div className="space-y-6">

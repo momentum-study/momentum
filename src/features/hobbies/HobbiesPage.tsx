@@ -150,6 +150,17 @@ export default function HobbiesPage() {
         <h2 className="text-xl font-semibold">Hobbies</h2>
         <Button onClick={() => { setHobbyFormData({ name: '', category: 'creative', color: '#a855f7', skillLevel: 0, targetHours: 0, notes: '' }); setEditingHobby(null); setIsHobbyModalOpen(true) }}>Add Hobby</Button>
       </div>
+
+      <Card className="border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300">
+        <p>
+          <strong>Hobbies</strong> are for leisure activities (piano, gym, gaming).
+          They track skill level and sessions, but do not count toward study time.
+        </p>
+        <p className="mt-2">
+          For structured practice that should count in your study timer,
+          daily totals, and routines — create a <strong>General</strong> focus area instead.
+        </p>
+      </Card>
       
       <div className="flex gap-2">
         <button onClick={() => setFilter('')} className={cn('px-3 py-1 rounded-full text-xs transition-colors', filter === '' ? 'bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600')}>All</button>

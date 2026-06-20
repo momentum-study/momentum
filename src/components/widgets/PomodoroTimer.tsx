@@ -882,7 +882,7 @@ export function PomodoroTimer() {
                   />
                   <span className="truncate text-slate-700 dark:text-slate-300">{subject?.name ?? 'Unknown'}</span>
                   <span className="text-slate-500 dark:text-slate-400">{session.durationMinutes}m</span>
-                  <span className="ml-auto text-slate-400">{format(new Date(session.startAt), 'MMM d, h:mm a')}</span>
+                  <span className="ml-auto text-slate-400">{format(new Date(session.startAt), 'h:mm a')}</span>
                 </div>
               )
             })}

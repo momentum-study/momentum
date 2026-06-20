@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { parseISO, format, subDays } from 'date-fns'
 import { db } from '../db/app-db'
+import { sessionLocalDate } from '../lib/utils'
+import { sessionIdFor } from '../lib/timer-persistence'
 import { pullAllData, flushPendingDirtyTables } from '../lib/data-sync'
 import { loadSettings } from '../features/settings/SettingsPage'
 
@@ -155,25 +157,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
       for (const routine of snapshot.routines) {
         if (routine.deletedAt || !routine.autoLog || !routine.days.includes(todayDow)) continue
         if (routine.skippedWeekStart && weekStart <= routine.skippedWeekStart) continue
-        const exists = snapshot.sessions.some((s) => s.routineId === routine.id && s.startAt.slice(0, 10) === todayStr)
+        const exists = snapshot.sessions.some((s) => s.routineId === routine.id && sessionLocalDate(s.startAt) === todayStr)
         if (exists) continue
         const now = new Date()
         const startAt = new Date(now)
         startAt.setHours(0, 0, 0, 0)
         const endAt = new Date(startAt.getTime() + (routine.autoLogMinutes ?? routine.targetMinutes) * 60_000)
-        await db.sessions.add({
-          id: crypto.randomUUID?.() ?? `${Date.now()}_${routine.id}`,
+        const startAtIso = now.toISOString()
+        const durationMinutes = routine.autoLogMinutes ?? routine.targetMinutes
+        await db.sessions.put({
+          id: sessionIdFor(startAtIso, routine.subjectId, durationMinutes),
           subjectId: routine.subjectId,
           projectId: routine.projectId ?? null,
           routineId: routine.id,
-          startAt: now.toISOString(),
+          startAt: startAtIso,
           endAt: endAt.toISOString(),
-          durationMinutes: routine.autoLogMinutes ?? routine.targetMinutes,
+          durationMinutes,
           note: routine.notes || routine.name,
           source: 'autoRoutine',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          deletedAt: new Date().toISOString(),
+          deletedAt: null,
         })
         created = true
       }

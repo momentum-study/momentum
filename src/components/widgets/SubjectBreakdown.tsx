@@ -3,6 +3,7 @@
 
 import { useMemo } from 'react'
 import type { Session, Subject } from '../../domain/types'
+import { sessionLocalDate } from '../../lib/utils'
 
 interface SubjectBreakdownProps {
   sessions: Session[]
@@ -29,7 +30,7 @@ export function SubjectBreakdown({
     const minutesBySubject = new Map<string, number>()
     for (const s of sessions) {
       if (s.deletedAt) continue
-      if (s.startAt.slice(0, 10) !== todayStr) continue
+      if (sessionLocalDate(s.startAt) !== todayStr) continue
       minutesBySubject.set(s.subjectId, (minutesBySubject.get(s.subjectId) ?? 0) + s.durationMinutes)
     }
 

@@ -3,7 +3,7 @@ import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
-import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor } from '../../lib/utils'
+import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor, sessionLocalDate } from '../../lib/utils'
 import type { Session } from '../../domain/types'
 import { loadSettings } from '../settings/SettingsPage'
 
@@ -129,7 +129,7 @@ export default function ReportsPage() {
         .filter((e) => e.dayOfWeek === dow)
         .reduce((sum, e) => sum + e.targetMinutes, 0)
       const actual = sessions
-        .filter((s) => s.startAt.slice(0, 10) === date)
+        .filter((s) => sessionLocalDate(s.startAt) === date)
         .reduce((sum, s) => sum + s.durationMinutes, 0)
       rows.push({ date, dayLabel: DAY_NAMES_SHORT[dow], planned, actual })
     }

@@ -3,7 +3,7 @@ import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, getDay, a
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { loadSettings } from '../settings/SettingsPage'
-import { cn, isoNow } from '../../lib/utils'
+import { cn, isoNow, sessionLocalDate } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
@@ -674,7 +674,7 @@ export default function HabitsPage() {
               {Array.from({ length: calendarStartDay }).map((_, i) => <div key={`empty-${i}`} />)}
               {(() => {
                 const forgivenDates = getForgivenDates(selectedHabit.id)
-                const habitStartDate = selectedHabit.createdAt.slice(0, 10)
+                const habitStartDate = sessionLocalDate(selectedHabit.createdAt)
                 return calendarDays.map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd')
                 const dayLogs = logsByDate[dateStr] ?? []

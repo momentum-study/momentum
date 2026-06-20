@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { format } from 'date-fns'
-import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { Button } from '../ui/Button'
@@ -11,7 +10,7 @@ import { loadSettings, saveSettings } from '../../features/settings/SettingsPage
 import type { Settings } from '../../features/settings/SettingsPage'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
-import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession } from '../../lib/timer-persistence'
+import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor } from '../../lib/timer-persistence'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
 
 type Mode = 'pomodoro' | 'simple'
@@ -148,7 +147,7 @@ export function PomodoroTimer() {
     if (!pending) return
     clearPendingSession()
     const session = {
-      id: uuid(),
+      id: pending.id,
       subjectId: pending.subjectId,
       projectId: pending.projectId,
       assignmentId: pending.assignmentId,
@@ -160,7 +159,7 @@ export function PomodoroTimer() {
       createdAt: isoNow(),
       updatedAt: isoNow(),
     }
-    void db.sessions.add(session).then(async () => {
+    void db.sessions.put(session).then(async () => {
       const subjectName = data.subjects.find((s) => s.id === pending.subjectId)?.name ?? 'Unknown Subject'
       syncSession(session, subjectName)
       await updateRoutineLogsForSession(session)
@@ -219,20 +218,22 @@ export function PomodoroTimer() {
         const project = st.projectId ? projects.find((p) => p.id === st.projectId) : undefined
         const end = new Date()
         const start = new Date(end.getTime() - cfg.focusMinutes * 60 * 1000)
+        const startAt = start.toISOString()
+        const durationMinutes = cfg.focusMinutes
         const session = {
-          id: uuid(),
+          id: sessionIdFor(startAt, actualSubjId, durationMinutes),
           subjectId: actualSubjId,
           projectId: project?.id ?? null,
           assignmentId: task?.id ?? null,
-          startAt: start.toISOString(),
+          startAt,
           endAt: end.toISOString(),
-          durationMinutes: cfg.focusMinutes,
+          durationMinutes,
           note: task ? `Task: ${task.title}` : undefined,
           source: 'pomodoro' as const,
           createdAt: isoNow(),
           updatedAt: isoNow(),
         }
-        void db.sessions.add(session).then(async () => {
+        void db.sessions.put(session).then(async () => {
           const subjectName = subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
           syncSession(session, subjectName)
           await updateRoutineLogsForSession(session)
@@ -302,13 +303,16 @@ export function PomodoroTimer() {
           const task = taskId ? dataRef.current.assignments.find((a) => a.id === taskId) : undefined
           const now = new Date()
           const start = new Date(now.getTime() - total * 1000)
+          const startAt = start.toISOString()
+          const durationMinutes = Math.max(1, Math.round(total / 60))
           return {
+            id: sessionIdFor(startAt, actualSubjId, durationMinutes),
             subjectId: actualSubjId,
             projectId: project?.id ?? null,
             assignmentId: task?.id ?? null,
-            startAt: start.toISOString(),
+            startAt,
             endAt: now.toISOString(),
-            durationMinutes: Math.max(1, Math.round(total / 60)),
+            durationMinutes,
             note: task ? `Task: ${task.title}` : undefined,
             source: 'timer',
           }
@@ -323,13 +327,16 @@ export function PomodoroTimer() {
           const elapsedMs = Date.now() - pomStartedAt
           const start = new Date(pomStartedAt)
           const end = new Date()
+          const startAt = start.toISOString()
+          const durationMinutes = Math.max(1, Math.round(elapsedMs / 60000))
           return {
+            id: sessionIdFor(startAt, actualSubjId, durationMinutes),
             subjectId: actualSubjId,
             projectId: project?.id ?? null,
             assignmentId: task?.id ?? null,
-            startAt: start.toISOString(),
+            startAt,
             endAt: end.toISOString(),
-            durationMinutes: Math.max(1, Math.round(elapsedMs / 60000)),
+            durationMinutes,
             note: task ? `Task: ${task.title}` : undefined,
             source: 'pomodoro',
           }
@@ -465,20 +472,22 @@ export function PomodoroTimer() {
       const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
       const now = new Date()
       const start = new Date(now.getTime() - total * 1000)
+      const startAt = start.toISOString()
+      const durationMinutes = Math.max(1, Math.round(total / 60))
       const session = {
-        id: uuid(),
+        id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
         subjectId: actualSubjectId,
         projectId: project?.id ?? null,
         assignmentId: task?.id ?? null,
-        startAt: start.toISOString(),
+        startAt,
         endAt: now.toISOString(),
-        durationMinutes: Math.max(1, Math.round(total / 60)),
+        durationMinutes,
         note: task ? `Task: ${task.title}` : undefined,
         source: 'timer' as const,
         createdAt: isoNow(),
         updatedAt: isoNow(),
       }
-      await db.sessions.add(session)
+      await db.sessions.put(session)
       const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
       syncSession(session, subjectName)
       await updateRoutineLogsForSession(session)
@@ -504,20 +513,22 @@ export function PomodoroTimer() {
         const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
         const now = new Date()
         const start = new Date(now.getTime() - elapsed * 1000)
+        const startAt = start.toISOString()
+        const durationMinutes = Math.max(1, Math.round(elapsed / 60))
         const session = {
-          id: uuid(),
+          id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
           subjectId: actualSubjectId,
           projectId: project?.id ?? null,
           assignmentId: task?.id ?? null,
-          startAt: start.toISOString(),
+          startAt,
           endAt: now.toISOString(),
-          durationMinutes: Math.max(1, Math.round(elapsed / 60)),
+          durationMinutes,
           note: task ? `Task: ${task.title}` : undefined,
           source: 'timer' as const,
           createdAt: isoNow(),
           updatedAt: isoNow(),
         }
-        await db.sessions.add(session)
+        await db.sessions.put(session)
         const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
         syncSession(session, subjectName)
         await updateRoutineLogsForSession(session)
@@ -537,12 +548,13 @@ export function PomodoroTimer() {
           const partialMinutes = Math.max(1, Math.round(elapsedMs / 60000))
           const start = new Date(startMs)
           const end = new Date()
+          const startAt = start.toISOString()
           const session = {
-            id: uuid(),
+            id: sessionIdFor(startAt, actualSubjId, partialMinutes),
             subjectId: actualSubjId,
             projectId: project?.id ?? null,
             assignmentId: task?.id ?? null,
-            startAt: start.toISOString(),
+            startAt,
             endAt: end.toISOString(),
             durationMinutes: partialMinutes,
             note: task ? `Task: ${task.title}` : undefined,
@@ -550,7 +562,7 @@ export function PomodoroTimer() {
             createdAt: isoNow(),
             updatedAt: isoNow(),
           }
-          await db.sessions.add(session)
+          await db.sessions.put(session)
           const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
           syncSession(session, subjectName)
           await updateRoutineLogsForSession(session)
@@ -642,12 +654,13 @@ export function PomodoroTimer() {
         const partialMinutes = Math.max(1, Math.round(elapsedMs / 60000))
         const start = new Date(startMs)
         const end = new Date()
+        const startAt = start.toISOString()
         const session = {
-          id: uuid(),
+          id: sessionIdFor(startAt, actualSubjId, partialMinutes),
           subjectId: actualSubjId,
           projectId: project?.id ?? null,
           assignmentId: task?.id ?? null,
-          startAt: start.toISOString(),
+          startAt,
           endAt: end.toISOString(),
           durationMinutes: partialMinutes,
           note: task ? `Task: ${task.title}` : undefined,
@@ -655,7 +668,7 @@ export function PomodoroTimer() {
           createdAt: isoNow(),
           updatedAt: isoNow(),
         }
-        await db.sessions.add(session)
+        await db.sessions.put(session)
         const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
         syncSession(session, subjectName)
         await updateRoutineLogsForSession(session)

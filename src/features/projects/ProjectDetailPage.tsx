@@ -4,7 +4,7 @@ import { format, parseISO } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, formatMinutes, isoNow } from '../../lib/utils'
+import { cn, formatMinutes, isoNow, sessionLocalDate } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -97,7 +97,7 @@ export default function ProjectDetailPage() {
   }
 
   function openEditTask(task: Assignment) {
-    setTaskDue(task.dueDate.slice(0, 10))
+    setTaskDue(sessionLocalDate(task.dueDate))
     setEditTask(task)
     setTaskTitle(task.title)
     setShowTaskModal(true)

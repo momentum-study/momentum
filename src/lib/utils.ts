@@ -1,3 +1,4 @@
+import { format } from 'date-fns'
 import type { Session, Subject, Category, Scope } from '../domain/types'
 
 // Lightweight className joiner (no extra deps)
@@ -49,4 +50,10 @@ export function getSessionScope(
   if (!subject) return null
   const category = categories.find((c) => c.id === subject.categoryId)
   return category?.scope ?? null
+}
+
+
+/** Returns the local date string (YYYY-MM-DD) for a given ISO timestamp. */
+export function sessionLocalDate(isoDate: string): string {
+  return format(new Date(isoDate), 'yyyy-MM-dd')
 }

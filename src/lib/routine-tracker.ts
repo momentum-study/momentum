@@ -3,7 +3,7 @@
 import { v4 as uuid } from 'uuid'
 import { db } from '../db/app-db'
 import type { Session, RoutineLog, StreakDay, DayOfWeek } from '../domain/types'
-import { getSessionScope, isoNow } from './utils'
+import { getSessionScope, isoNow, sessionLocalDate } from './utils'
 import { loadSettings } from '../features/settings/SettingsPage'
 
 /**
@@ -15,7 +15,7 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
   const subjects = await db.subjects.toArray()
   const categories = await db.categories.toArray()
   if (getSessionScope(session, subjects, categories) !== 'academic') return
-  const sessionDate = session.startAt.slice(0, 10) // YYYY-MM-DD
+  const sessionDate = sessionLocalDate(session.startAt) // YYYY-MM-DD
   const sessionDow = new Date(session.startAt).getDay() as DayOfWeek
 
   const allRoutines = await db.routines.toArray()
@@ -65,7 +65,7 @@ export async function revertRoutineLogsForSession(session: Session): Promise<voi
   const subjects = await db.subjects.toArray()
   const categories = await db.categories.toArray()
   if (getSessionScope(session, subjects, categories) !== 'academic') return
-  const sessionDate = session.startAt.slice(0, 10)
+  const sessionDate = sessionLocalDate(session.startAt)
   const sessionDow = new Date(session.startAt).getDay() as DayOfWeek
 
   const allRoutines = await db.routines.toArray()
@@ -101,7 +101,7 @@ export async function updateStreakDayForSession(session: Session): Promise<void>
   const categories = await db.categories.toArray()
   if (getSessionScope(session, subjects, categories) !== 'academic') return
 
-  const dateKey = session.startAt.slice(0, 10) // YYYY-MM-DD
+  const dateKey = sessionLocalDate(session.startAt) // YYYY-MM-DD
   const settings = loadSettings()
   const target = settings.dailyTargetMinutes
 
@@ -146,14 +146,14 @@ export async function revertStreakDayForSession(session: Session): Promise<void>
   const categories = await db.categories.toArray()
   if (getSessionScope(session, subjects, categories) !== 'academic') return
 
-  const dateKey = session.startAt.slice(0, 10)
+  const dateKey = sessionLocalDate(session.startAt)
   const settings = loadSettings()
   const target = settings.dailyTargetMinutes
 
   const allSessions = await db.sessions.toArray()
   let totalMinutes = 0
   for (const s of allSessions) {
-    if (s.startAt.slice(0, 10) !== dateKey) continue
+    if (sessionLocalDate(s.startAt) !== dateKey) continue
     if (s.id === session.id) continue // exclude the deleted session
     if (getSessionScope(s, subjects, categories) !== 'academic') continue
     totalMinutes += s.durationMinutes

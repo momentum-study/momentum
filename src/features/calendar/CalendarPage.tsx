@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, gradeColor, isoNow, pctToGrade } from '../../lib/utils'
+import { cn, gradeColor, isoNow, pctToGrade, sessionLocalDate } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -48,7 +48,7 @@ const toForm = (a: Assignment): TaskForm => ({
   title: a.title,
   subjectId: a.subjectId,
   projectId: a.projectId ?? '',
-  dueDate: a.dueDate.slice(0, 10),
+  dueDate: sessionLocalDate(a.dueDate),
   category: a.category,
   weight: a.weight > 0 ? String(a.weight) : '',
   description: a.description ?? '',
@@ -115,7 +115,7 @@ export default function CalendarPage() {
   const tasksByDate = useMemo(() => {
     const map = new Map<string, Assignment[]>()
     for (const a of filteredTasks) {
-      const key = a.dueDate.slice(0, 10)
+      const key = sessionLocalDate(a.dueDate)
       const arr = map.get(key) ?? []
       arr.push(a)
       map.set(key, arr)
@@ -129,7 +129,7 @@ export default function CalendarPage() {
   const projectsByDate = useMemo(() => {
     const map = new Map<string, Project[]>()
     for (const p of activeProjects) {
-      const key = p.dueDate!.slice(0, 10)
+      const key = sessionLocalDate(p.dueDate!)
       const arr = map.get(key) ?? []
       arr.push(p)
       map.set(key, arr)
@@ -263,7 +263,7 @@ export default function CalendarPage() {
       total,
       weight: markingTask.weight,
       letterGrade: null,
-      date: now.slice(0, 10),
+      date: sessionLocalDate(now),
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -302,7 +302,7 @@ export default function CalendarPage() {
     const overdueTasks = filteredTasks
       .filter((a) => {
         if (!a.dueDate || a.completed) return false
-        return a.dueDate.slice(0, 10) < todayStr
+        return sessionLocalDate(a.dueDate) < todayStr
       })
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
   

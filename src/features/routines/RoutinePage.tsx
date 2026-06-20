@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, isoNow } from '../../lib/utils'
+import { cn, isoNow, sessionLocalDate } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { useUndo } from '../../lib/use-undo'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
@@ -86,7 +86,7 @@ export default function RoutinePage() {
         const planned = scheduleMap.get(`${subject.id}:${todayDow}`)
         if (!planned || planned.targetMinutes <= 0) return null
         const actualMinutes = data.sessions
-          .filter((s) => !s.deletedAt && s.subjectId === subject.id && s.startAt.slice(0, 10) === todayStr)
+          .filter((s) => !s.deletedAt && s.subjectId === subject.id && sessionLocalDate(s.startAt) === todayStr)
           .reduce((sum, s) => sum + s.durationMinutes, 0)
         const pct = planned.targetMinutes > 0 ? Math.round((actualMinutes / planned.targetMinutes) * 100) : 0
         return {

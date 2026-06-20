@@ -1,5 +1,5 @@
 // FSRS-5 based spaced repetition scheduler for Study Areas.
-// Computes next review dates from confidence ratings, with exam-mode compression.
+import { sessionLocalDate } from './utils'
 
 import { format } from 'date-fns'
 import type { FsrsState, ReviewRating } from '../domain/types'
@@ -224,13 +224,13 @@ function buildResult(
 // ─── Query helpers ───
 
 export function isDueToday(area: { fsrs: FsrsState }): boolean {
-  const next = area.fsrs.nextReview.slice(0, 10) // YYYY-MM-DD
+  const next = sessionLocalDate(area.fsrs.nextReview) // YYYY-MM-DD
   const today = format(new Date(), 'yyyy-MM-dd')
   return next <= today
 }
 
 export function isOverdue(area: { fsrs: FsrsState }): boolean {
-  const next = area.fsrs.nextReview.slice(0, 10)
+  const next = sessionLocalDate(area.fsrs.nextReview)
   const today = format(new Date(), 'yyyy-MM-dd')
   return next < today
 }
@@ -253,7 +253,7 @@ const URGENCY_COLORS: Record<UrgencyLevel, string> = {
 }
 
 export function getUrgency(area: { fsrs: FsrsState }): UrgencyLevel {
-  const next = area.fsrs.nextReview.slice(0, 10)
+  const next = sessionLocalDate(area.fsrs.nextReview)
   const today = format(new Date(), 'yyyy-MM-dd')
   const tomorrow = format(new Date(Date.now() + DAY_MS), 'yyyy-MM-dd')
   const threeDays = format(new Date(Date.now() + 3 * DAY_MS), 'yyyy-MM-dd')

@@ -144,8 +144,11 @@ export default function Dashboard() {
 
   async function handleLogTime() {
     const note = logNote.trim()
-    const startAt = new Date(`${logDate}T00:00:00`).toISOString()
-    const endAt = new Date(new Date(`${logDate}T00:00:00`).getTime() + logDuration * 60_000).toISOString()
+    const now = new Date()
+    const [y, m, d] = logDate.split('-').map(Number)
+    now.setFullYear(y, m - 1, d)
+    const startAt = now.toISOString()
+    const endAt = new Date(now.getTime() + logDuration * 60_000).toISOString()
 
     if (logHobbyMode && logHobbyId) {
       const hobbySession: HobbySession = {

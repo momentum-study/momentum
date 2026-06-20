@@ -215,6 +215,7 @@ export default function Dashboard() {
   const [editLog, setEditLog] = useState<Session | null>(null)
   const [editDuration, setEditDuration] = useState(30)
   const [editDate, setEditDate] = useState(todayStr)
+  const [editSubjectId, setEditSubjectId] = useState('')
 
   async function saveEditLog() {
     if (!editLog) return
@@ -225,6 +226,7 @@ export default function Dashboard() {
       startAt: dateAtMidnight.toISOString(),
       endAt: endAt.toISOString(),
       durationMinutes: editDuration,
+      subjectId: editSubjectId,
       updatedAt: isoNow(),
     }
     await db.sessions.update(editLog.id, updated)
@@ -233,7 +235,7 @@ export default function Dashboard() {
     setEditLog(null)
     push({
       description: `Edited session`,
-      undo: async () => { await db.sessions.update(editLog.id, { startAt: prevSession.startAt, endAt: prevSession.endAt, durationMinutes: prevSession.durationMinutes, updatedAt: prevSession.updatedAt }); await loadData() },
+      undo: async () => { await db.sessions.update(editLog.id, { startAt: prevSession.startAt, endAt: prevSession.endAt, durationMinutes: prevSession.durationMinutes, subjectId: prevSession.subjectId, updatedAt: prevSession.updatedAt }); await loadData() },
       redo: async () => { await db.sessions.update(editLog.id, updated); await loadData() },
     })
   }
@@ -689,6 +691,7 @@ export default function Dashboard() {
                                           setEditLog(session)
                                           setEditDuration(session.durationMinutes)
                                           setEditDate(format(new Date(session.startAt), 'yyyy-MM-dd'))
+                                          setEditSubjectId(session.subjectId)
                                           setMenuSessionId(null)
                                         }}
                                       >
@@ -853,6 +856,15 @@ export default function Dashboard() {
           <div>
             <label className="label">Date</label>
             <input type="date" className="input" max={todayStr} value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Subject</label>
+            <select className="input" value={editSubjectId} onChange={(e) => setEditSubjectId(e.target.value)}>
+              <option value="">— Select subject —</option>
+              {data.subjects.filter((s) => !s.deletedAt).map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
           </div>
           <Button variant="primary" className="w-full" onClick={saveEditLog}>Save</Button>
         </div>

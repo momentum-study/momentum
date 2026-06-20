@@ -1,3 +1,4 @@
+import { format } from 'date-fns'
 // Shared timer utilities — used by Dashboard and PomodoroTimer for live "today total".
 // Reads timer state from localStorage so any component can compute the live running total
 // without needing direct access to the timer's internal state.
@@ -96,4 +97,33 @@ export function formatTotalToday(minutes: number, includeSeconds = false): strin
   if (h > 0) return `${h}h ${m}m ${s}s`
   if (m > 0) return `${m}m ${s}s`
   return `${s}s`
+}
+
+/**
+ * Compute total study minutes for today (local timezone).
+ * - Filters to academic scope only
+ * - Uses local date boundary (yyyy-MM-dd via format())
+ * - Adds live timer seconds from localStorage
+ */
+export function getTotalTodayMinutes(
+  sessions: { startAt: string; durationMinutes: number; deletedAt?: string | null; subjectId: string }[],
+  subjects: { id: string; categoryId: string | null }[],
+  categories: { id: string; scope: 'academic' | 'nonAcademic' }[]
+): number {
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  // Filter to academic scope + today's local date
+  let total = 0
+  for (const s of sessions) {
+    if (s.deletedAt) continue
+    const subject = subjects.find(sub => sub.id === s.subjectId)
+    if (!subject) continue
+    const category = categories.find(c => c.id === subject.categoryId)
+    if (category?.scope !== 'academic') continue
+    if (format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr) {
+      total += s.durationMinutes
+    }
+  }
+  // Add live timer seconds
+  total += getLiveTimerSeconds() / 60
+  return total
 }

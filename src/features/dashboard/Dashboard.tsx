@@ -1,8 +1,8 @@
 import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
 import { SubjectBreakdown } from '../../components/widgets/SubjectBreakdown'
-import { formatTotalToday, getLiveTimerSeconds, getLiveTimerSubjectId, isTimerActive } from '../../lib/timer-utils'
+import { formatTotalToday, getLiveTimerSeconds, getLiveTimerSubjectId, getTotalTodayMinutes, isTimerActive } from '../../lib/timer-utils'
 import { useEffect, useMemo, useState } from 'react'
-import { format, formatDistanceToNow, subDays, differenceInCalendarDays } from 'date-fns'
+import { format, subDays, differenceInCalendarDays } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { PomodoroTimer } from '../../components/widgets/PomodoroTimer'
 import QuickTimer from '../../components/widgets/QuickTimer'
@@ -275,7 +275,7 @@ export default function Dashboard() {
   const todayMinutes = academicSessions
     .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
     .reduce((sum, s) => sum + s.durationMinutes, 0)
-  const liveTotalTodayMinutes = todayMinutes + liveTimerSeconds / 60
+  const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
   const weekStart = new Date()
   weekStart.setDate(weekStart.getDate() - weekStart.getDay())
   weekStart.setHours(0, 0, 0, 0)
@@ -735,7 +735,7 @@ export default function Dashboard() {
                               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.subjectColor }} />
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{session.subjectName}{project && <span className="text-slate-500"> · {project.name}</span>}</div>
-                                <div className="text-xs text-slate-500">{formatDistanceToNow(new Date(session.startAt), { addSuffix: true })}{session.source === 'timer' ? ' ⏱' : session.source === 'pomodoro' ? ' 🍅' : ' ✏️'}</div>
+                                <div className="text-xs text-slate-500">{format(new Date(session.startAt), 'MMM d, h:mm a')}{session.source === 'timer' ? ' ⏱' : session.source === 'pomodoro' ? ' 🍅' : ' ✏️'}</div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">

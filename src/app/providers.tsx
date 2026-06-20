@@ -1,11 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { parseISO } from 'date-fns'
+import { parseISO, format, subDays } from 'date-fns'
 import { db } from '../db/app-db'
 import { pullAllData, flushPendingDirtyTables } from '../lib/data-sync'
+import { loadSettings } from '../features/settings/SettingsPage'
 
 import type {
   Assignment,
   Category,
+  DayOfWeek,
   Habit,
   HabitLog,
   Hobby,
@@ -137,17 +139,54 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [scope, setScope] = useState<ScopeFilter>('all')
   const [rangePreset, setRangePreset] = useState<RangePreset>('week')
-
   const loadTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const pullInProgress = useRef(false)
   const loadData = useCallback(async () => {
-    if (pullInProgress.current) return  // Skip: pullAllData will call loadData when done
+    async function ensureAutoLogSessions(snapshot: AppData): Promise<boolean> {
+      const settings = loadSettings()
+      if (!settings.autoLogEnabled) return false
+
+      const today = new Date()
+      const todayStr = format(today, 'yyyy-MM-dd')
+      const todayDow = today.getDay() as DayOfWeek
+      const weekStart = format(subDays(today, today.getDay()), 'yyyy-MM-dd')
+      let created = false
+
+      for (const routine of snapshot.routines) {
+        if (routine.deletedAt || !routine.autoLog || !routine.days.includes(todayDow)) continue
+        if (routine.skippedWeekStart && weekStart <= routine.skippedWeekStart) continue
+        const exists = snapshot.sessions.some((s) => s.routineId === routine.id && s.startAt.slice(0, 10) === todayStr)
+        if (exists) continue
+        const startAt = new Date(today)
+        startAt.setHours(0, 0, 0, 0)
+        const endAt = new Date(startAt.getTime() + (routine.autoLogMinutes ?? routine.targetMinutes) * 60_000)
+        await db.sessions.add({
+          id: crypto.randomUUID?.() ?? `${Date.now()}_${routine.id}`,
+          subjectId: routine.subjectId,
+          projectId: routine.projectId ?? null,
+          routineId: routine.id,
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+          durationMinutes: routine.autoLogMinutes ?? routine.targetMinutes,
+          note: routine.notes || routine.name,
+          source: 'autoRoutine',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          deletedAt: new Date().toISOString(),
+        })
+        created = true
+      }
+      return created
+    }
+
+    if (pullInProgress.current) return
     if (loadTimer.current) clearTimeout(loadTimer.current)
     loadTimer.current = setTimeout(async () => {
       loadTimer.current = null
       try {
         const next = await loadAllData()
-        setData(next)
+        const autoCreated = await ensureAutoLogSessions(next)
+        setData(autoCreated ? await loadAllData() : next)
       } catch (e) {
         console.error('loadAllData failed:', e)
       } finally {
@@ -155,8 +194,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     }, 80)
   }, [])
-  // On mount: pull cloud data first (if signed in), then load. Avoids the race where
-  // a separate loadData() fires before pullAllData completes, showing stale local data.
+  // On mount: pull cloud data first (if signed in), then load
   useEffect(() => {
     async function init() {
       pullInProgress.current = true

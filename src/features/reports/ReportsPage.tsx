@@ -115,6 +115,26 @@ export default function ReportsPage() {
     return [...acc.entries()].sort((a, b) => b[1] - a[1])
   }, [sessions, subjectsById])
 
+
+  // ── Schedule adherence (planned vs actual) ──
+  const scheduleAdherence = useMemo(() => {
+    const days = periodDays(period)
+    const count = days === 0 ? 30 : days
+    const rows: { date: string; dayLabel: string; planned: number; actual: number }[] = []
+    for (let i = count - 1; i >= 0; i--) {
+      const d = subDays(new Date(), i)
+      const date = format(d, 'yyyy-MM-dd')
+      const dow = d.getDay()
+      const planned = data.scheduleEntries
+        .filter((e) => e.dayOfWeek === dow)
+        .reduce((sum, e) => sum + e.targetMinutes, 0)
+      const actual = sessions
+        .filter((s) => s.startAt.slice(0, 10) === date)
+        .reduce((sum, s) => sum + s.durationMinutes, 0)
+      rows.push({ date, dayLabel: DAY_NAMES_SHORT[dow], planned, actual })
+    }
+    return rows
+  }, [data.scheduleEntries, sessions, period])
   const subjectColors = useMemo(() => {
     const m = new Map<string, string>()
     for (const s of sessions) {
@@ -305,6 +325,7 @@ export default function ReportsPage() {
             {avgLenChange !== null && period !== 'all' && (
               <div className={cn('text-xs font-medium', avgLenChange >= 0 ? 'text-green-600' : 'text-red-600')}>
                 {avgLenChange >= 0 ? '↑' : '↓'} {Math.abs(avgLenChange)}%
+
               </div>
             )}
           </div>
@@ -324,6 +345,38 @@ export default function ReportsPage() {
         </div>
       </Card>
 
+      {/* Schedule adherence chart */}
+      {scheduleAdherence.length > 0 && scheduleAdherence.some((r) => r.planned > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Schedule Adherence</CardTitle>
+          </CardHeader>
+          <div className="space-y-2">
+            {scheduleAdherence.filter((r) => r.planned > 0 || r.actual > 0).slice(-14).map((r) => {
+              const maxVal = Math.max(r.planned, r.actual, 1)
+              return (
+                <div key={r.date} className="flex items-center gap-3">
+                  <span className="w-16 shrink-0 text-xs text-slate-500">{r.dayLabel} {format(new Date(r.date), 'd')}</span>
+                  <div className="flex-1 flex gap-1 h-4">
+                    <div className="flex items-center gap-1">
+                      <div className="h-3 rounded bg-slate-300 dark:bg-slate-600" style={{ width: `${Math.round((r.planned / maxVal) * 80)}px` }} />
+                      <span className="text-[10px] text-slate-400">{r.planned}m</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="h-3 rounded bg-primary-500" style={{ width: `${Math.round((r.actual / maxVal) * 80)}px` }} />
+                      <span className="text-[10px] text-slate-600 dark:text-slate-300">{r.actual}m</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            <div className="flex gap-4 text-xs text-slate-500 mt-2">
+              <div className="flex items-center gap-1"><div className="h-2.5 w-2.5 rounded bg-slate-300 dark:bg-slate-600" /> Planned</div>
+              <div className="flex items-center gap-1"><div className="h-2.5 w-2.5 rounded bg-primary-500" /> Actual</div>
+            </div>
+          </div>
+        </Card>
+      )}
       {/* 3. Time by Focus Area with bar chart */}
       <Card>
         <CardHeader>

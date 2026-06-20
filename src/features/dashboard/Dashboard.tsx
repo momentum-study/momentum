@@ -284,6 +284,30 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Auto-logged sessions banner */}
+      {data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt).length > 0 && (
+        <Card className="border-primary-200 bg-primary-50 dark:border-primary-800 dark:bg-primary-900/20">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium text-primary-900 dark:text-primary-100">
+              {data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt).length} auto-logged sessions ready to confirm
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" onClick={async () => {
+                for (const s of data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt)) {
+                  await db.sessions.delete(s.id)
+                }
+                await loadData()
+              }}>Skip All</Button>
+              <Button size="sm" variant="primary" onClick={async () => {
+                for (const s of data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt)) {
+                  await db.sessions.update(s.id, { deletedAt: null, updatedAt: isoNow() })
+                }
+                await loadData()
+              }}>Confirm All</Button>
+            </div>
+          </div>
+        </Card>
+      )}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Dashboard</h2>
         <Button variant="secondary" size="sm" onClick={() => setCustomizeOpen(true)}>Customise</Button>

@@ -20,6 +20,7 @@ const STORAGE_KEY = 'momentum-settings'
 export type Settings = {
   darkMode: boolean
   pomodoroEnabled: boolean
+  autoLogEnabled: boolean
   pomodoroFocusMinutes: number
   pomodoroBreakMinutes: number
   pomodoroLongBreakMinutes: number
@@ -34,6 +35,7 @@ export type Settings = {
 export const DEFAULT_SETTINGS: Settings = {
   darkMode: true,
   pomodoroEnabled: true,
+  autoLogEnabled: true,
   pomodoroFocusMinutes: 25,
   pomodoroBreakMinutes: 5,
   pomodoroLongBreakMinutes: 15,
@@ -589,9 +591,21 @@ export default function SettingsPage() {
           </Card>
         </>
       )}
-
-      {/* Timer tab: Pomodoro settings */}
+      {/* Timer tab: Pomodoro settings + Auto-log */}
       {activeTab === 'Timer' && (
+        <>
+          <Card>
+          <CardHeader>
+            <CardTitle>Auto-Log Routines</CardTitle>
+          </CardHeader>
+          <SettingsField label="Auto-log routine sessions">
+            <Toggle value={settings.autoLogEnabled} onChange={(v) => update({ autoLogEnabled: v })} />
+          </SettingsField>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            When enabled, routines with "Auto-log" turned on will create placeholder sessions on their scheduled days. You confirm or skip each one from the Dashboard.
+          </p>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Pomodoro Timer</CardTitle>
@@ -617,6 +631,7 @@ export default function SettingsPage() {
             When disabled, only the simple count-up timer is shown on the Dashboard.
           </p>
         </Card>
+        </>
       )}
       {/* Categories tab: inline manage section */}
       {activeTab === 'Categories' && <CategoriesManager />}

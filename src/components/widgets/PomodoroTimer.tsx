@@ -676,7 +676,7 @@ export function PomodoroTimer() {
       const elapsed = focusDuration - pomSeconds
       live = elapsed / 60
     }
-    return committed + live + (simplePausedOffset / 60)
+    return committed + live
   }, [data.sessions, simpleSeconds, pomSeconds, simplePausedOffset, simpleStartedAt, pomStartedAt, pomPhase, config.focusMinutes])
 
 
@@ -832,10 +832,12 @@ export function PomodoroTimer() {
         )
       })()}
 
-      {/* Timer display */}
-      <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
-        {fmt(currentSeconds)}
-      </div>
+      {/* Timer display — hidden when YPT simple view is active */}
+      {!(mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0)) && (
+        <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
+          {fmt(currentSeconds)}
+        </div>
+      )}
 
       {/* Cycle indicator - larger dots with numbers */}
       {mode === 'pomodoro' && settings.pomodoroEnabled && (
@@ -936,11 +938,11 @@ export function PomodoroTimer() {
               </div>
             )}
           </>
-        ) : (
+        ) : !(mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0)) ? (
           <div className="text-sm text-slate-600 dark:text-slate-300">
             Studying <span className="font-semibold">{data.subjects.find((s) => s.id === subjectId)?.name}</span>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Simple mode: YPT-style study view */}

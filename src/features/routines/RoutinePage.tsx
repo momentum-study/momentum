@@ -10,6 +10,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { ColorPicker } from '../../components/ui/ColorPicker'
 import { v4 as uuid } from 'uuid'
+import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
 import type { Routine, RoutineLog, DayOfWeek } from '../../domain/types'
 
 const DEFAULT_COLOR = '#6366f1'
@@ -596,6 +597,17 @@ export default function RoutinePage() {
           </div>
         </Card>
       )}
+
+      {/* Today's routines compact list */}
+      <TodaysRoutinesList
+        routines={data.routines}
+        routineLogs={data.routineLogs}
+        subjects={data.subjects}
+        todayStr={todayStr}
+        todayDow={todayDow}
+        maxItems={6}
+        clickable
+      />
 
       {/* 7-day mini calendar */}
       <Card>

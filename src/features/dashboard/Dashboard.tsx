@@ -1,3 +1,4 @@
+import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
 import { useEffect, useMemo, useState } from 'react'
 import { format, formatDistanceToNow, subDays, differenceInCalendarDays } from 'date-fns'
 import { v4 as uuid } from 'uuid'
@@ -377,6 +378,15 @@ export default function Dashboard() {
                       <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700">
                         <div className="h-2 rounded-full bg-primary-500" style={{ width: `${Math.min(100, pct)}%` }} />
                       </div>
+                      {/* Today's routines list */}
+                      <TodaysRoutinesList
+                        routines={data.routines}
+                        routineLogs={data.routineLogs}
+                        subjects={data.subjects}
+                        todayStr={todayStr}
+                        todayDow={new Date().getDay() as DayOfWeek}
+                        maxItems={5}
+                      />
                     </div>
                   )
                 })()}

@@ -1,6 +1,6 @@
 // Group detail page — shows member stats, leaderboard, invites.
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../../app/auth-provider'
 import { groupService } from '../../lib/group-service'
@@ -10,7 +10,7 @@ import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { cn } from '../../lib/utils'
-import type { Group, GroupMember, SyncedSession, MemberStats as MemberStatsType } from '../../domain/cloud-types'
+import type { Group, GroupMember, SyncedSession, MemberStats as MemberStatsType, GroupPresence } from '../../domain/cloud-types'
 import { isFirebaseConfigured } from '../../lib/firebase'
 import { db as localDb } from '../../db/app-db'
 
@@ -49,6 +49,7 @@ export default function GroupDetailPage() {
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
   const [sortBy, setSortBy] = useState<WindowKey>('today')
+  const [presence, setPresence] = useState<GroupPresence[]>([])
   const initialWindowLoaded = useRef(false)
 
   const fetchStats = useCallback(async (groupId: string, memberList: GroupMember[]) => {
@@ -95,6 +96,11 @@ export default function GroupDetailPage() {
     }
     void load(id)
   }, [id, user])
+
+  useEffect(() => {
+    if (!id) return
+    return groupService.subscribePresence(id, setPresence)
+  }, [id])
 
   async function load(groupId: string) {
     if (!user) return
@@ -177,6 +183,12 @@ export default function GroupDetailPage() {
     }
   })
 
+  const presenceByUid = useMemo(() => {
+    const m = new Map<string, GroupPresence>()
+    for (const p of presence) m.set(p.uid, p)
+    return m
+  }, [presence])
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -230,8 +242,19 @@ export default function GroupDetailPage() {
                 {s.displayName[0]?.toUpperCase() ?? '?'}
               </div>
               <div className="flex-1">
-                <div className="font-medium text-slate-800 dark:text-slate-100">
-                  {s.displayName}
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-slate-800 dark:text-slate-100">{s.displayName}</span>
+                  {(() => {
+                    const p = presenceByUid.get(s.uid)
+                    if (!p) return null
+                    const mins = Math.floor((p.elapsedSeconds ?? 0) / 60)
+                    return (
+                      <span className="flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/50 dark:text-green-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                        {'Studying ' + p.subjectName + ' \u00b7 ' + mins + 'm'}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div className="flex gap-3 text-xs text-slate-500">
                   <span>🔥 {s.currentStreak} day streak</span>

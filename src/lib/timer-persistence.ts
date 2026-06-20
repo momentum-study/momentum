@@ -56,6 +56,8 @@ export interface PersistedTimerState {
   phase: TimerPhase
   cyclesCompleted: number
   config: TimerConfig
+  /** Simple timer: total seconds accumulated before the most recent pause (0 if not paused). */
+  simplePausedOffset: number
 }
 
 export function saveTimerState(state: PersistedTimerState): void {

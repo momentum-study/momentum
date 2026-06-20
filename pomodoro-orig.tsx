@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
-import { cn, formatMinutes, isoNow } from '../../lib/utils'
+import { cn, isoNow } from '../../lib/utils'
 import { loadSettings, saveSettings } from '../../features/settings/SettingsPage'
 import type { Settings } from '../../features/settings/SettingsPage'
 import { useSessionSync } from '../../lib/use-session-sync'
@@ -74,12 +74,8 @@ export function PomodoroTimer() {
     return saved?.mode ?? 'simple'
   })
 
-  // Simple timer: store start timestamp (ms) instead of counter.
-  // simplePausedOffset = seconds accumulated before the most recent pause.
-  const [simplePausedOffset, setSimplePausedOffset] = useState(() => {
-    const saved = loadTimerState()
-    return saved?.mode === 'simple' ? (saved.simplePausedOffset ?? 0) : 0
-  })
+  // Simple timer: store start timestamp (ms) instead of counter
+  // When null, timer is stopped/paused
   const [simpleStartedAt, setSimpleStartedAt] = useState<number | null>(() => {
     const saved = loadTimerState()
     if (saved?.mode === 'simple' && saved.startedAt) return saved.startedAt
@@ -157,20 +153,17 @@ export function PomodoroTimer() {
     })
   }, [])
 
-  // Simple timer tick — compute elapsed from wall clock + paused offset
+  // Simple timer tick — compute elapsed from wall clock
   useEffect(() => {
-    if (!simpleStartedAt) {
-      setSimpleSeconds(simplePausedOffset)
-      return
-    }
+    if (!simpleStartedAt) return
     const tick = () => {
-      const elapsed = simplePausedOffset + Math.floor((Date.now() - simpleStartedAt) / 1000)
+      const elapsed = Math.floor((Date.now() - simpleStartedAt) / 1000)
       setSimpleSeconds(elapsed)
     }
     tick()
     const interval = window.setInterval(tick, 1000)
     return () => clearInterval(interval)
-  }, [simpleStartedAt, simplePausedOffset])
+  }, [simpleStartedAt])
 
   // Pomodoro timer tick — compute remaining from wall clock
   useEffect(() => {
@@ -236,7 +229,6 @@ export function PomodoroTimer() {
       setPomStartedAt(now)
       const newState: PersistedTimerState = {
         mode: 'pomodoro',
-      simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: getPhaseDuration(nextPhase, cfg),
         phase: nextPhase,
@@ -251,7 +243,6 @@ export function PomodoroTimer() {
       setPomStartedAt(now)
       const newState: PersistedTimerState = {
         mode: 'pomodoro',
-      simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: cfg.focusMinutes * 60,
         phase: 'focus',
@@ -377,7 +368,6 @@ export function PomodoroTimer() {
 
   // Simple timer
   function startSimple() {
-    setSimplePausedOffset(0)
     const now = Date.now()
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
@@ -387,58 +377,13 @@ export function PomodoroTimer() {
       phase: 'focus',
       cyclesCompleted: 0,
       config: configRef.current,
-      simplePausedOffset: 0,
-    }
-    saveTimerState(state)
-    // Update presence: let group members know you are studying
-    const presenceUid = localStorage.getItem('momentum-cloud-uid')
-    const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'
-    if (presenceUid) {
-      import('../../lib/group-service').then(({ groupService }) => groupService.updatePresence(presenceUid, '', subjectName).catch(() => {}))
-    }
-  }
-
-  function pauseSimple() {
-    const elapsed = simpleSeconds
-    setSimplePausedOffset(elapsed)
-    setSimpleStartedAt(null)
-    const state: PersistedTimerState = {
-      mode: 'simple',
-      startedAt: null,
-      phaseRemaining: null,
-      phase: 'focus',
-      cyclesCompleted: 0,
-      config: configRef.current,
-      simplePausedOffset: elapsed,
-    }
-    saveTimerState(state)
-    // Clear presence on pause
-    const pauseUid = localStorage.getItem('momentum-cloud-uid')
-    if (pauseUid) {
-      import('../../lib/group-service').then(({ groupService }) => groupService.clearPresence(pauseUid).catch(() => {}))
-    }
-  }
-
-  function resumeSimple() {
-    const now = Date.now()
-    setSimpleStartedAt(now)
-    const state: PersistedTimerState = {
-      mode: 'simple',
-      startedAt: now,
-      phaseRemaining: null,
-      phase: 'focus',
-      cyclesCompleted: 0,
-      config: configRef.current,
-      simplePausedOffset: simplePausedOffset,
     }
     saveTimerState(state)
   }
-
   const { syncSession } = useSessionSync()
 
   async function stopSimple() {
     setSimpleStartedAt(null)
-    setSimplePausedOffset(0)
     clearTimerState()
     const total = simpleSeconds
     const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
@@ -550,7 +495,6 @@ export function PomodoroTimer() {
       setSimpleStartedAt(now)
       const state: PersistedTimerState = {
         mode: 'simple',
-      simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: null,
         phase: 'focus',
@@ -562,7 +506,6 @@ export function PomodoroTimer() {
       setPomStartedAt(now)
       const state: PersistedTimerState = {
         mode: 'pomodoro',
-      simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
         phase: pomPhase,
@@ -583,7 +526,6 @@ export function PomodoroTimer() {
     setPomStartedAt(now)
     const state: PersistedTimerState = {
       mode: 'pomodoro',
-    simplePausedOffset: 0,
       startedAt: now,
       phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
       phase: pomPhase,
@@ -597,7 +539,6 @@ export function PomodoroTimer() {
     setPomStartedAt(null)
     const state: PersistedTimerState = {
       mode: 'pomodoro',
-    simplePausedOffset: 0,
       startedAt: null,
       phaseRemaining: pomSeconds,
       phase: pomPhase,
@@ -654,15 +595,6 @@ export function PomodoroTimer() {
     : '🌿 Long Break'
 
   const isTimerActive = simpleStartedAt != null || pomStartedAt != null
-  // YPT-style: total minutes studied today (committed sessions + current live session)
-  const totalTodayMinutes = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10)
-    const committed = data.sessions
-      .filter((s) => !s.deletedAt && s.startAt.slice(0, 10) === todayStr)
-      .reduce((sum, s) => sum + s.durationMinutes, 0)
-    const live = Math.floor(simpleSeconds / 60)
-    return committed + live
-  }, [data.sessions, simpleSeconds])
 
 
   return (
@@ -928,54 +860,35 @@ export function PomodoroTimer() {
         )}
       </div>
 
-      {/* Simple mode: YPT-style study view */}
-      {mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0) ? (
-        <div className="mt-4 space-y-4 rounded-lg border border-primary-200 bg-primary-50/40 p-5 dark:border-primary-800 dark:bg-primary-900/20">
-          <div className="text-center text-base font-medium text-slate-700 dark:text-slate-200">
-            Studying <span className="font-semibold text-slate-900 dark:text-slate-50">{data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'}</span>
-          </div>
-          <div className="text-center text-6xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
-            {fmt(simpleSeconds)}
-          </div>
-          <div className="text-center text-sm text-slate-500 dark:text-slate-400">
-            Today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatMinutes(totalTodayMinutes)}</span> studied
-          </div>
-          <div className="flex justify-center gap-2">
-            {simpleStartedAt !== null ? (
-              <Button variant="secondary" onClick={pauseSimple}>Pause</Button>
-            ) : (
-              <Button variant="primary" onClick={resumeSimple}>Resume</Button>
-            )}
-            <Button variant="danger" onClick={stopSimple}>Stop & Save</Button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Controls */}
-          <div className="mt-3 flex justify-center gap-2">
-            {mode === 'simple' ? (
-              <Button variant="primary" onClick={startSimple} disabled={!subjectId && !projectId}>
+      {/* Controls */}
+      <div className="mt-3 flex justify-center gap-2">
+        {mode === 'simple' ? (
+          !simpleStartedAt ? (
+            <Button variant="primary" onClick={startSimple} disabled={!subjectId && !projectId}>
+              Start
+            </Button>
+          ) : (
+            <Button variant="danger" onClick={stopSimple}>
+              Stop & Save
+            </Button>
+          )
+        ) : (
+          <>
+            {!pomStartedAt ? (
+              <Button variant="primary" onClick={startPomodoro} disabled={!subjectId && !projectId}>
                 Start
               </Button>
             ) : (
-              <>
-                {!pomStartedAt ? (
-                  <Button variant="primary" onClick={startPomodoro} disabled={!subjectId && !projectId}>
-                    Start
-                  </Button>
-                ) : (
-                  <Button variant="secondary" onClick={pausePomodoro}>
-                    Pause
-                  </Button>
-                )}
-                <Button variant="secondary" onClick={resetPomodoro}>
-                  Reset
-                </Button>
-              </>
+              <Button variant="secondary" onClick={pausePomodoro}>
+                Pause
+              </Button>
             )}
-          </div>
-        </>
-      )}
+            <Button variant="secondary" onClick={resetPomodoro}>
+              Reset
+            </Button>
+          </>
+        )}
+      </div>
 
       {/* Change Subject — only when timer is running */}
       {isTimerActive && (

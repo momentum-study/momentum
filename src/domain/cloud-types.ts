@@ -81,3 +81,15 @@ export interface InviteLink {
   expiresAt: string
   usedCount: number
 }
+
+
+/** Studying presence for a group member — written when they start the timer, cleared on stop. */
+export interface GroupPresence {
+  uid: string
+  displayName: string
+  subjectName: string
+  startedAt: number  // epoch ms
+  updatedAt: number  // epoch ms — for stale timeout
+  /** Computed client-side, not from Firestore */
+  elapsedSeconds?: number
+}

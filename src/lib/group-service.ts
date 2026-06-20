@@ -10,10 +10,11 @@ import {
   query,
   where,
   runTransaction,
+  onSnapshot,
 } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from './firebase'
 import { isoNow } from './utils'
-import type { Group, GroupMember } from '../domain/cloud-types'
+import type { Group, GroupMember, GroupPresence } from '../domain/cloud-types'
 
 function genInviteCode(): string {
   // 6-char alphanumeric, no ambiguous chars
@@ -182,5 +183,44 @@ export const groupService = {
     if (!isFirebaseConfigured || !db) return null
     const snap = await getDoc(doc(db, 'groupMembers', `${groupId}_${uid}`))
     return snap.exists() ? (snap.data() as GroupMember) : null
+  },
+
+  /** Write studying presence to all of the user's groups */
+  async updatePresence(uid: string, displayName: string, subjectName: string): Promise<void> {
+    if (!isFirebaseConfigured || !db) return
+    const memberGroups = await this.listMyGroups(uid)
+    const data = { uid, displayName, subjectName, startedAt: Date.now(), updatedAt: Date.now() }
+    await Promise.allSettled(
+      memberGroups.map((g) => setDoc(doc(db!, 'groups', g.id, 'presence', uid), data))
+    )
+  },
+
+  /** Clear studying presence from all of the user's groups */
+  async clearPresence(uid: string): Promise<void> {
+    if (!isFirebaseConfigured || !db) return
+    const memberGroups = await this.listMyGroups(uid)
+    await Promise.allSettled(
+      memberGroups.map((g) => deleteDoc(doc(db!, 'groups', g.id, 'presence', uid)))
+    )
+  },
+
+  /** Subscribe to live presence for a group. Returns an unsubscribe function. */
+  subscribePresence(groupId: string, callback: (records: GroupPresence[]) => void): () => void {
+    if (!isFirebaseConfigured || !db) return () => {}
+    return onSnapshot(
+      collection(db!, 'groups', groupId, 'presence'),
+      (snap) => {
+        const records: GroupPresence[] = []
+        const now = Date.now()
+        for (const d of snap.docs) {
+          const data = d.data() as GroupPresence
+          // Treat as stale if updatedAt is more than 5 minutes ago
+          if (now - data.updatedAt > 5 * 60_000) continue
+          records.push({ ...data, elapsedSeconds: Math.floor((now - data.startedAt) / 1000) })
+        }
+        callback(records)
+      },
+      (err) => { console.warn('Presence subscription error:', err) }
+    )
   },
 }

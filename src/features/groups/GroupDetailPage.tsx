@@ -9,7 +9,7 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
-import { cn } from '../../lib/utils'
+import { cn, formatMinutes } from '../../lib/utils'
 import type { Group, GroupMember, SyncedSession, MemberStats as MemberStatsType, GroupPresence } from '../../domain/cloud-types'
 import { isFirebaseConfigured } from '../../lib/firebase'
 import { db as localDb } from '../../db/app-db'
@@ -251,7 +251,7 @@ export default function GroupDetailPage() {
                     return (
                       <span className="flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/50 dark:text-green-300">
                         <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                        {'Studying ' + p.subjectName + ' \u00b7 ' + mins + 'm'}
+                        {'Studying ' + p.subjectName + ' \u00b7 ' + formatMinutes(mins)}
                       </span>
                     )
                   })()}
@@ -263,16 +263,16 @@ export default function GroupDetailPage() {
               </div>
               <div className="text-right">
                 {sortBy === 'today' && (
-                  <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{Math.round(s.todayMinutes)}<span className="text-xs font-normal text-slate-500">m</span></div>
+                  <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{formatMinutes(Math.round(s.todayMinutes))}</div>
                 )}
                 {sortBy === 'week' && (
-                  <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{Math.round(s.weekMinutes)}<span className="text-xs font-normal text-slate-500">m</span></div>
+                  <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{formatMinutes(Math.round(s.weekMinutes))}</div>
                 )}
                 {sortBy === 'month' && (
-                  <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{Math.round(s.monthMinutes)}<span className="text-xs font-normal text-slate-500">m</span></div>
+                  <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{formatMinutes(Math.round(s.monthMinutes))}</div>
                 )}
                 {sortBy === 'total' && (
-                  <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{Math.round(s.totalMinutes)}<span className="text-xs font-normal text-slate-500">m</span></div>
+                  <div className="text-lg font-bold text-primary-600 dark:text-primary-400">{formatMinutes(Math.round(s.totalMinutes))}</div>
                 )}
                 {sortBy === 'streak' && (
                   <div className="text-lg font-bold text-orange-600">{s.currentStreak}<span className="text-xs font-normal text-slate-500">d</span></div>

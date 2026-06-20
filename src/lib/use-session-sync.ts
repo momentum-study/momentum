@@ -3,6 +3,7 @@
 // No-ops when Firebase is not configured or the user is not signed in.
 import { useAuth } from '../app/auth-provider'
 import { syncService } from './sync-service'
+import { groupService } from './group-service'
 import type { SyncedSession } from '../domain/cloud-types'
 
 interface LocalSession {
@@ -35,7 +36,7 @@ export function useSessionSync() {
   }
 
   /** Sync a session deletion to the cloud. */
-  function syncSessionDelete(sessionId: string) {
+  async function syncSessionDelete(sessionId: string) {
     if (!user) return
     // Build a minimal placeholder for the delete record
     const stub: SyncedSession = {
@@ -47,7 +48,14 @@ export function useSessionSync() {
       createdAt: '',
     }
     syncService.enqueueDelete(stub)
-    void syncService.flush()
+    await syncService.flush()
+
+    // Refresh group stats after delete
+    const groups = await groupService.listMyGroups(user.uid)
+    const sessions = await syncService.fetchUserSessions(user.uid)
+    for (const group of groups) {
+      await syncService.refreshMemberStats(group.id, user.uid, user.displayName ?? 'Unknown', user.photoURL ?? null, sessions)
+    }
   }
 
   return { syncSession, syncSessionDelete }

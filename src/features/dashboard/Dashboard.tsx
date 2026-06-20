@@ -229,11 +229,13 @@ export default function Dashboard() {
   async function saveEditLog() {
     if (!editLog) return
     const prevSession = { ...editLog }
-    const dateAtMidnight = new Date(`${editDate}T00:00:00`)
-    const endAt = new Date(dateAtMidnight.getTime() + editDuration * 60_000)
-    const updated = {
-      startAt: dateAtMidnight.toISOString(),
-      endAt: endAt.toISOString(),
+    // Preserve original time-of-day; only change date if user picked a different date
+    const originalStart = new Date(editLog.startAt)
+    const newStart = new Date(`${editDate}T${originalStart.toTimeString().slice(0, 8)}`)
+    const newEnd = new Date(newStart.getTime() + editDuration * 60_000)
+    const updated: Record<string, unknown> = {
+      startAt: newStart.toISOString(),
+      endAt: newEnd.toISOString(),
       durationMinutes: editDuration,
       subjectId: editSubjectId,
       updatedAt: isoNow(),
@@ -485,7 +487,7 @@ export default function Dashboard() {
         }
         return (
         <Collapsible id="dash-streak-goal" title="Streak & Goal" defaultOpen={true}>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 items-start">
             <Card>
               <div className="flex items-end justify-between">
                 <div className="flex items-end gap-2">

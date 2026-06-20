@@ -86,7 +86,13 @@ export function PomodoroTimer() {
     if (saved?.mode === 'simple' && saved.startedAt) return saved.startedAt
     return null
   })
-  const [simpleSeconds, setSimpleSeconds] = useState(0)
+  const [simpleSeconds, setSimpleSeconds] = useState(() => {
+    const saved = loadTimerState()
+    if (saved?.mode === 'simple' && saved.startedAt) {
+      return (saved.simplePausedOffset ?? 0) + Math.floor((Date.now() - saved.startedAt) / 1000)
+    }
+    return saved?.mode === 'simple' ? (saved.simplePausedOffset ?? 0) : 0
+  })
   const simpleIntervalRef = useRef<number | null>(null)
 
   // Pomodoro timer

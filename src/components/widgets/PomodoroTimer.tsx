@@ -142,10 +142,20 @@ export function PomodoroTimer() {
 
   // Recover any session that was saved to localStorage on page close but not
   // yet committed to Dexie (e.g. browser killed the tab before the async write).
+  // IMPORTANT: if the timer state shows the timer was still running (startedAt set),
+  // the pending session is just a crash safety snapshot of an in-progress timer,
+  // NOT a completed session. Discard it to avoid duplicating the session when
+  // the user stops the timer later.
   useEffect(() => {
     const pending = loadPendingSession()
     if (!pending) return
     clearPendingSession()
+    const timerState = loadTimerState()
+    if (timerState?.startedAt) {
+      // Timer was running — pending session is stale; the timer will be saved
+      // when the user stops it.
+      return
+    }
     const session = {
       id: pending.id,
       subjectId: pending.subjectId,
@@ -693,7 +703,7 @@ export function PomodoroTimer() {
   // YPT-style: total minutes studied today (committed sessions + current live session)
   const totalTodayMinutes = useMemo(() => {
     return getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
-  }, [data.sessions, data.subjects, data.categories])
+  }, [data.sessions, data.subjects, data.categories, simpleSeconds])
 
 
   return (

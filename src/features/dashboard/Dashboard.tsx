@@ -28,7 +28,7 @@ const BEST_STREAK_KEY = 'momentum-best-streak'
 
 export default function Dashboard() {
   const { data, isLoading, loadData } = useData()
-  const { syncSession } = useSessionSync()
+  const { syncSession, syncSessionDelete } = useSessionSync()
   const { push } = useUndo()
   const { visibleWidgets, setVisibleWidgets } = useDashboardWidgets()
   const [customizeOpen, setCustomizeOpen] = useState(false)
@@ -223,10 +223,10 @@ export default function Dashboard() {
   const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
   const [liveTimerSubjectId, setLiveTimerSubjectId] = useState<string | null>(null)
   useEffect(() => {
-    if (!isTimerActive()) { setLiveTimerSeconds(0); setLiveTimerSubjectId(null); return }
     const tick = () => {
-      setLiveTimerSeconds(getLiveTimerSeconds())
-      setLiveTimerSubjectId(getLiveTimerSubjectId())
+      const active = isTimerActive()
+      setLiveTimerSeconds(active ? getLiveTimerSeconds() : 0)
+      setLiveTimerSubjectId(active ? getLiveTimerSubjectId() : null)
     }
     tick()
     const interval = window.setInterval(tick, 1000)
@@ -265,11 +265,12 @@ export default function Dashboard() {
     await db.sessions.delete(id)
     await revertRoutineLogsForSession(session)
     await revertStreakDayForSession(session)
+    await syncSessionDelete(id)
     await loadData()
     push({
       description: `Deleted session (${session.durationMinutes}m)`,
-      undo: async () => { await db.sessions.add(session); await updateRoutineLogsForSession(session); await updateStreakDayForSession(session); await loadData() },
-      redo: async () => { await db.sessions.delete(id); await revertRoutineLogsForSession(session); await revertStreakDayForSession(session); await loadData() },
+      undo: async () => { await db.sessions.add(session); await updateRoutineLogsForSession(session); await updateStreakDayForSession(session); await syncSession(session, data.subjects.find(s => s.id === session.subjectId)?.name ?? 'Unknown'); await loadData() },
+      redo: async () => { await db.sessions.delete(id); await revertRoutineLogsForSession(session); await revertStreakDayForSession(session); await syncSessionDelete(id); await loadData() },
     })
   }
 

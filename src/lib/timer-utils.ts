@@ -36,21 +36,32 @@ function loadTimerState(): PersistedTimerState | null {
  */
 export function getLiveTimerSeconds(): number {
   const state = loadTimerState()
-  if (!state) return 0
-
-  if (state.mode === 'simple') {
-    if (state.startedAt !== null) {
-      return state.simplePausedOffset + Math.floor((Date.now() - state.startedAt) / 1000)
+  let total = 0
+  if (state) {
+    if (state.mode === 'simple') {
+      if (state.startedAt !== null) {
+        total += state.simplePausedOffset + Math.floor((Date.now() - state.startedAt) / 1000)
+      } else {
+        total += state.simplePausedOffset
+      }
+    } else if (state.mode === 'pomodoro' && state.startedAt !== null && state.phaseRemaining !== null) {
+      const elapsed = Math.floor((Date.now() - state.startedAt) / 1000)
+      total += Math.max(0, elapsed)
     }
-    return state.simplePausedOffset
   }
-
-  if (state.mode === 'pomodoro' && state.startedAt !== null && state.phaseRemaining !== null) {
-    const elapsed = Math.floor((Date.now() - state.startedAt) / 1000)
-    return Math.max(0, elapsed)
+  // Also include QuickTimer state
+  const quickRaw = localStorage.getItem('momentum-quick-timer')
+  if (quickRaw) {
+    try {
+      const quickState = JSON.parse(quickRaw)
+      if (quickState.running && quickState.startedAt) {
+        total += quickState.seconds + Math.floor((Date.now() - quickState.startedAt) / 1000)
+      } else {
+        total += quickState.seconds
+      }
+    } catch {}
   }
-
-  return 0
+  return total
 }
 
 /** Get the subjectId of the currently active timer session. */

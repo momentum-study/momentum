@@ -10,6 +10,7 @@ import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { cn, formatMinutes } from '../../lib/utils'
+import { getLiveTimerSeconds } from '../../lib/timer-utils'
 import type { Group, GroupMember, SyncedSession, MemberStats as MemberStatsType, GroupPresence } from '../../domain/cloud-types'
 import { isFirebaseConfigured } from '../../lib/firebase'
 import { db as localDb } from '../../db/app-db'
@@ -67,15 +68,17 @@ export default function GroupDetailPage() {
     // Merge current user's local sessions so unsynced sessions show.
     if (currentUid) {
       const localSessions = await localDb.sessions.toArray()
-      const localSynced: SyncedSession[] = localSessions.map((s) => ({
-        id: s.id,
-        uid: currentUid,
-        subjectName: s.note ?? 'Unknown Subject',
-        minutes: s.durationMinutes,
-        startAt: s.startAt,
-        endAt: s.endAt,
-        createdAt: s.createdAt,
-      }))
+      const localSynced: SyncedSession[] = localSessions
+        .filter((s) => !s.deletedAt)
+        .map((s) => ({
+          id: s.id,
+          uid: currentUid,
+          subjectName: s.note ?? 'Unknown Subject',
+          minutes: s.durationMinutes,
+          startAt: s.startAt,
+          endAt: s.endAt,
+          createdAt: s.createdAt,
+        }))
       const cloudIds = new Set(allSessions.map((s) => s.id))
       for (const ls of localSynced) {
         if (!cloudIds.has(ls.id)) allSessions.push(ls)
@@ -87,6 +90,46 @@ export default function GroupDetailPage() {
         groupId, m.uid, m.displayName, m.photoURL ?? null, allSessions
       )
       if (s) results.push(s)
+    }
+    // Override current user's stats with local data so group time is
+    // intrinsically linked to total study time (dashboard's view).
+    if (currentUid) {
+      const idx = results.findIndex((r) => r.uid === currentUid)
+      if (idx !== -1) {
+        const localSessions = await localDb.sessions.toArray()
+        const now = new Date()
+        const dayOfWeek = (now.getDay() + 6) % 7
+        const weekStart = new Date(now)
+        weekStart.setDate(now.getDate() - dayOfWeek)
+        weekStart.setHours(0, 0, 0, 0)
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+        const todayStart = new Date(now)
+        todayStart.setHours(0, 0, 0, 0)
+        let todayMinutes = 0, weekMinutes = 0, monthMinutes = 0, totalMinutes = 0
+        let todaySessions = 0, weekSessions = 0, monthSessions = 0, totalSessions = 0
+        for (const s of localSessions) {
+          if (s.deletedAt) continue
+          totalMinutes += s.durationMinutes
+          totalSessions++
+          const startDate = new Date(s.startAt)
+          if (startDate >= todayStart) { todayMinutes += s.durationMinutes; todaySessions++ }
+          if (startDate >= weekStart) { weekMinutes += s.durationMinutes; weekSessions++ }
+          if (startDate >= monthStart) { monthMinutes += s.durationMinutes; monthSessions++ }
+        }
+        // Add live timer seconds to today only
+        todayMinutes += getLiveTimerSeconds() / 60
+        results[idx] = {
+          ...results[idx],
+          todayMinutes: Math.round(todayMinutes),
+          weekMinutes: Math.round(weekMinutes),
+          monthMinutes: Math.round(monthMinutes),
+          totalMinutes: Math.round(totalMinutes),
+          todaySessions,
+          weekSessions,
+          monthSessions,
+          totalSessions,
+        }
+      }
     }
     setStats(results)
   }, [user])

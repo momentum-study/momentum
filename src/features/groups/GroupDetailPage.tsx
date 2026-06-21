@@ -109,12 +109,13 @@ export default function GroupDetailPage() {
         let todaySessions = 0, weekSessions = 0, monthSessions = 0, totalSessions = 0
         for (const s of localSessions) {
           if (s.deletedAt) continue
-          totalMinutes += s.durationMinutes
+          const mins = s.durationSeconds != null ? s.durationSeconds / 60 : s.durationMinutes
+          totalMinutes += mins
           totalSessions++
           const startDate = new Date(s.startAt)
-          if (startDate >= todayStart) { todayMinutes += s.durationMinutes; todaySessions++ }
-          if (startDate >= weekStart) { weekMinutes += s.durationMinutes; weekSessions++ }
-          if (startDate >= monthStart) { monthMinutes += s.durationMinutes; monthSessions++ }
+          if (startDate >= todayStart) { todayMinutes += mins; todaySessions++ }
+          if (startDate >= weekStart) { weekMinutes += mins; weekSessions++ }
+          if (startDate >= monthStart) { monthMinutes += mins; monthSessions++ }
         }
         // Add live timer seconds to today only
         todayMinutes += getLiveTimerSeconds() / 60

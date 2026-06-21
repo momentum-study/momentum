@@ -117,7 +117,7 @@ export function formatTotalToday(minutes: number, includeSeconds = false): strin
  * - Adds live timer seconds from localStorage
  */
 export function getTotalTodayMinutes(
-  sessions: { startAt: string; durationMinutes: number; deletedAt?: string | null; subjectId: string }[],
+  sessions: { startAt: string; durationMinutes: number; durationSeconds?: number; deletedAt?: string | null; subjectId: string }[],
   subjects: { id: string; categoryId: string | null }[],
   categories: { id: string; scope: 'academic' | 'nonAcademic' }[]
 ): number {
@@ -131,7 +131,7 @@ export function getTotalTodayMinutes(
     const category = categories.find(c => c.id === subject.categoryId)
     if (category?.scope !== 'academic') continue
     if (format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr) {
-      total += s.durationMinutes
+      total += s.durationSeconds != null ? s.durationSeconds / 60 : s.durationMinutes
     }
   }
   // Add live timer seconds

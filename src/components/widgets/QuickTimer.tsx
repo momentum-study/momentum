@@ -102,6 +102,7 @@ export default function QuickTimer() {
       startAt: start.toISOString(),
       endAt: now.toISOString(),
       durationMinutes: Math.max(1, Math.round(total / 60)),
+      durationSeconds: Math.max(10, Math.round(total)),
       note: label || undefined,
       source: 'timer' as const,
       createdAt: isoNow(),

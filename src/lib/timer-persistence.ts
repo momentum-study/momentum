@@ -32,6 +32,7 @@ export interface PendingSession {
   startAt: string
   endAt: string
   durationMinutes: number
+  durationSeconds?: number
   note: string | undefined
   source: 'timer' | 'pomodoro'
 }

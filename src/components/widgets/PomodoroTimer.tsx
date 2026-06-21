@@ -164,6 +164,7 @@ export function PomodoroTimer() {
       startAt: pending.startAt,
       endAt: pending.endAt,
       durationMinutes: pending.durationMinutes,
+      durationSeconds: pending.durationSeconds,
       note: pending.note,
       source: pending.source,
       createdAt: isoNow(),
@@ -314,6 +315,7 @@ export function PomodoroTimer() {
           const now = new Date()
           const start = new Date(now.getTime() - total * 1000)
           const startAt = start.toISOString()
+          const durationSeconds = Math.max(10, Math.round(total))
           const durationMinutes = Math.max(1, Math.round(total / 60))
           return {
             id: sessionIdFor(startAt, actualSubjId, durationMinutes),
@@ -323,6 +325,7 @@ export function PomodoroTimer() {
             startAt,
             endAt: now.toISOString(),
             durationMinutes,
+            durationSeconds,
             note: task ? `Task: ${task.title}` : undefined,
             source: 'timer',
           }
@@ -338,6 +341,7 @@ export function PomodoroTimer() {
           const start = new Date(pomStartedAt)
           const end = new Date()
           const startAt = start.toISOString()
+          const durationSeconds = Math.max(10, Math.round(elapsedMs / 1000))
           const durationMinutes = Math.max(1, Math.round(elapsedMs / 60000))
           return {
             id: sessionIdFor(startAt, actualSubjId, durationMinutes),
@@ -347,6 +351,7 @@ export function PomodoroTimer() {
             startAt,
             endAt: end.toISOString(),
             durationMinutes,
+            durationSeconds,
             note: task ? `Task: ${task.title}` : undefined,
             source: 'pomodoro',
           }
@@ -483,6 +488,7 @@ export function PomodoroTimer() {
       const now = new Date()
       const start = new Date(now.getTime() - total * 1000)
       const startAt = start.toISOString()
+      const durationSeconds = Math.max(10, Math.round(total))
       const durationMinutes = Math.max(1, Math.round(total / 60))
       const session = {
         id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
@@ -492,6 +498,7 @@ export function PomodoroTimer() {
         startAt,
         endAt: now.toISOString(),
         durationMinutes,
+        durationSeconds,
         note: task ? `Task: ${task.title}` : undefined,
         source: 'timer' as const,
         createdAt: isoNow(),
@@ -524,6 +531,7 @@ export function PomodoroTimer() {
         const now = new Date()
         const start = new Date(now.getTime() - elapsed * 1000)
         const startAt = start.toISOString()
+        const durationSeconds = Math.max(10, Math.round(elapsed))
         const durationMinutes = Math.max(1, Math.round(elapsed / 60))
         const session = {
           id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
@@ -533,6 +541,7 @@ export function PomodoroTimer() {
           startAt,
           endAt: now.toISOString(),
           durationMinutes,
+          durationSeconds,
           note: task ? `Task: ${task.title}` : undefined,
           source: 'timer' as const,
           createdAt: isoNow(),
@@ -555,6 +564,7 @@ export function PomodoroTimer() {
           const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
           const startMs = pomStartedAt
           const elapsedMs = Date.now() - startMs
+          const partialSeconds = Math.max(10, Math.round(elapsedMs / 1000))
           const partialMinutes = Math.max(1, Math.round(elapsedMs / 60000))
           const start = new Date(startMs)
           const end = new Date()
@@ -567,6 +577,7 @@ export function PomodoroTimer() {
             startAt,
             endAt: end.toISOString(),
             durationMinutes: partialMinutes,
+            durationSeconds: partialSeconds,
             note: task ? `Task: ${task.title}` : undefined,
             source: 'pomodoro' as const,
             createdAt: isoNow(),
@@ -661,6 +672,7 @@ export function PomodoroTimer() {
         const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
         const startMs = pomStartedAt
         const elapsedMs = Date.now() - startMs
+        const partialSeconds = Math.max(10, Math.round(elapsedMs / 1000))
         const partialMinutes = Math.max(1, Math.round(elapsedMs / 60000))
         const start = new Date(startMs)
         const end = new Date()
@@ -673,6 +685,7 @@ export function PomodoroTimer() {
           startAt,
           endAt: end.toISOString(),
           durationMinutes: partialMinutes,
+          durationSeconds: partialSeconds,
           note: task ? `Task: ${task.title}` : undefined,
           source: 'pomodoro' as const,
           createdAt: isoNow(),

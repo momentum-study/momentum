@@ -49,6 +49,7 @@ export interface Session {
   startAt: string // ISO
   endAt: string // ISO
   durationMinutes: number
+  durationSeconds?: number
   note?: string
   source: 'manual' | 'timer' | 'pomodoro' | 'quickLog' | 'autoRoutine'
   createdAt: string

@@ -94,6 +94,9 @@ export function PomodoroTimer() {
     return saved?.mode === 'simple' ? (saved.simplePausedOffset ?? 0) : 0
   })
   const simpleIntervalRef = useRef<number | null>(null)
+  // Tracks the cumulative simpleSeconds value at the time of the last session save.
+  // Used to compute per-session deltas so the cumulative timer doesn't reset.
+  const lastSavedCumulativeRef = useRef(0)
 
   // Pomodoro timer
   const [pomPhase, setPomPhase] = useState<Phase>(() => {
@@ -413,7 +416,6 @@ export function PomodoroTimer() {
 
   // Simple timer
   function startSimple() {
-    setSimplePausedOffset(0)
     const now = Date.now()
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
@@ -424,7 +426,7 @@ export function PomodoroTimer() {
       phase: 'focus',
       cyclesCompleted: 0,
       config: configRef.current,
-      simplePausedOffset: 0,
+      simplePausedOffset: simplePausedOffset,
     }
     saveTimerState(state)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
@@ -478,7 +480,6 @@ export function PomodoroTimer() {
 
   async function stopSimple() {
     setSimpleStartedAt(null)
-    setSimplePausedOffset(0)
     clearTimerState()
     const total = simpleSeconds
     const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
@@ -486,10 +487,11 @@ export function PomodoroTimer() {
       const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
       const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
       const now = new Date()
-      const start = new Date(now.getTime() - total * 1000)
+      const delta = total - lastSavedCumulativeRef.current
+      const start = new Date(now.getTime() - delta * 1000)
       const startAt = start.toISOString()
-      const durationSeconds = Math.max(10, Math.round(total))
-      const durationMinutes = Math.max(1, Math.round(total / 60))
+      const durationSeconds = Math.max(10, Math.round(delta))
+      const durationMinutes = Math.max(1, Math.round(delta / 60))
       const session = {
         id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
         subjectId: actualSubjectId,
@@ -511,7 +513,7 @@ export function PomodoroTimer() {
       await updateStreakDayForSession(session)
       await loadData()
     }
-    setSimpleSeconds(0)
+    lastSavedCumulativeRef.current = total
   }
 
   async function changeSubject(newSubjectId: string) {
@@ -529,10 +531,11 @@ export function PomodoroTimer() {
         const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
         const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
         const now = new Date()
-        const start = new Date(now.getTime() - elapsed * 1000)
+        const delta = elapsed - lastSavedCumulativeRef.current
+        const start = new Date(now.getTime() - delta * 1000)
         const startAt = start.toISOString()
-        const durationSeconds = Math.max(10, Math.round(elapsed))
-        const durationMinutes = Math.max(1, Math.round(elapsed / 60))
+        const durationSeconds = Math.max(10, Math.round(delta))
+        const durationMinutes = Math.max(1, Math.round(delta / 60))
         const session = {
           id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
           subjectId: actualSubjectId,
@@ -554,7 +557,7 @@ export function PomodoroTimer() {
         await updateStreakDayForSession(session)
         await loadData()
       }
-      setSimpleSeconds(0)
+      lastSavedCumulativeRef.current = elapsed
     } else {
       // Save current pomodoro focus session (only if focus phase and has been running)
       if (pomPhase === 'focus' && pomStartedAt) {

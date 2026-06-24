@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor, sessionLocalDate } from '../../lib/utils'
 import type { Session } from '../../domain/types'
+import { Link } from 'react-router-dom'
 import { loadSettings } from '../settings/SettingsPage'
 
 type ScopeOption = 'academic' | 'nonAcademic' | 'all'
@@ -207,37 +208,37 @@ export default function ReportsPage() {
   }, [sessions])
   // ── Insights ──
   const insights = useMemo(() => {
-    if (sessions.length === 0) return [] as string[]
-    const out: string[] = []
+    if (sessions.length === 0) return [] as ReactNode[]
+    const out: ReactNode[] = []
 
     // Most studied subject
     if (bySubject.length > 0) {
       const [topName, topMinutes] = bySubject[0]
-      out.push(`Most studied subject: ${topName} with ${formatHours(topMinutes)}h`)
+      out.push(<>Most studied subject: <Link to="/subjects" className="underline hover:text-primary-600">{topName}</Link> with {formatHours(topMinutes)}h</>)
     }
 
     // Best day of week
     const bestDay = dayDistribution.reduce((best, cur) => (cur.minutes > best.minutes ? cur : best), dayDistribution[0])
     if (bestDay && bestDay.minutes > 0) {
-      out.push(`Best day of week: ${bestDay.label} (${formatMinutes(bestDay.minutes)})`)
+      out.push(<>Best day of week: {bestDay.label} ({formatMinutes(bestDay.minutes)})</>)
     }
 
     // Average session length
-    out.push(`Average session length: ${formatMinutes(Math.round(avgSessionLength))}`)
+    out.push(<>Average session length: {formatMinutes(Math.round(avgSessionLength))}</>)
 
     // Longest session
-    out.push(`Longest session: ${formatHours(longestSession)}h`)
+    out.push(<>Longest session: {formatHours(longestSession)}h</>)
 
     // Comparison vs last period
     if (pctChange !== null && period !== 'all') {
       const arrow = pctChange >= 0 ? '↑' : '↓'
       const periodLabel = period === 'week' ? 'week' : period === 'month' ? 'month' : '3 months'
-      out.push(`${arrow} ${Math.abs(pctChange)}% vs last ${periodLabel} (${formatHours(prevTotal)}h → ${formatHours(totalMinutes)}h)`)
+      out.push(<>{arrow} {Math.abs(pctChange)}% vs last {periodLabel} ({formatHours(prevTotal)}h → {formatHours(totalMinutes)}h)</>)
     }
 
     // Session count insight
     if (sessionCount > 0) {
-      out.push(`${sessionCount} session${sessionCount !== 1 ? 's' : ''} over ${dailyTrend.items.length} day${dailyTrend.items.length !== 1 ? 's' : ''}`)
+      out.push(<>{sessionCount} session{sessionCount !== 1 ? 's' : ''} over {dailyTrend.items.length} day{dailyTrend.items.length !== 1 ? 's' : ''}</>)
     }
 
     return out
@@ -533,7 +534,7 @@ export default function ReportsPage() {
             <CardTitle>Habits Summary</CardTitle>
           </CardHeader>
           <div className="space-y-3">
-            {data.habits.filter(h => !h.archivedAt).map(habit => {
+            {data.habits.filter(h => !h.archivedAt && (data.habitLogs.some(l => l.habitId === h.id) || (Date.now() - new Date(h.createdAt).getTime()) < 7 * 86400000)).map(habit => {
               const logs = data.habitLogs.filter(l => l.habitId === habit.id)
               const uniqueDays = new Set(logs.map(l => l.date)).size
               const recentLogs = logs.filter(l => {

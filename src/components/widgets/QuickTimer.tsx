@@ -22,14 +22,15 @@ interface PersistedTimer {
   running: boolean
   seconds: number
   label: string
+  subjectId: string
   startedAt: number | null // ms epoch when the timer last started/resumed
 }
 
 function loadPersisted(): PersistedTimer {
-  if (typeof localStorage === 'undefined') return { running: false, seconds: 0, label: '', startedAt: null }
+  if (typeof localStorage === 'undefined') return { running: false, seconds: 0, label: '', subjectId: '', startedAt: null }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { running: false, seconds: 0, label: '', startedAt: null }
+    if (!raw) return { running: false, seconds: 0, label: '', subjectId: '', startedAt: null }
     const parsed = JSON.parse(raw) as PersistedTimer
     // If the timer was running, add elapsed wall-clock time since it was started
     if (parsed.running && parsed.startedAt) {
@@ -39,7 +40,7 @@ function loadPersisted(): PersistedTimer {
     }
     return parsed
   } catch {
-    return { running: false, seconds: 0, label: '', startedAt: null }
+    return { running: false, seconds: 0, label: '', subjectId: '', startedAt: null }
   }
 }
 
@@ -56,6 +57,7 @@ export default function QuickTimer() {
   const [running, setRunning] = useState(() => loadPersisted().running)
   const [seconds, setSeconds] = useState(() => loadPersisted().seconds)
   const [label, setLabel] = useState(() => loadPersisted().label)
+  const [subjectId, setSubjectId] = useState(() => loadPersisted().subjectId)
   const intervalRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -75,8 +77,8 @@ export default function QuickTimer() {
 
   // Persist whenever any timer state changes
   useEffect(() => {
-    savePersisted({ running, seconds, label, startedAt: running ? Date.now() : null })
-  }, [running, seconds, label])
+    savePersisted({ running, seconds, label, subjectId, startedAt: running ? Date.now() : null })
+  }, [running, seconds, label, subjectId])
 
   async function stop() {
     if (intervalRef.current) clearInterval(intervalRef.current)
@@ -85,8 +87,10 @@ export default function QuickTimer() {
 
     const total = seconds
     if (total < 10) return
-
-    const subject = data.subjects[0]
+    let subject = data.subjects.find((s) => s.id === subjectId)
+    if (!subject) {
+      subject = data.subjects[0]
+    }
     if (!subject) {
       // No subjects exist — notify the user instead of silently dropping the session
       window.alert('No subjects found. Please create a subject first so your session can be logged.')
@@ -121,6 +125,7 @@ export default function QuickTimer() {
     setRunning(false)
     setSeconds(0)
     setLabel('')
+    setSubjectId('')
   }
 
   const recentSessions = data.sessions
@@ -134,6 +139,18 @@ export default function QuickTimer() {
         <CardTitle>⏱️ Quick Timer</CardTitle>
       </CardHeader>
       <div className="space-y-3">
+        <select
+          className="input w-full"
+          value={subjectId}
+          onChange={(e) => setSubjectId(e.target.value)}
+          disabled={running}
+        >
+          {data.subjects.length === 0 && <option value="">No subjects yet</option>}
+          {!subjectId && data.subjects.length > 0 && <option value="" disabled>Select a subject…</option>}
+          {data.subjects.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
         <input
           className="input w-full"
           placeholder="Optional label (e.g. Math Test)"

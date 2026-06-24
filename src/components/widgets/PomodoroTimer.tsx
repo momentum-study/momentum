@@ -15,6 +15,7 @@ import type { PersistedTimerState, PendingSession } from '../../lib/timer-persis
 import { useGroupPresence } from '../../lib/use-group-presence'
 import { groupService } from '../../lib/group-service'
 import type { Group } from '../../domain/cloud-types'
+import { pushSettings } from '../../lib/settings-sync'
 
 type Mode = 'pomodoro' | 'simple'
 const LAST_SUBJECT_KEY = 'momentum-last-subject'
@@ -27,9 +28,12 @@ function fmt(seconds: number): string {
   return `${m}:${s}`
 }
 
+let sharedAudioCtx: AudioContext | null = null
 function playNotificationSound() {
   try {
-    const ctx = new AudioContext()
+    if (!sharedAudioCtx) sharedAudioCtx = new AudioContext()
+    const ctx = sharedAudioCtx
+    if (ctx.state === 'suspended') ctx.resume()
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain)
@@ -446,11 +450,9 @@ export function PomodoroTimer() {
     saveSettings(full)
     const uid = localStorage.getItem('momentum-cloud-uid')
     if (uid) {
-      import('../../lib/settings-sync').then(({ pushSettings }) => {
-        const dashboardWidgets = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? '[]')
-        const navPrefs = JSON.parse(localStorage.getItem('momentum-nav-prefs') ?? '{}')
-        pushSettings(uid, full, dashboardWidgets, navPrefs)
-      })
+      const dashboardWidgets = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? '[]')
+      const navPrefs = JSON.parse(localStorage.getItem('momentum-nav-prefs') ?? '{}')
+      void pushSettings(uid, full, dashboardWidgets, navPrefs)
     }
   }
 

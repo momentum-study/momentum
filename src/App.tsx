@@ -3,6 +3,7 @@ import { AppRouter } from './app/router'
 import { applyDarkMode, loadSettings } from './features/settings/SettingsPage'
 import { seedDefaults } from './db/app-db'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { ReloadPrompt } from './components/ui/ReloadPrompt'
 
 export function App() {
   useEffect(() => {
@@ -11,6 +12,7 @@ export function App() {
   }, [])
   return (
     <ErrorBoundary>
+      <ReloadPrompt />
       <AppRouter />
     </ErrorBoundary>
   )

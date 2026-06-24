@@ -1,9 +1,13 @@
 import { format } from 'date-fns'
 import type { Session, Subject, Category, Scope } from '../domain/types'
+import type { Table } from 'dexie'
 
-// Lightweight className joiner (no extra deps)
-export function cn(...classes: Array<string | false | null | undefined>): string {
-  return classes.filter(Boolean).join(' ')
+import { clsx, type ClassValue } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+// Merge Tailwind classes — handles conflicts (e.g. 'text-red-500' + 'text-blue-500' → 'text-blue-500')
+export function cn(...inputs: ClassValue[]): string {
+  return twMerge(clsx(inputs))
 }
 
 export function formatMinutes(minutes: number): string {
@@ -20,6 +24,21 @@ export function formatHours(minutes: number): string {
 
 export function isoNow(): string {
   return new Date().toISOString()
+}
+/**
+ * Soft-delete a record by setting deletedAt and updatedAt.
+ * No-op if the record doesn't exist.
+ */
+export async function softDelete<T extends { id: string; updatedAt: string; deletedAt?: string | null }>(
+  table: Table<T, string>,
+  id: string,
+): Promise<T | undefined> {
+  const record = await table.get(id)
+  if (!record) return undefined
+  const now = isoNow()
+  const updated = { ...record, deletedAt: now, updatedAt: now }
+  await table.put(updated)
+  return updated
 }
 
 /** Convert a percentage (0-100) to a letter grade. */

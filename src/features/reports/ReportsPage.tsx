@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor, sessionLocalDate } from '../../lib/utils'
 import type { Session } from '../../domain/types'
+import { Link } from 'react-router-dom'
 import { loadSettings } from '../settings/SettingsPage'
 
 type ScopeOption = 'academic' | 'nonAcademic' | 'all'
-type Period = 'week' | 'month' | 'threeMonths' | 'all' | 'today'
+type Period = 'week' | 'month' | 'threeMonths' | 'all'
 
 const SCOPE_OPTIONS: { value: ScopeOption; label: string }[] = [
   { value: 'academic', label: 'Academic' },
@@ -21,24 +22,19 @@ const PERIOD_OPTIONS: { value: Period; label: string }[] = [
   { value: 'month', label: 'This Month' },
   { value: 'threeMonths', label: 'Last 3 Months' },
   { value: 'all', label: 'All Time' },
-  { value: 'today', label: 'Today' },
 ]
 
 const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function periodDays(period: Period): number {
-  if (period === 'today') return 1
   if (period === 'week') return 7
   if (period === 'month') return 30
   if (period === 'threeMonths') return 90
   return 0 // 'all'
 }
+
 function filterSessionsByPeriod(sessions: Session[], period: Period): Session[] {
-  if (period === 'today') {
-    const todayStr = format(new Date(), 'yyyy-MM-dd')
-    return sessions.filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
-  }
   const days = periodDays(period)
   if (days === 0) return sessions
   const cutoff = subDays(new Date(), days)
@@ -72,10 +68,6 @@ export default function ReportsPage() {
   // Previous period for comparison
   const prevSessions = useMemo(() => {
     if (period === 'all') return [] as Session[]
-    if (period === 'today') {
-      const yesterdayStr = format(subDays(new Date(), 1), 'yyyy-MM-dd')
-      return scopeFiltered.filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === yesterdayStr)
-    }
     const days = periodDays(period)
     const now = new Date()
     const periodStart = subDays(now, days)
@@ -86,7 +78,10 @@ export default function ReportsPage() {
       return d >= prevStart && d <= prevEnd
     })
   }, [scopeFiltered, period])
+
   const subjectsById = useMemo(() => new Map(data.subjects.map((s) => [s.id, s])), [data.subjects])
+
+  // ── Overview metrics ──
   const overview = useMemo(() => {
     const totalMinutes = sessions.reduce((sum, s) => sum + s.durationMinutes, 0)
     const sessionCount = sessions.length
@@ -120,24 +115,7 @@ export default function ReportsPage() {
     }
     return [...acc.entries()].sort((a, b) => b[1] - a[1])
   }, [sessions, subjectsById])
-  const productivityInsight = useMemo(() => {
-    if (sessions.length < 10) return { message: 'Study more to see your patterns.', active: false }
-    const buckets = new Array(12).fill(0)
-    for (const s of sessions) {
-      const hour = new Date(s.startAt).getHours()
-      const bucket = Math.floor(hour / 2)
-      buckets[bucket] += s.durationMinutes
-    }
-    let maxIdx = 0
-    for (let i = 1; i < 12; i++) {
-      if (buckets[i] > buckets[maxIdx]) maxIdx = i
-    }
-    const startHour = maxIdx * 2
-    const endHour = startHour + 2
-    const startLabel = startHour === 0 ? '12 AM' : startHour === 12 ? '12 PM' : startHour > 12 ? `${startHour - 12} PM` : `${startHour} AM`
-    const endLabel = endHour === 24 ? '12 AM' : endHour === 12 ? '12 PM' : endHour > 12 ? `${endHour - 12} PM` : `${endHour} AM`
-    return { message: `Most productive time: ${startLabel} to ${endLabel}`, active: true }
-  }, [sessions])
+
 
   // ── Schedule adherence (planned vs actual) ──
   const scheduleAdherence = useMemo(() => {
@@ -230,40 +208,37 @@ export default function ReportsPage() {
   }, [sessions])
   // ── Insights ──
   const insights = useMemo(() => {
-    if (sessions.length === 0) return [] as string[]
-    const out: string[] = []
+    if (sessions.length === 0) return [] as ReactNode[]
+    const out: ReactNode[] = []
 
     // Most studied subject
     if (bySubject.length > 0) {
       const [topName, topMinutes] = bySubject[0]
-      out.push(`Most studied subject: ${topName} with ${formatHours(topMinutes)}`)
+      out.push(<>Most studied subject: <Link to="/subjects" className="underline hover:text-primary-600">{topName}</Link> with {formatHours(topMinutes)}h</>)
     }
 
     // Best day of week
     const bestDay = dayDistribution.reduce((best, cur) => (cur.minutes > best.minutes ? cur : best), dayDistribution[0])
     if (bestDay && bestDay.minutes > 0) {
-      out.push(`Best day of week: ${bestDay.label} (${formatMinutes(bestDay.minutes)})`)
+      out.push(<>Best day of week: {bestDay.label} ({formatMinutes(bestDay.minutes)})</>)
     }
 
     // Average session length
-    out.push(`Average session length: ${formatMinutes(Math.round(avgSessionLength))}`)
+    out.push(<>Average session length: {formatMinutes(Math.round(avgSessionLength))}</>)
 
     // Longest session
-    out.push(`Longest session: ${formatHours(longestSession)}`)
+    out.push(<>Longest session: {formatHours(longestSession)}h</>)
+
     // Comparison vs last period
     if (pctChange !== null && period !== 'all') {
       const arrow = pctChange >= 0 ? '↑' : '↓'
-      if (period === 'today') {
-        out.push(`${arrow} ${Math.abs(pctChange)}% vs yesterday (${formatHours(prevTotal)} → ${formatHours(totalMinutes)})`)
-      } else {
-        const periodLabel = period === 'week' ? 'week' : period === 'month' ? 'month' : '3 months'
-        out.push(`${arrow} ${Math.abs(pctChange)}% vs last ${periodLabel} (${formatHours(prevTotal)} → ${formatHours(totalMinutes)})`)
-      }
+      const periodLabel = period === 'week' ? 'week' : period === 'month' ? 'month' : '3 months'
+      out.push(<>{arrow} {Math.abs(pctChange)}% vs last {periodLabel} ({formatHours(prevTotal)}h → {formatHours(totalMinutes)}h)</>)
     }
 
     // Session count insight
     if (sessionCount > 0) {
-      out.push(`${sessionCount} session${sessionCount !== 1 ? 's' : ''} over ${dailyTrend.items.length} day${dailyTrend.items.length !== 1 ? 's' : ''}`)
+      out.push(<>{sessionCount} session{sessionCount !== 1 ? 's' : ''} over {dailyTrend.items.length} day{dailyTrend.items.length !== 1 ? 's' : ''}</>)
     }
 
     return out
@@ -333,7 +308,7 @@ export default function ReportsPage() {
           <div>
             <div className="text-sm text-slate-500">Total Time</div>
             <div className="text-2xl font-semibold text-slate-800 dark:text-slate-100">
-              {formatHours(totalMinutes)}
+              {formatHours(totalMinutes)}h
             </div>
             {pctChange !== null && period !== 'all' && (
               <div className={cn('text-xs font-medium', pctChange >= 0 ? 'text-green-600' : 'text-red-600')}>
@@ -366,30 +341,11 @@ export default function ReportsPage() {
           </div>
           <div>
             <div className="text-sm text-slate-500">Longest Session</div>
-            <div className="text-2xl font-semibold text-slate-800 dark:text-slate-100">{formatHours(longestSession)}</div>
+            <div className="text-2xl font-semibold text-slate-800 dark:text-slate-100">{formatHours(longestSession)}h</div>
           </div>
         </div>
       </Card>
-      {/* Productivity Insight Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Productivity Insights</CardTitle>
-        </CardHeader>
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div>
-            <div className="text-sm text-slate-500">Most Productive Time</div>
-            <div className="mt-1 text-lg font-medium text-slate-800 dark:text-slate-100">
-              {productivityInsight.message}
-            </div>
-          </div>
-          <div>
-            <div className="text-sm text-slate-500">Avg Session Duration</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-800 dark:text-slate-100">
-              {formatMinutes(Math.round(avgSessionLength))}
-            </div>
-          </div>
-        </div>
-      </Card>
+
       {/* Schedule adherence chart */}
       {scheduleAdherence.length > 0 && scheduleAdherence.some((r) => r.planned > 0) && (
         <Card>
@@ -578,7 +534,7 @@ export default function ReportsPage() {
             <CardTitle>Habits Summary</CardTitle>
           </CardHeader>
           <div className="space-y-3">
-            {data.habits.filter(h => !h.archivedAt).map(habit => {
+            {data.habits.filter(h => !h.archivedAt && (data.habitLogs.some(l => l.habitId === h.id) || (Date.now() - new Date(h.createdAt).getTime()) < 7 * 86400000)).map(habit => {
               const logs = data.habitLogs.filter(l => l.habitId === habit.id)
               const uniqueDays = new Set(logs.map(l => l.date)).size
               const recentLogs = logs.filter(l => {
@@ -632,6 +588,8 @@ export default function ReportsPage() {
           </div>
         )}
       </Card>
+
+      {/* Hobby Hours */}
       {data.hobbies.length > 0 && (
         <Card>
           <CardHeader>
@@ -647,7 +605,7 @@ export default function ReportsPage() {
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: h.color }} />
                     <span>{h.name}</span>
                   </div>
-                  <span>{formatHours(totalMinutes)}</span>
+                  <span>{Math.floor(totalMinutes / 60)}h {totalMinutes % 60}m</span>
                 </div>
               )
             })}

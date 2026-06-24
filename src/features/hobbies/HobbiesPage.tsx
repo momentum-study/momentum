@@ -102,7 +102,7 @@ export default function HobbiesPage() {
       id: uuid(),
       hobbyId: logHobbyId,
       durationMinutes: sessionFormData.duration,
-      startAt: now,
+      startAt: new Date(new Date(now).getTime() - sessionFormData.duration * 60000).toISOString(),
       endAt: now,
       note: sessionFormData.note,
       createdAt: now,

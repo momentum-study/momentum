@@ -65,23 +65,7 @@ export default function Dashboard() {
     }
     return count
   }, [academicSessions])
-  // Longest streak tracking + persist
-  const [bestStreak, setBestStreak] = useState(() => {
-    try {
-      const stored = localStorage.getItem(BEST_STREAK_KEY)
-      return stored ? Number(stored) : 0
-    } catch {
-      return 0
-    }
-  })
-  useEffect(() => {
-    if (streak > bestStreak) {
-      setBestStreak(streak)
-      try {
-        localStorage.setItem(BEST_STREAK_KEY, String(streak))
-      } catch {}
-    }
-  }, [streak, bestStreak])
+  // Longest streak: compute from sessions, persist to localStorage
   const longestStreak = useMemo(() => {
     if (academicSessions.length === 0) return 0
     const daySet = new Set<string>()
@@ -95,8 +79,18 @@ export default function Dashboard() {
       const diff = differenceInCalendarDays(new Date(sortedDays[i]), new Date(sortedDays[i - 1]))
       if (diff === 1) { cur++; if (cur > max) max = cur } else { cur = 1 }
     }
+    // Also consider any previously stored best streak
+    try {
+      const stored = Number(localStorage.getItem(BEST_STREAK_KEY))
+      if (stored > max) max = stored
+    } catch {}
     return max
   }, [academicSessions])
+  useEffect(() => {
+    try {
+      localStorage.setItem(BEST_STREAK_KEY, String(longestStreak))
+    } catch {}
+  }, [longestStreak])
 
 
   const [calendarMonth, setCalendarMonth] = useState(new Date())
@@ -276,7 +270,7 @@ export default function Dashboard() {
   }
 
   if (isLoading) return <PageSpinner />
-  const settings = loadSettings()
+  const settings = useMemo(() => loadSettings(), [])
   const todayMinutes = academicSessions
     .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
     .reduce((sum, s) => sum + s.durationMinutes, 0)

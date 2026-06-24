@@ -8,6 +8,7 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 
 import { SyncBanner } from '../ui/SyncBanner'
+import { FloatingTimerBanner } from '../ui/FloatingTimerBanner'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '🏠' },
@@ -318,6 +319,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </div>
       </div>
       <UndoToast />
+      <FloatingTimerBanner />
       <Modal
         open={draftPrefs !== null}
         onClose={closeCustomizer}

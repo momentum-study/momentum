@@ -229,7 +229,7 @@ function saveDirtyTables(tables: Set<TableKey>) {
 
 const dirtyTables = loadDirtyTables()
 let flushTimer: ReturnType<typeof setTimeout> | null = null
-const FLUSH_DELAY = 500
+const FLUSH_DELAY = 5000
 
 function markDirty(tableKey: TableKey) {
   if (!activeSyncUid) return

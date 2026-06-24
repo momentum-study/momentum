@@ -44,6 +44,9 @@ export default function HabitsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null)
   const [dayDetailDate, setDayDetailDate] = useState<string | null>(null)
+  // Tracks whether we opened the add-log modal from the day detail modal,
+  // so we can close the day detail after saveLog() succeeds.
+  const [editLogCameFromDayDetail, setEditLogCameFromDayDetail] = useState(false)
   
   const [showAddLog, setShowAddLog] = useState(false)
   const [logDate, setLogDate] = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -89,48 +92,44 @@ export default function HabitsPage() {
     return groups
   }, [selectedHabitLogs])
 
-
-  function getStreak(habitId: string): number {
-    const habit = data.habits.find((h) => h.id === habitId)
-    const isBad = habit?.kind === 'bad'
-    if (isBad && habit?.createdAt) {
-      const createdDate = format(new Date(habit.createdAt), 'yyyy-MM-dd')
-      if (todayStr === createdDate) return 0
-    }
-    const logDates = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
-    // For bad habits with no logs, every day "counts" as a streak day → infinite loop without a cap.
-    // Cap at the habit's age or 365 days, whichever is smaller.
-    const habitStart = habit?.createdAt ? new Date(habit.createdAt) : null
-    const daysSinceCreation = habitStart
-      ? Math.max(0, Math.floor((Date.now() - habitStart.getTime()) / 86400000))
-      : 365
-    const maxDays = Math.min(365, daysSinceCreation)
-    // For good habits, today is the latest day to check; for bad habits we
-    // skip today (the streak is days you AVOIDED, and the day isn't over yet).
-    const todayCutoff = isBad ? subDays(new Date(), 1) : new Date()
-    // Safety net: allow 1 missed day per week for good habits only.
-    // For bad habits, a lapse resets the streak immediately.
-    let streak = 0
-    let missed = 0
-    let d = todayCutoff
-    while (streak < maxDays) {
-      // Don't count days before the habit was created
-      if (habitStart && d < subDays(habitStart, 1)) break
-      const ds = format(d, 'yyyy-MM-dd')
-      const countsAsStreak = isBad ? !logDates.has(ds) : logDates.has(ds)
-      if (countsAsStreak) {
-        streak++
-        missed = 0
-        d = subDays(d, 1)
-      } else {
-        if (isBad) break
-        missed++
-        if (missed > 1) break
-        d = subDays(d, 1)
+  // Pre-compute streaks for every habit in one pass (each streak iterates up to 365 days).
+  const streakMap = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const habit of data.habits) {
+      const isBad = habit.kind === 'bad'
+      if (isBad && habit.createdAt) {
+        const createdDate = format(new Date(habit.createdAt), 'yyyy-MM-dd')
+        if (todayStr === createdDate) { map.set(habit.id, 0); continue }
       }
+      const logDates = new Set(data.habitLogs.filter((l) => l.habitId === habit.id).map((l) => l.date))
+      const habitStart = habit.createdAt ? new Date(habit.createdAt) : null
+      const daysSinceCreation = habitStart
+        ? Math.max(0, Math.floor((Date.now() - habitStart.getTime()) / 86400000))
+        : 365
+      const maxDays = Math.min(365, daysSinceCreation)
+      const todayCutoff = isBad ? subDays(new Date(), 1) : new Date()
+      let streak = 0
+      let missed = 0
+      let d = todayCutoff
+      while (streak < maxDays) {
+        if (habitStart && d < subDays(habitStart, 1)) break
+        const ds = format(d, 'yyyy-MM-dd')
+        const countsAsStreak = isBad ? !logDates.has(ds) : logDates.has(ds)
+        if (countsAsStreak) {
+          streak++
+          missed = 0
+          d = subDays(d, 1)
+        } else {
+          if (isBad) break
+          missed++
+          if (missed > 1) break
+          d = subDays(d, 1)
+        }
+      }
+      map.set(habit.id, streak)
     }
-    return streak
-  }
+    return map
+  }, [data.habits, data.habitLogs, todayStr])
 
   function getTodayCount(habitId: string): number {
     return data.habitLogs.filter((l) => l.habitId === habitId && l.date === todayStr).length
@@ -251,6 +250,10 @@ export default function HabitsPage() {
         if (parsedValue !== undefined) update.value = parsedValue
         await db.habitLogs.update(editLog.id, update)
         await loadData()
+        if (editLogCameFromDayDetail) {
+          setDayDetailDate(null)
+          setEditLogCameFromDayDetail(false)
+        }
         setShowAddLog(false)
         setEditLog(null)
         if (prevLog) {
@@ -273,6 +276,10 @@ export default function HabitsPage() {
         if (parsedValue !== undefined) newLog.value = parsedValue
         await db.habitLogs.add(newLog)
         await loadData()
+        if (editLogCameFromDayDetail) {
+          setDayDetailDate(null)
+          setEditLogCameFromDayDetail(false)
+        }
         setShowAddLog(false)
         setEditLog(null)
         const saveLogVerb = habit?.mode === 'tick' ? 'completed' : (habit?.kind === 'bad' ? 'occurrence' : 'checked')
@@ -427,7 +434,7 @@ export default function HabitsPage() {
 
   function HabitCard({ habit }: { habit: Habit }) {
     const isBad = habit.kind === 'bad'
-    const streak = getStreak(habit.id)
+    const streak = streakMap.get(habit.id) ?? 0
     const todayCount = getTodayCount(habit.id)
     const daysLogged = getDaysLogged(habit.id)
     const archiveThreshold = habit.archivedAfterDays ?? settings.defaultArchiveDays
@@ -771,7 +778,7 @@ export default function HabitsPage() {
           </CardHeader>
 
           <div className="mb-4 flex gap-4 text-sm text-slate-600">
-            <div><span className="font-semibold">{getStreak(selectedHabit.id)}</span> day streak</div>
+            <div><span className="font-semibold">{streakMap.get(selectedHabit.id) ?? 0}</span> day streak</div>
             <div><span className="font-semibold">{selectedHabitLogs.length}</span> total logs</div>
           </div>
 
@@ -960,7 +967,7 @@ export default function HabitsPage() {
         </div>
       </Modal>
 
-      <Modal open={showAddLog} onClose={() => setShowAddLog(false)} title={editLog ? 'Edit Log' : 'Add Log'}>
+      <Modal open={showAddLog} onClose={() => { setShowAddLog(false); setEditLogCameFromDayDetail(false) }} title={editLog ? 'Edit Log' : 'Add Log'}>
         <div className="space-y-3">
           <input type="date" className="input" max={todayStr} value={logDate} onChange={(e) => setLogDate(e.target.value)} />
           <input type="time" className="input" value={logTime} onChange={(e) => setLogTime(e.target.value)} />
@@ -988,7 +995,7 @@ export default function HabitsPage() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <button
-                    onClick={() => { setDayDetailDate(null); openAddLog(log) }}
+                    onClick={() => { setEditLogCameFromDayDetail(true); openAddLog(log) }}
                     className="text-xs text-primary-600 hover:text-primary-800 dark:text-primary-400"
                   >
                     Edit

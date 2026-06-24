@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, gradeColor, isoNow, pctToGrade, sessionLocalDate } from '../../lib/utils'
+import { cn, gradeColor, isoNow, pctToGrade, sessionLocalDate, softDelete } from '../../lib/utils'
+import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -63,6 +64,7 @@ const emptyMarkForm = (): MarkForm => ({ score: '', total: '100' })
 
 export default function CalendarPage() {
   const { data, isLoading, loadData } = useData()
+  const { push: pushUndo } = useUndo()
   const [viewDate, setViewDate] = useState(() => new Date())
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
@@ -233,10 +235,19 @@ export default function CalendarPage() {
   }
 
   async function deleteTask(id: string) {
-    const now = isoNow()
-    const a = await db.assignments.get(id)
+    const a = await softDelete(db.assignments, id)
     if (!a) return
-    await db.assignments.put({ ...a, deletedAt: now, updatedAt: now })
+    pushUndo({
+      description: `Deleted task "${a.title}"`,
+      undo: async () => {
+        await db.assignments.put({ ...a, deletedAt: null, updatedAt: isoNow() })
+        await loadData()
+      },
+      redo: async () => {
+        await db.assignments.put({ ...a, deletedAt: a.deletedAt, updatedAt: isoNow() })
+        await loadData()
+      },
+    })
     await loadData()
   }
 
@@ -334,6 +345,16 @@ export default function CalendarPage() {
 
   const catColor = (cat: TaskCategory) =>
     TASK_CATEGORIES.find((c) => c.value === cat)?.color ?? '#64748b'
+  // Scroll to today's cell when viewDate changes (Today button navigation)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const todayCell = document.querySelector('[data-today="true"]')
+      if (todayCell) {
+        todayCell.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [viewDate])
   // Time spent per project (sum of session minutes)
 
   return (
@@ -400,7 +421,7 @@ export default function CalendarPage() {
                   const projects = projectsByDate.get(key) ?? []
                   const today = isToday(d)
                   return (
-                    <li key={key} className="py-3">
+                    <li key={key} className="py-3" aria-label={format(d, 'EEEE, MMMM d, yyyy')}>
                       <div className={cn('mb-2 flex items-center gap-2 text-sm font-medium', today ? 'text-primary-600' : 'text-slate-700 dark:text-slate-100')}>
                         <span>{format(d, 'EEE, MMM d')}</span>
                         {today && <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">Today</span>}
@@ -462,6 +483,8 @@ export default function CalendarPage() {
                 return (
                   <div
                     key={ci}
+                    data-today={today || undefined}
+                    aria-label={`${format(date, 'EEEE, MMMM d, yyyy')}`}
                     className={cn(
                       'min-h-[80px] border p-2 flex flex-col justify-between',
                       muted ? 'bg-slate-50 text-slate-400 dark:bg-slate-900 dark:text-slate-500' : 'bg-white dark:bg-slate-800'

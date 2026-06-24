@@ -1,19 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { v4 as uuid } from 'uuid'
-import { cn, isoNow } from '../../lib/utils'
+import { cn } from '../../lib/utils'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
-import { ColorPicker } from '../../components/ui/ColorPicker'
-import { EmptyState } from '../../components/ui/EmptyState'
-import { PageSpinner } from '../../components/ui/Spinner'
-import { Collapsible } from '../../components/ui/Collapsible'
 import { useData } from '../../app/providers'
 import { useAuth } from '../../app/auth-provider'
-import { db } from '../../db/app-db'
 import { downloadBackup, readBackupFile, importBackup, ImportMode } from '../../lib/backup'
-import type { Category } from '../../domain/types'
+import { pushSettings } from '../../lib/settings-sync'
 
 const STORAGE_KEY = 'momentum-settings'
 
@@ -57,7 +51,11 @@ export function loadSettings(): Settings {
       return { ...DEFAULT_SETTINGS, ...parsed }
     }
   } catch (e) { /* ignore */ }
-  return { ...DEFAULT_SETTINGS }
+  // First run / no saved settings: respect the OS dark mode preference
+  const osPrefersDark =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  return { ...DEFAULT_SETTINGS, darkMode: osPrefersDark }
 }
 
 export function saveSettings(settings: Settings) {
@@ -310,178 +308,7 @@ function AccountSettings() {
     </Card>
   )
 }
-// ── Categories (inline manage section) ───────────────────────────────────────
-interface CategoryFormData {
-  name: string
-  scope: Category['scope']
-  color: string
-}
-const emptyCategoryForm: CategoryFormData = {
-  name: '',
-  scope: 'academic',
-  color: '#6366f1',
-}
-function CategoriesManager() {
-  const { data, isLoading, loadData } = useData()
-  const [showModal, setShowModal] = useState(false)
-  const [editCategory, setEditCategory] = useState<Category | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<Category | null>(null)
-  const [form, setForm] = useState<CategoryFormData>(emptyCategoryForm)
-  const [saving, setSaving] = useState(false)
-  if (isLoading) return <PageSpinner />
-  const academic = data.categories.filter((c) => c.scope === 'academic')
-  const nonAcademic = data.categories.filter((c) => c.scope === 'nonAcademic')
-  function openAdd() {
-    setEditCategory(null)
-    setForm(emptyCategoryForm)
-    setShowModal(true)
-  }
-  function openEdit(cat: Category) {
-    setEditCategory(cat)
-    setForm({ name: cat.name, scope: cat.scope, color: cat.color })
-    setShowModal(true)
-  }
-  async function save() {
-    if (!form.name.trim()) return
-    setSaving(true)
-    try {
-      const now = isoNow()
-      if (editCategory) {
-        await db.categories.update(editCategory.id, {
-          name: form.name.trim(),
-          scope: form.scope,
-          color: form.color,
-          updatedAt: now,
-        })
-      } else {
-        await db.categories.add({
-          id: uuid(),
-          name: form.name.trim(),
-          scope: form.scope,
-          color: form.color,
-          createdAt: now,
-          updatedAt: now,
-        })
-      }
-      await loadData()
-      setShowModal(false)
-    } finally {
-      setSaving(false)
-    }
-  }
-  async function deleteCat() {
-    if (!deleteConfirm) return
-    setSaving(true)
-    try {
-      const now = isoNow()
-      const catId = deleteConfirm.id
-      const affectedSubjects = data.subjects
-        .filter((s) => s.categoryId === catId && !s.deletedAt)
-      await db.categories.update(catId, { deletedAt: now, updatedAt: now })
-      for (const subj of affectedSubjects) {
-        await db.subjects.update(subj.id, { deletedAt: now, updatedAt: now })
-      }
-      await loadData()
-      setDeleteConfirm(null)
-    } finally {
-      setSaving(false)
-    }
-  }
-  function subjectCount(cat: Category): number {
-    return data.subjects.filter((s) => s.categoryId === cat.id).length
-  }
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Categories</h3>
-        <Button variant="primary" size="sm" onClick={openAdd}>Add Category</Button>
-      </div>
-      <Collapsible id="settings-categories-academic" title="Academic" count={academic.length} defaultOpen={true} accent="#6366f1">
-        {academic.length === 0 ? (
-          <EmptyState title="No academic categories" description="Add categories like English, Maths, Science." />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {academic.map((cat) => {
-              const n = subjectCount(cat)
-              return (
-                <Card key={cat.id}>
-                  <div className="flex items-center gap-3">
-                    <div className="h-4 w-4 rounded-full" style={{ backgroundColor: cat.color }} />
-                    <div className="flex-1 font-medium text-slate-800 dark:text-slate-100">{cat.name}</div>
-                    <Button variant="secondary" size="sm" onClick={() => openEdit(cat)}>Edit</Button>
-                    <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(cat)}>Delete</Button>
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`}
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </Collapsible>
-      <Collapsible id="settings-categories-general" title="General" count={nonAcademic.length} defaultOpen={true} accent="#14b8a6">
-        {nonAcademic.length === 0 ? (
-          <EmptyState title="No general categories" description="Add categories like Chores, Hobbies." />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {nonAcademic.map((cat) => {
-              const n = subjectCount(cat)
-              return (
-                <Card key={cat.id}>
-                  <div className="flex items-center gap-3">
-                    <div className="h-4 w-4 rounded-full" style={{ backgroundColor: cat.color }} />
-                    <div className="flex-1 font-medium text-slate-800 dark:text-slate-100">{cat.name}</div>
-                    <Button variant="secondary" size="sm" onClick={() => openEdit(cat)}>Edit</Button>
-                    <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(cat)}>Delete</Button>
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`}
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </Collapsible>
-      <Modal open={showModal} onClose={() => setShowModal(false)} title={editCategory ? 'Edit Category' : 'Add Category'}>
-        <div className="space-y-4">
-          <div>
-            <label className="label">Name</label>
-            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. English" />
-          </div>
-          <div>
-            <label className="label">Scope</label>
-            <select className="input" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value as Category['scope'] })}>
-              <option value="academic">Academic</option>
-              <option value="nonAcademic">General</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Colour</label>
-            <ColorPicker value={form.color} onChange={(c) => setForm({ ...form, color: c })} />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
-            <Button variant="primary" onClick={save} disabled={saving}>
-              {saving ? 'Saving...' : editCategory ? 'Update' : 'Create'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-      <Modal open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} title="Delete Category?">
-        <p className="text-sm text-slate-600 dark:text-slate-400">
-          Delete <span className="font-semibold">{deleteConfirm?.name}</span>? Focus areas in this category will become uncategorized.
-        </p>
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-          <Button variant="danger" onClick={deleteCat} disabled={saving}>{saving ? 'Deleting...' : 'Delete'}</Button>
-        </div>
-      </Modal>
-    </div>
-  )
-}
-const TABS = ['General', 'Timer', 'Categories', 'Data'] as const
+const TABS = ['General', 'Timer', 'Data'] as const
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>(loadSettings)
@@ -499,7 +326,7 @@ export default function SettingsPage() {
       if (uid) {
         const dashboardWidgets = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? '[]')
         const navPrefs = JSON.parse(localStorage.getItem('momentum-nav-prefs') ?? '{}')
-        import('../../lib/settings-sync').then(({ pushSettings }) => pushSettings(uid, settings, dashboardWidgets, navPrefs))
+        void pushSettings(uid, settings, dashboardWidgets, navPrefs)
       }
     }, 500)
     return () => clearTimeout(timer)
@@ -633,8 +460,8 @@ export default function SettingsPage() {
         </Card>
         </>
       )}
-      {/* Categories tab: inline manage section */}
-      {activeTab === 'Categories' && <CategoriesManager />}
+      {/* Categories management is in /categories page */}
+      {/* {activeTab === 'Categories' && <CategoriesManager />} */}
 
       {/* Data tab: Data Import + Danger Zone + Account */}
       {activeTab === 'Data' && (

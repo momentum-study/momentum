@@ -339,7 +339,25 @@ export function subscribeToUserData(uid: string): Unsubscribe {
         try {
           beginSync()
           const table = localDb.table(tableKey)
-          await table.bulkPut(cloudDoc.records as { id: string }[])
+          const cloudRecords = cloudDoc.records as { id: string; updatedAt?: string }[]
+          const localRecords = await table.toArray()
+          const localMap = new Map(localRecords.map((r) => [r.id, r as { id: string; updatedAt?: string }]))
+          const toWrite: { id: string; updatedAt?: string }[] = []
+          for (const cloudRec of cloudRecords) {
+            const local = localMap.get(cloudRec.id)
+            if (!local) {
+              toWrite.push(cloudRec)
+            } else {
+              const cloudTime = cloudRec.updatedAt ?? ''
+              const localTime = local.updatedAt ?? ''
+              // Only overwrite if cloud is newer — preserves local changes
+              // (e.g. soft-deletes) that haven't been pushed yet.
+              if (cloudTime > localTime) toWrite.push(cloudRec)
+            }
+          }
+          if (toWrite.length > 0) {
+            await table.bulkPut(toWrite)
+          }
           window.dispatchEvent(new CustomEvent('momentum-data-synced', { detail: { source: 'cloud' } }))
         } catch (e) {
           console.warn(`[sync] Failed to apply ${tableKey}:`, e)

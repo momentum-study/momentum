@@ -53,8 +53,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u)
-      if (u) localStorage.setItem('momentum-cloud-uid', u.uid)
-      else localStorage.removeItem('momentum-cloud-uid')
+      if (u) {
+        localStorage.setItem('momentum-cloud-uid', u.uid)
+        localStorage.setItem('momentum-cloud-name', u.displayName ?? u.email?.split('@')[0] ?? 'Anonymous')
+      } else {
+        localStorage.removeItem('momentum-cloud-uid')
+        localStorage.removeItem('momentum-cloud-name')
+      }
       // Real-time sync: subscribe to cloud changes for this user
       if (unsubSyncRef.current) { unsubSyncRef.current(); unsubSyncRef.current = null }
       if (u) {

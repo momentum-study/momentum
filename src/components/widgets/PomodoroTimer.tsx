@@ -12,12 +12,13 @@ import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
 import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor } from '../../lib/timer-persistence'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
-import type { Session } from '../../domain/types'
+import { useGroupPresence } from '../../lib/use-group-presence'
+import { groupService } from '../../lib/group-service'
+import type { Group } from '../../domain/cloud-types'
 
 type Mode = 'pomodoro' | 'simple'
 const LAST_SUBJECT_KEY = 'momentum-last-subject'
-const SAFETY_LIMIT_HOURS = 12
-const SAFETY_LIMIT_SECONDS = SAFETY_LIMIT_HOURS * 3600
+const LAST_GROUP_KEY = 'momentum-last-group'
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
 
 function fmt(seconds: number): string {
@@ -71,8 +72,29 @@ export function PomodoroTimer() {
   const [changeSubjectOpen, setChangeSubjectOpen] = useState(false)
   const [changeSubjectConfirmation, setChangeSubjectConfirmation] = useState('')
   const changeSubjectConfirmationTimer = useRef<number | null>(null)
-  const [showStopConfirm, setShowStopConfirm] = useState(false)
-  const [timerNote, setTimerNote] = useState('')
+  const [groupId, setGroupId] = useState<string>('')
+  const [myGroups, setMyGroups] = useState<Group[]>([])
+  const groupPresence = useGroupPresence(groupId)
+
+  useEffect(() => {
+    const uid = localStorage.getItem('momentum-cloud-uid')
+    if (uid) {
+      groupService.listMyGroups(uid).then(setMyGroups)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (groupId) localStorage.setItem(LAST_GROUP_KEY, groupId)
+  }, [groupId])
+
+  useEffect(() => {
+    if (groupId) return
+    const last = localStorage.getItem(LAST_GROUP_KEY)
+    if (last && myGroups.some((g) => g.id === last)) {
+      setGroupId(last)
+    }
+  }, [myGroups, groupId])
+
 
   // Mode — try to restore from localStorage
   const [mode, setMode] = useState<Mode>(() => {
@@ -102,12 +124,6 @@ export function PomodoroTimer() {
   // Tracks the cumulative simpleSeconds value at the time of the last session save.
   // Used to compute per-session deltas so the cumulative timer doesn't reset.
   const lastSavedCumulativeRef = useRef(0)
-  // Safety guard: 12-hour runaway timer limit. Tracks whether the guard has
-  // already fired for the current run so it only triggers once.
-  const [safetyMessage, setSafetyMessage] = useState('')
-  const simpleSafetyFiredRef = useRef(false)
-  const [simpleFocusTag, setSimpleFocusTag] = useState<Session['focusTag'] | null>(null)
-  const pomSafetyFiredRef = useRef(false)
 
   // Pomodoro timer
   const [pomPhase, setPomPhase] = useState<Phase>(() => {
@@ -145,8 +161,6 @@ export function PomodoroTimer() {
   stateRef.current = { pomPhase, subjectId, projectId, taskId, pomCycles }
   const dataRef = useRef(data)
   dataRef.current = data
-  const timerNoteRef = useRef(timerNote)
-  timerNoteRef.current = timerNote
   useEffect(() => {
     if (subjectId) return
     const last = localStorage.getItem(LAST_SUBJECT_KEY)
@@ -201,16 +215,9 @@ export function PomodoroTimer() {
       setSimpleSeconds(simplePausedOffset)
       return
     }
-    simpleSafetyFiredRef.current = false
     const tick = () => {
       const elapsed = simplePausedOffset + Math.floor((Date.now() - simpleStartedAt) / 1000)
       setSimpleSeconds(elapsed)
-      // 12-hour safety guard — auto-pause if elapsed exceeds limit
-      if (elapsed >= SAFETY_LIMIT_SECONDS && !simpleSafetyFiredRef.current) {
-        simpleSafetyFiredRef.current = true
-        pauseSimple()
-        setSafetyMessage('Timer auto-paused after 12 hours. Take a break!')
-      }
     }
     tick()
     const interval = window.setInterval(tick, 1000)
@@ -220,7 +227,6 @@ export function PomodoroTimer() {
   // Pomodoro timer tick — compute remaining from wall clock
   useEffect(() => {
     if (!pomStartedAt) return
-    pomSafetyFiredRef.current = false
     const tick = () => {
       const saved = loadTimerState()
       const currentPhase = saved?.phase ?? pomPhase
@@ -228,12 +234,6 @@ export function PomodoroTimer() {
       const elapsed = Math.floor((Date.now() - pomStartedAt) / 1000)
       const remaining = Math.max(0, duration - elapsed)
       setPomSeconds(remaining)
-      // 12-hour safety guard — auto-pause if elapsed exceeds limit
-      if (elapsed >= SAFETY_LIMIT_SECONDS && !pomSafetyFiredRef.current) {
-        pomSafetyFiredRef.current = true
-        pausePomodoro()
-        setSafetyMessage('Timer auto-paused after 12 hours. Take a break!')
-      }
     }
     tick()
     const interval = window.setInterval(tick, 1000)
@@ -273,7 +273,6 @@ export function PomodoroTimer() {
           source: 'pomodoro' as const,
           createdAt: isoNow(),
           updatedAt: isoNow(),
-          ...(simpleFocusTag ? { focusTag: simpleFocusTag } : {}),
         }
         void db.sessions.put(session).then(async () => {
           const subjectName = subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
@@ -357,7 +356,7 @@ export function PomodoroTimer() {
             endAt: now.toISOString(),
             durationMinutes,
             durationSeconds,
-            note: timerNoteRef.current.trim() || (task ? `Task: ${task.title}` : undefined),
+            note: task ? `Task: ${task.title}` : undefined,
             source: 'timer',
           }
         }
@@ -410,36 +409,26 @@ export function PomodoroTimer() {
     }
   }, [simpleStartedAt, pomStartedAt, pomPhase, simpleSeconds, subjectId, projectId, taskId])
 
-  // Visibility handler to re-sync timer display when tab returns to focus.
-  // Intervals may be delayed after backgrounding; force a wall-clock re-tick
-  // immediately so the display snaps to the correct value.
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (!document.hidden) {
-        if (simpleStartedAt) {
-          const elapsed = simplePausedOffset + Math.floor((Date.now() - simpleStartedAt) / 1000)
-          setSimpleSeconds(elapsed)
-        }
-        if (pomStartedAt) {
-          const saved = loadTimerState()
-          const currentPhase = saved?.phase ?? pomPhase
-          const duration = getPhaseDuration(currentPhase, configRef.current)
-          const elapsed = Math.floor((Date.now() - pomStartedAt) / 1000)
-          setPomSeconds(Math.max(0, duration - elapsed))
-        }
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-    return () => document.removeEventListener('visibilitychange', handleVisibility)
-  }, [simpleStartedAt, pomStartedAt, simplePausedOffset, pomPhase])
-
   // Update document.title when timer is running
   const isRunning = simpleStartedAt !== null || pomStartedAt !== null
   useEffect(() => {
     if (!isRunning) { document.title = 'Momentum'; return }
-    document.title = simpleStartedAt !== null ? `${fmt(simpleSeconds)} - Momentum` : `${fmt(pomSeconds)} - Momentum`
+    document.title = simpleStartedAt !== null ? `${fmt(simpleSeconds)} — Momentum` : `${fmt(pomSeconds)} — Momentum`
     return () => { document.title = 'Momentum' }
   }, [isRunning, simpleSeconds, pomSeconds])
+
+  // Group presence: write our live status to all of our groups when the
+  // timer is running, clear it when stopped. Subscribers in other members'
+  // group-detail / timer views see the update within ~1s via Firestore.
+  useEffect(() => {
+    if (!isRunning) return
+    const uid = localStorage.getItem('momentum-cloud-uid')
+    if (!uid) return
+    const name = localStorage.getItem('momentum-cloud-name') ?? 'Anonymous'
+    const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'
+    groupService.updatePresence(uid, name, subjectName).catch(() => {})
+    return () => { groupService.clearPresence(uid).catch(() => {}) }
+  }, [isRunning, subjectId, data.subjects])
 
   // Save config to localStorage
   function saveConfig(patch: Partial<typeof config>) {
@@ -467,11 +456,7 @@ export function PomodoroTimer() {
 
   // Simple timer
   function startSimple() {
-    setSafetyMessage('')
-    simpleSafetyFiredRef.current = false
-    lastSavedCumulativeRef.current = 0
     const now = Date.now()
-    setSimpleFocusTag(null)
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
       mode: 'simple',
@@ -485,12 +470,7 @@ export function PomodoroTimer() {
     }
     saveTimerState(state)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
-    // Update presence: let group members know you are studying
-    const presenceUid = localStorage.getItem('momentum-cloud-uid')
-    const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'
-    if (presenceUid) {
-      import('../../lib/group-service').then(({ groupService }) => groupService.updatePresence(presenceUid, '', subjectName).catch(() => {}))
-    }
+    // Presence is managed centrally by the `isRunning` effect above.
   }
 
   function pauseSimple() {
@@ -508,16 +488,10 @@ export function PomodoroTimer() {
       simplePausedOffset: elapsed,
     }
     saveTimerState(state)
-    // Clear presence on pause
-    const pauseUid = localStorage.getItem('momentum-cloud-uid')
-    if (pauseUid) {
-      import('../../lib/group-service').then(({ groupService }) => groupService.clearPresence(pauseUid).catch(() => {}))
-    }
+    // Presence is managed centrally by the `isRunning` effect above.
   }
 
   function resumeSimple() {
-    setSafetyMessage('')
-    simpleSafetyFiredRef.current = false
     const now = Date.now()
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
@@ -536,61 +510,41 @@ export function PomodoroTimer() {
   const { syncSession } = useSessionSync()
 
   async function stopSimple() {
-    const total = simpleSeconds
-    if (total > 0 && total < 5 * 60 && !showStopConfirm) {
-      setShowStopConfirm(true)
-      return
-    }
-    setShowStopConfirm(false)
     setSimpleStartedAt(null)
     clearTimerState()
-    // Resolve actualSubjectId: try project's subjectId first, fall back to direct subjectId
-    let actualSubjectId = ''
-    if (projectId) {
-      const project = dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt)
-      actualSubjectId = project?.subjectId ?? subjectId
-    } else {
-      actualSubjectId = subjectId
+    const total = simpleSeconds
+    const actualSubjectId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
+    if (total >= 10 && actualSubjectId) {
+      const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
+      const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
+      const now = new Date()
+      const delta = total - lastSavedCumulativeRef.current
+      const start = new Date(now.getTime() - delta * 1000)
+      const startAt = start.toISOString()
+      const durationSeconds = Math.max(10, Math.round(delta))
+      const durationMinutes = Math.max(1, Math.round(delta / 60))
+      const session = {
+        id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
+        subjectId: actualSubjectId,
+        projectId: project?.id ?? null,
+        assignmentId: task?.id ?? null,
+        startAt,
+        endAt: now.toISOString(),
+        durationMinutes,
+        durationSeconds,
+        note: task ? `Task: ${task.title}` : undefined,
+        source: 'timer' as const,
+        createdAt: isoNow(),
+        updatedAt: isoNow(),
+      }
+      await db.sessions.put(session)
+      const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
+      syncSession(session, subjectName)
+      await updateRoutineLogsForSession(session)
+      await updateStreakDayForSession(session)
+      await loadData()
     }
-    if (total < 10 || !actualSubjectId) {
-      lastSavedCumulativeRef.current = 0
-      simpleSafetyFiredRef.current = false
-      setTimerNote('')
-      return
-    }
-    const delta = Math.max(0, total - lastSavedCumulativeRef.current)
-    const task = taskId ? dataRef.current.assignments.find((a) => a.id === taskId) : undefined
-    const project = projectId ? dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
-    const now = new Date()
-    const start = new Date(now.getTime() - delta * 1000)
-    const startAt = start.toISOString()
-    const durationSeconds = Math.max(10, Math.round(delta))
-    const durationMinutes = Math.max(1, Math.round(delta / 60))
-    const session = {
-      id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
-      subjectId: actualSubjectId,
-      projectId: project?.id ?? null,
-      assignmentId: task?.id ?? null,
-      startAt,
-      endAt: now.toISOString(),
-      durationMinutes,
-      durationSeconds,
-      note: timerNote.trim() || (task ? `Task: ${task.title}` : undefined),
-      source: 'timer' as const,
-      createdAt: isoNow(),
-      updatedAt: isoNow(),
-      ...(simpleFocusTag ? { focusTag: simpleFocusTag } : {}),
-    }
-    const subjectName = dataRef.current.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
-    await db.sessions.put(session)
-    syncSession(session, subjectName)
-    await updateRoutineLogsForSession(session)
-    await updateStreakDayForSession(session)
-    await loadData()
     lastSavedCumulativeRef.current = total
-    simpleSafetyFiredRef.current = false
-    setTimerNote('')
-    setSimpleFocusTag(null)
   }
 
   async function changeSubject(newSubjectId: string) {
@@ -622,11 +576,10 @@ export function PomodoroTimer() {
           endAt: now.toISOString(),
           durationMinutes,
           durationSeconds,
-          note: timerNote.trim() || (task ? `Task: ${task.title}` : undefined),
+          note: task ? `Task: ${task.title}` : undefined,
           source: 'timer' as const,
           createdAt: isoNow(),
           updatedAt: isoNow(),
-          ...(simpleFocusTag ? { focusTag: simpleFocusTag } : {}),
         }
         await db.sessions.put(session)
         const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
@@ -663,7 +616,6 @@ export function PomodoroTimer() {
             source: 'pomodoro' as const,
             createdAt: isoNow(),
             updatedAt: isoNow(),
-            ...(simpleFocusTag ? { focusTag: simpleFocusTag } : {}),
           }
           await db.sessions.put(session)
           const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
@@ -683,7 +635,7 @@ export function PomodoroTimer() {
       setSimpleStartedAt(now)
       const state: PersistedTimerState = {
         mode: 'simple',
-      subjectId: newSubjectId,
+      subjectId: subjectId,
       simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: null,
@@ -696,7 +648,7 @@ export function PomodoroTimer() {
       setPomStartedAt(now)
       const state: PersistedTimerState = {
         mode: 'pomodoro',
-      subjectId: newSubjectId,
+      subjectId: subjectId,
       simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
@@ -714,8 +666,6 @@ export function PomodoroTimer() {
   }
 
   function startPomodoro() {
-    setSafetyMessage('')
-    pomSafetyFiredRef.current = false
     const now = Date.now()
     setPomStartedAt(now)
     const state: PersistedTimerState = {
@@ -774,7 +724,6 @@ export function PomodoroTimer() {
           source: 'pomodoro' as const,
           createdAt: isoNow(),
           updatedAt: isoNow(),
-          ...(simpleFocusTag ? { focusTag: simpleFocusTag } : {}),
         }
         await db.sessions.put(session)
         const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
@@ -792,11 +741,9 @@ export function PomodoroTimer() {
   }
 
   const currentSeconds = mode === 'simple' ? simpleSeconds : pomSeconds
-  const cycleLabel =
-    pomPhase === 'focus' ? '🎯 Focus'
-    : pomPhase === 'shortBreak' ? '☕ Short Break'
-    : '🌿 Long Break'
-
+  const cycleLabel = mode === 'pomodoro' && settings.pomodoroEnabled
+    ? `Cycle ${(pomCycles % config.cycles) + 1} of ${config.cycles}`
+    : ''
   const isTimerActive = simpleStartedAt != null || pomStartedAt != null
   // YPT-style: total minutes studied today (committed sessions + current live session)
   const totalTodayMinutes = useMemo(() => {
@@ -956,16 +903,9 @@ export function PomodoroTimer() {
         )
       })()}
 
-      {/* Safety message — 12-hour runaway timer guard */}
-      {safetyMessage && (
-        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-center text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-          {safetyMessage}
-        </div>
-      )}
-
       {/* Timer display — hidden when YPT simple view is active */}
       {!(mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0)) && (
-        <div className="font-mono text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
+        <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
           {fmt(currentSeconds)}
         </div>
       )}
@@ -992,6 +932,7 @@ export function PomodoroTimer() {
           })}
         </div>
       )}
+
       {/* Recent Sessions */}
       {mode === 'pomodoro' && settings.pomodoroEnabled && (
         <div className="mt-4">
@@ -1000,7 +941,7 @@ export function PomodoroTimer() {
             {data.sessions.filter((s) => s.source === 'pomodoro').slice(0, 3).map((session) => {
               const subject = data.subjects.find((s) => s.id === session.subjectId)
               return (
-                <div key={session.id} className="flex items-center gap-2 text-xs transition-colors">
+                <div key={session.id} className="flex items-center gap-2 text-xs">
                   <div
                     className={cn(
                       'h-2 w-2 rounded-full',
@@ -1008,17 +949,18 @@ export function PomodoroTimer() {
                     )}
                   />
                   <span className="truncate text-slate-700 dark:text-slate-300">{subject?.name ?? 'Unknown'}</span>
-                  <span className="font-mono text-slate-500 dark:text-slate-400">{session.durationMinutes}m</span>
-                  <span className="ml-auto font-mono text-slate-400">{format(new Date(session.startAt), 'h:mm a')}</span>
+                  <span className="text-slate-500 dark:text-slate-400">{session.durationMinutes}m</span>
+                  <span className="ml-auto text-slate-400">{format(new Date(session.startAt), 'h:mm a')}</span>
                 </div>
               )
             })}
             {data.sessions.filter((s) => s.source === 'pomodoro').length === 0 && (
-              <p className="text-xs text-slate-400 dark:text-slate-500">No sessions logged yet. Start studying to see them here.</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">No sessions yet</p>
             )}
           </div>
         </div>
       )}
+
       {/* Focus Area selectors — collapse when timer is running */}
       <div className="mt-3 space-y-2">
         {(!pomStartedAt && !simpleStartedAt) ? (
@@ -1030,7 +972,7 @@ export function PomodoroTimer() {
                 value={subjectId}
                 onChange={(e) => { setSubjectId(e.target.value); setProjectId(''); setTaskId('') }}
               >
-                <option value="">Select focus area</option>
+                <option value="">— Select focus area —</option>
                 {data.subjects.filter(s => !s.deletedAt).map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
@@ -1044,7 +986,7 @@ export function PomodoroTimer() {
                   value={projectId}
                   onChange={(e) => { setProjectId(e.target.value); setTaskId('') }}
                 >
-                  <option value="">Select project</option>
+                  <option value="">— Select project —</option>
                   {data.projects.filter((p) => p.subjectId === subjectId && !p.deletedAt).map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -1059,9 +1001,24 @@ export function PomodoroTimer() {
                   value={taskId}
                   onChange={(e) => setTaskId(e.target.value)}
                 >
-                  <option value="">Select task</option>
+                  <option value="">— Select task —</option>
                   {data.assignments.filter((a) => a.projectId === projectId && !a.completed && !a.deletedAt).map((a) => (
                     <option key={a.id} value={a.id}>{a.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {myGroups.length > 0 && (
+              <div>
+                <label className="label">Group</label>
+                <select
+                  className="input"
+                  value={groupId}
+                  onChange={(e) => setGroupId(e.target.value)}
+                >
+                  <option value="">No group (solo)</option>
+                  {myGroups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
                 </select>
               </div>
@@ -1070,6 +1027,11 @@ export function PomodoroTimer() {
         ) : !(mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0)) ? (
           <div className="text-sm text-slate-600 dark:text-slate-300">
             Studying <span className="font-semibold">{data.subjects.find((s) => s.id === subjectId)?.name}</span>
+            {groupId && (
+              <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                in {myGroups.find((g) => g.id === groupId)?.name ?? 'group'}
+              </span>
+            )}
           </div>
         ) : null}
       </div>
@@ -1080,95 +1042,40 @@ export function PomodoroTimer() {
           <div className="text-center text-base font-medium text-slate-700 dark:text-slate-200">
             Studying <span className="font-semibold text-slate-900 dark:text-slate-50">{data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'}</span>
           </div>
-          <div className="font-mono text-center text-6xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
+          <div className="text-center text-6xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
             {fmt(simpleSeconds)}
           </div>
           <div className="text-center text-sm text-slate-500 dark:text-slate-400">
-            Total today: <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">{formatTotalToday(totalTodayMinutes, isTimerActive && mode === 'simple')}</span>
+            Total today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatTotalToday(totalTodayMinutes, isTimerActive && mode === 'simple')}</span>
           </div>
-          {/* Today's per-subject breakdown */}
-          {(() => {
-            const todayStr = format(new Date(), 'yyyy-MM-dd')
-            const todaySessions = data.sessions.filter(
-              (s) => !s.deletedAt && format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr
-            )
-            const bySubject: Record<string, { name: string; minutes: number }> = {}
-            for (const s of todaySessions) {
-              const subj = data.subjects.find((sub) => sub.id === s.subjectId)
-              if (!subj) continue
-              const key = subj.id
-              if (!bySubject[key]) bySubject[key] = { name: subj.name, minutes: 0 }
-              bySubject[key].minutes += s.durationMinutes
-            }
-            // Add current live session subject
-            if (subjectId && simpleSeconds >= 60) {
-              const subj = data.subjects.find((sub) => sub.id === subjectId)
-              if (subj) {
-                const key = subj.id
-                if (!bySubject[key]) bySubject[key] = { name: subj.name, minutes: 0 }
-                bySubject[key].minutes += Math.round(simpleSeconds / 60)
-              }
-            }
-            const entries = Object.values(bySubject).sort((a, b) => b.minutes - a.minutes)
-            if (entries.length === 0) return null
-            const shown = entries.slice(0, 3)
-            const rest = entries.length - 3
-            return (
-              <div className="text-center text-xs text-slate-400 dark:text-slate-500">
-                Today: {shown.map((e, i) => (
-                  <span key={i}>{e.name} <span className="font-medium text-slate-500 dark:text-slate-400">{e.minutes}m</span>{i < shown.length - 1 ? ', ' : ''}</span>
-                ))}
-                {rest > 0 && <span> +{rest} more</span>}
+          {/* Live group presence — show when timer is running and a group is selected */}
+          {groupId && groupPresence.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {myGroups.find((g) => g.id === groupId)?.name ?? 'Group'} — Studying Now
               </div>
-            )
-          })()}
-          {/* Note input */}
-          <div className="flex justify-center">
-            <input
-              type="text"
-              className="input w-full max-w-xs text-center text-sm"
-              placeholder="What are you working on?"
-              value={timerNote}
-              onChange={(e) => setTimerNote(e.target.value)}
-            />
-          </div>
-          {/* Focus tag selector */}
-          <div className="flex gap-1 flex-wrap" role="group" aria-label="Focus tag">
-            {(['focused', 'distracted', 'group', 'revision'] as const).map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => setSimpleFocusTag(simpleFocusTag === tag ? null : tag)}
-                className={cn(
-                  'rounded-full px-2 py-0.5 text-xs border',
-                  simpleFocusTag === tag
-                    ? 'border-primary-500 bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200'
-                    : 'border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400'
-                )}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-          {/* Stop confirmation for short sessions */}
-          {showStopConfirm ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-              You've studied for {Math.floor(simpleSeconds / 60)} minute{Math.floor(simpleSeconds / 60) !== 1 ? 's' : ''}, that still counts. Stop and save?
-              <div className="mt-2 flex justify-center gap-2">
-                <Button variant="danger" size="sm" onClick={stopSimple}>Stop and save</Button>
-                <Button variant="secondary" size="sm" onClick={() => setShowStopConfirm(false)}>Keep going</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex justify-center gap-2">
-              {simpleStartedAt !== null ? (
-                <Button variant="secondary" onClick={pauseSimple}>Pause</Button>
-              ) : (
-                <Button variant="primary" onClick={resumeSimple}>Resume</Button>
-              )}
-              <Button variant="danger" onClick={stopSimple}>Stop & Save</Button>
+              {groupPresence.map((p) => {
+                const mins = Math.floor((p.elapsedSeconds ?? 0) / 60)
+                const secs = (p.elapsedSeconds ?? 0) % 60
+                return (
+                  <div key={p.uid} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+                    <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                    <span className="font-medium">{p.displayName}</span>
+                    <span className="text-slate-400">{p.subjectName}</span>
+                    <span className="ml-auto tabular-nums text-slate-500">{mins}:{String(secs).padStart(2, '0')}</span>
+                  </div>
+                )
+              })}
             </div>
           )}
+          <div className="flex justify-center gap-2">
+            {simpleStartedAt !== null ? (
+              <Button variant="secondary" onClick={pauseSimple}>Pause</Button>
+            ) : (
+              <Button variant="primary" onClick={resumeSimple}>Resume</Button>
+            )}
+            <Button variant="danger" onClick={stopSimple}>Stop & Save</Button>
+          </div>
         </div>
       ) : (
         <>
@@ -1217,7 +1124,7 @@ export function PomodoroTimer() {
                 onChange={(e) => { void changeSubject(e.target.value) }}
                 autoFocus
               >
-                <option value="">Select new subject</option>
+                <option value="">— Select new subject —</option>
                 {data.subjects.filter((s) => s.id !== subjectId && !s.deletedAt).map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
@@ -1239,7 +1146,7 @@ export function PomodoroTimer() {
 
       {!settings.pomodoroEnabled && (
         <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">
-          Pomodoro hidden: enable in <a href="/settings" className="underline">Settings</a>
+          Pomodoro hidden — enable in <a href="/settings" className="underline">Settings</a>
         </p>
       )}
     </Card>

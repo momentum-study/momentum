@@ -2,7 +2,7 @@ import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
 import { SubjectBreakdown } from '../../components/widgets/SubjectBreakdown'
 import { formatTotalToday, getLiveTimerSeconds, getLiveTimerSubjectId, getTotalTodayMinutes, isTimerActive } from '../../lib/timer-utils'
 import { useEffect, useMemo, useState } from 'react'
-import { format, subDays } from 'date-fns'
+import { format, subDays, differenceInCalendarDays } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { PomodoroTimer } from '../../components/widgets/PomodoroTimer'
 import QuickTimer from '../../components/widgets/QuickTimer'
@@ -13,7 +13,7 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Collapsible } from '../../components/ui/Collapsible'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { Modal } from '../../components/ui/Modal'
-import { cn, formatMinutes, getSessionScope, isoNow, isActiveSession, STREAK_MILESTONES } from '../../lib/utils'
+import { cn, formatMinutes, getSessionScope, isoNow } from '../../lib/utils'
 import { loadSettings } from '../settings/SettingsPage'
 import { db } from '../../db/app-db'
 import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakDayForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
@@ -23,17 +23,8 @@ import type { Session, DayOfWeek, RoutineLog, HobbySession } from '../../domain/
 import { Link } from 'react-router-dom'
 import { useDashboardWidgets, DASHBOARD_WIDGETS } from '../../lib/use-dashboard-widgets'
 
+const STREAK_MILESTONES = [7, 14, 21, 30, 66, 100] as const
 const BEST_STREAK_KEY = 'momentum-best-streak'
-const RECAP_DATE_KEY = 'momentum-last-recap-date'
-const STREAK_MILESTONE_KEY = 'momentum-streak-milestone'
-const MILESTONE_COPY: Record<number, string> = {
-  7: '7 day streak, you\'re on a roll.',
-  14: 'Two weeks straight. Impressive.',
-  21: '21 days. Three strong weeks.',
-  30: '30 day streak. A whole month.',
-  66: '66 day streak. This is becoming second nature.',
-  100: '100 days. Triple digits.',
-}
 
 export default function Dashboard() {
   const { data, isLoading, loadData } = useData()
@@ -44,9 +35,6 @@ export default function Dashboard() {
   const [logModalOpen, setLogModalOpen] = useState(false)
   const [showAllRecent, setShowAllRecent] = useState(false)
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
-  const [showRecap, setShowRecap] = useState(false)
-  const [recapText, setRecapText] = useState('')
-  const [milestoneText, setMilestoneText] = useState<string | null>(null)
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
   // Exclude soft-deleted sessions from streak / stats calculations.
@@ -94,34 +82,21 @@ export default function Dashboard() {
       } catch {}
     }
   }, [streak, bestStreak])
-  useEffect(() => {
-    const lastShown = localStorage.getItem(RECAP_DATE_KEY)
-    if (lastShown === todayStr) return // already shown today
-    const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd')
-    const yesterdaySessions = academicSessions.filter(
-      (s) => format(new Date(s.startAt), 'yyyy-MM-dd') === yesterday
-    )
-    if (yesterdaySessions.length === 0) return
-    const totalMin = yesterdaySessions.reduce((a, s) => a + s.durationMinutes, 0)
-    const subjectCount = new Set(yesterdaySessions.map((s) => s.subjectId)).size
-    setRecapText(`Yesterday: ${formatMinutes(totalMin)} across ${subjectCount} ${subjectCount === 1 ? 'subject' : 'subjects'}. Current streak: ${streak} ${streak === 1 ? 'day' : 'days'}.`)
-    setShowRecap(true)
-    localStorage.setItem(RECAP_DATE_KEY, todayStr)
-  }, [todayStr, academicSessions, streak])
-
-  // Streak milestone celebration
-  useEffect(() => {
-    if (streak <= 0) return
-    try {
-      const lastMilestone = Number(localStorage.getItem(STREAK_MILESTONE_KEY) ?? '0')
-      const nextMilestone = STREAK_MILESTONES.find((m) => m > lastMilestone && streak >= m)
-      if (nextMilestone && MILESTONE_COPY[nextMilestone]) {
-        setMilestoneText(MILESTONE_COPY[nextMilestone])
-        localStorage.setItem(STREAK_MILESTONE_KEY, String(nextMilestone))
-      }
-    } catch {}
-  }, [streak])
-
+  const longestStreak = useMemo(() => {
+    if (academicSessions.length === 0) return 0
+    const daySet = new Set<string>()
+    for (const s of academicSessions) {
+      daySet.add(format(new Date(s.startAt), 'yyyy-MM-dd'))
+    }
+    const sortedDays = Array.from(daySet).sort()
+    let max = 0
+    let cur = 1
+    for (let i = 1; i < sortedDays.length; i++) {
+      const diff = differenceInCalendarDays(new Date(sortedDays[i]), new Date(sortedDays[i - 1]))
+      if (diff === 1) { cur++; if (cur > max) max = cur } else { cur = 1 }
+    }
+    return max
+  }, [academicSessions])
 
 
   const [calendarMonth, setCalendarMonth] = useState(new Date())
@@ -158,50 +133,28 @@ export default function Dashboard() {
   const [logNote, setLogNote] = useState(persistedForm?.note ?? '')
   const [logHobbyMode, setLogHobbyMode] = useState(persistedForm?.hobbyMode ?? false)
   const [logHobbyId, setLogHobbyId] = useState(persistedForm?.hobbyId ?? '')
-  const [logStartTime, setLogStartTime] = useState(persistedForm?.startTime ?? '')
-  const [logEndTime, setLogEndTime] = useState(persistedForm?.endTime ?? '')
-  const [logFocusTag, setLogFocusTag] = useState<Session['focusTag'] | null>(persistedForm?.focusTag ?? null)
 
   useEffect(() => {
     sessionStorage.setItem(LOG_FORM_KEY, JSON.stringify({
       subjectId: logSubjectId, projectId: logProjectId, taskId: logTaskId,
       duration: logDuration, date: logDate, note: logNote,
       hobbyMode: logHobbyMode, hobbyId: logHobbyId,
-      startTime: logStartTime, endTime: logEndTime, focusTag: logFocusTag,
     }))
-  }, [logSubjectId, logProjectId, logTaskId, logDuration, logDate, logNote, logHobbyMode, logHobbyId, logStartTime, logEndTime, logFocusTag])
+  }, [logSubjectId, logProjectId, logTaskId, logDuration, logDate, logNote, logHobbyMode, logHobbyId])
 
   async function handleLogTime() {
     const note = logNote.trim()
+    const now = new Date()
     const [y, m, d] = logDate.split('-').map(Number)
-    // Compute duration from start/end times if both provided
-    let durationMinutes = logDuration
-    let startAt: string
-    let endAt: string
-    if (logStartTime && logEndTime) {
-      const start = new Date(`${logDate}T${logStartTime}`)
-      const end = new Date(`${logDate}T${logEndTime}`)
-      durationMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60000))
-      startAt = start.toISOString()
-      endAt = end.toISOString()
-    } else {
-      const now = new Date()
-      now.setFullYear(y, m - 1, d)
-      startAt = now.toISOString()
-      if (logStartTime) {
-        const start = new Date(`${logDate}T${logStartTime}`)
-        const end = new Date(start.getTime() + durationMinutes * 60_000)
-        startAt = start.toISOString()
-        endAt = end.toISOString()
-      } else {
-        endAt = new Date(now.getTime() + durationMinutes * 60_000).toISOString()
-      }
-    }
+    now.setFullYear(y, m - 1, d)
+    const startAt = now.toISOString()
+    const endAt = new Date(now.getTime() + logDuration * 60_000).toISOString()
+
     if (logHobbyMode && logHobbyId) {
       const hobbySession: HobbySession = {
         id: uuid(),
         hobbyId: logHobbyId,
-        durationMinutes,
+        durationMinutes: logDuration,
         startAt,
         endAt,
         note,
@@ -212,13 +165,13 @@ export default function Dashboard() {
       // auto-increase skill: +1 per 10h
       const hobby = data.hobbies.find(h => h.id === logHobbyId)
       const existingMinutes = data.hobbySessions.filter(s => s.hobbyId === logHobbyId).reduce((a, s) => a + s.durationMinutes, 0)
-      const totalMinutes = existingMinutes + durationMinutes
+      const totalMinutes = existingMinutes + logDuration
       const newSkillLevel = Math.min(100, Math.floor(totalMinutes / 600))
       await db.hobbies.update(logHobbyId, { skillLevel: newSkillLevel, updatedAt: isoNow() })
       await loadData()
       const hobbyName = hobby?.name ?? 'Hobby'
       push({
-        description: `Logged ${durationMinutes}m for ${hobbyName}`,
+        description: `Logged ${logDuration}m for ${hobbyName}`,
         undo: async () => { await db.hobbySessions.delete(hobbySession.id); await loadData() },
         redo: async () => { await db.hobbySessions.add(hobbySession); await loadData() },
       })
@@ -235,9 +188,8 @@ export default function Dashboard() {
         assignmentId: task?.id ?? null,
         startAt,
         endAt,
-        durationMinutes,
+        durationMinutes: logDuration,
         note: taskNote,
-        focusTag: logFocusTag ?? undefined,
         source: 'quickLog' as const,
         createdAt: isoNow(),
         updatedAt: isoNow(),
@@ -248,12 +200,12 @@ export default function Dashboard() {
       await updateStreakDayForSession(session)
       syncSession(session, subjectName)
       await loadData()
-      let description = `Logged ${durationMinutes}m${project ? ` for ${project.name}` : ` study for ${subjectName}`}`
+      let description = `Logged ${logDuration}m${project ? ` for ${project.name}` : ` study for ${subjectName}`}`
       if (task) description += ` (${task.title})`
       push({
         description,
-        undo: async () => { await db.sessions.update(session.id, { deletedAt: isoNow(), updatedAt: isoNow() }); await revertRoutineLogsForSession(session); await revertStreakDayForSession(session); await loadData() },
-        redo: async () => { await db.sessions.update(session.id, { deletedAt: null, updatedAt: isoNow() }); await updateRoutineLogsForSession(session); await updateStreakDayForSession(session); await loadData() },
+        undo: async () => { await db.sessions.delete(session.id); await revertStreakDayForSession(session); await loadData() },
+        redo: async () => { await db.sessions.add(session); await updateStreakDayForSession(session); await loadData() },
       })
     }
     sessionStorage.removeItem(LOG_FORM_KEY)
@@ -263,9 +215,6 @@ export default function Dashboard() {
     setLogNote('')
     setLogHobbyMode(false)
     setLogHobbyId('')
-    setLogStartTime('')
-    setLogEndTime('')
-    setLogFocusTag(null)
   }
 
   const [editLog, setEditLog] = useState<Session | null>(null)
@@ -274,6 +223,7 @@ export default function Dashboard() {
   const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
   const [liveTimerSubjectId, setLiveTimerSubjectId] = useState<string | null>(null)
   useEffect(() => {
+    // Always poll every second — if no timer is active, just show 0
     const tick = () => {
       const active = isTimerActive()
       setLiveTimerSeconds(active ? getLiveTimerSeconds() : 0)
@@ -284,99 +234,44 @@ export default function Dashboard() {
     return () => clearInterval(interval)
   }, [])
   const [editSubjectId, setEditSubjectId] = useState('')
-  const [editStartTime, setEditStartTime] = useState('')
-  const [editEndTime, setEditEndTime] = useState('')
-  const [editNote, setEditNote] = useState('')
-  const [editProjectId, setEditProjectId] = useState('')
-  const [editFocusTag, setEditFocusTag] = useState<Session['focusTag'] | null>(null)
 
   async function saveEditLog() {
     if (!editLog) return
     const prevSession = { ...editLog }
-    let durationMinutes = editDuration
-    let startAt: string
-    let endAt: string
-    if (editStartTime && editEndTime) {
-      const start = new Date(`${editDate}T${editStartTime}`)
-      const end = new Date(`${editDate}T${editEndTime}`)
-      durationMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60000))
-      startAt = start.toISOString()
-      endAt = end.toISOString()
-    } else {
-      const originalStart = new Date(editLog.startAt)
-      if (editStartTime) {
-        const start = new Date(`${editDate}T${editStartTime}`)
-        const end = new Date(start.getTime() + durationMinutes * 60_000)
-        startAt = start.toISOString()
-        endAt = end.toISOString()
-      } else {
-        const newStart = new Date(`${editDate}T${originalStart.toTimeString().slice(0, 8)}`)
-        const newEnd = new Date(newStart.getTime() + durationMinutes * 60_000)
-        startAt = newStart.toISOString()
-        endAt = newEnd.toISOString()
-      }
-    }
+    // Preserve original time-of-day; only change date if user picked a different date
+    const originalStart = new Date(editLog.startAt)
+    const newStart = new Date(`${editDate}T${originalStart.toTimeString().slice(0, 8)}`)
+    const newEnd = new Date(newStart.getTime() + editDuration * 60_000)
     const updated: Record<string, unknown> = {
-      startAt,
-      endAt,
-      durationMinutes,
+      startAt: newStart.toISOString(),
+      endAt: newEnd.toISOString(),
+      durationMinutes: editDuration,
       subjectId: editSubjectId,
-      projectId: editProjectId || null,
-      note: editNote || null,
-      focusTag: editFocusTag ?? undefined,
       updatedAt: isoNow(),
     }
-    await revertStreakDayForSession(prevSession)
     await db.sessions.update(editLog.id, updated)
     await updateStreakDayForSession({ ...editLog, ...updated })
     await loadData()
     setEditLog(null)
     push({
       description: `Edited session`,
-      undo: async () => {
-        await db.sessions.update(editLog.id, {
-          startAt: prevSession.startAt,
-          endAt: prevSession.endAt,
-          durationMinutes: prevSession.durationMinutes,
-          subjectId: prevSession.subjectId,
-          projectId: prevSession.projectId,
-          note: prevSession.note,
-          focusTag: prevSession.focusTag,
-          updatedAt: prevSession.updatedAt,
-        })
-        await loadData()
-      },
-      redo: async () => {
-        await db.sessions.update(editLog.id, updated)
-        await loadData()
-      },
+      undo: async () => { await db.sessions.update(editLog.id, { startAt: prevSession.startAt, endAt: prevSession.endAt, durationMinutes: prevSession.durationMinutes, subjectId: prevSession.subjectId, updatedAt: prevSession.updatedAt }); await loadData() },
+      redo: async () => { await db.sessions.update(editLog.id, updated); await loadData() },
     })
   }
 
   async function deleteSession(id: string) {
     const session = data.sessions.find((s) => s.id === id)
     if (!session) return
-    await db.sessions.update(id, { deletedAt: isoNow(), updatedAt: isoNow() })
+    await db.sessions.delete(id)
+    syncSessionDelete(id)
     await revertRoutineLogsForSession(session)
     await revertStreakDayForSession(session)
-    await syncSessionDelete(id)
     await loadData()
     push({
       description: `Deleted session (${session.durationMinutes}m)`,
-      undo: async () => {
-        await db.sessions.update(id, { deletedAt: null, updatedAt: isoNow() })
-        await updateRoutineLogsForSession(session)
-        await updateStreakDayForSession(session)
-        await syncSession(session, data.subjects.find(s => s.id === session.subjectId)?.name ?? 'Unknown')
-        await loadData()
-      },
-      redo: async () => {
-        await db.sessions.update(id, { deletedAt: isoNow(), updatedAt: isoNow() })
-        await revertRoutineLogsForSession(session)
-        await revertStreakDayForSession(session)
-        await syncSessionDelete(id)
-        await loadData()
-      },
+      undo: async () => { await db.sessions.add(session); await updateRoutineLogsForSession(session); await updateStreakDayForSession(session); await syncSession(session, data.subjects.find(s => s.id === session.subjectId)?.name ?? 'Unknown'); await loadData() },
+      redo: async () => { await db.sessions.delete(id); await revertRoutineLogsForSession(session); await revertStreakDayForSession(session); await syncSessionDelete(id); await loadData() },
     })
   }
 
@@ -415,58 +310,26 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Auto-logged sessions banner */}
-      {data.sessions.filter(s => s.source === 'autoRoutine' && isActiveSession(s)).length > 0 && (
+      {data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt).length > 0 && (
         <Card className="border-primary-200 bg-primary-50 dark:border-primary-800 dark:bg-primary-900/20">
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium text-primary-900 dark:text-primary-100">
-              {data.sessions.filter(s => s.source === 'autoRoutine' && isActiveSession(s)).length} auto-logged sessions ready to confirm
+              {data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt).length} auto-logged sessions ready to confirm
             </div>
             <div className="flex gap-2">
               <Button size="sm" variant="secondary" onClick={async () => {
-                for (const s of data.sessions.filter(s => s.source === 'autoRoutine' && isActiveSession(s))) {
-                  await db.sessions.update(s.id, { deletedAt: isoNow(), updatedAt: isoNow() })
+                for (const s of data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt)) {
+                  await db.sessions.delete(s.id)
                 }
                 await loadData()
               }}>Skip All</Button>
               <Button size="sm" variant="primary" onClick={async () => {
-                for (const s of data.sessions.filter(s => s.source === 'autoRoutine' && isActiveSession(s))) {
+                for (const s of data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt)) {
                   await db.sessions.update(s.id, { deletedAt: null, updatedAt: isoNow() })
                 }
                 await loadData()
               }}>Confirm All</Button>
             </div>
-          </div>
-        </Card>
-      )}
-      {/* Daily recap banner */}
-      {showRecap && recapText && (
-        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-medium text-blue-900 dark:text-blue-100">{recapText}</div>
-            <button
-              type="button"
-              onClick={() => setShowRecap(false)}
-              className="rounded p-1 text-blue-400 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-800 dark:hover:text-blue-200"
-              aria-label="Dismiss recap"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
-            </button>
-          </div>
-        </Card>
-      )}
-      {/* Streak milestone celebration */}
-      {milestoneText && (
-        <Card className="border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/20">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-medium text-orange-900 dark:text-orange-100">{milestoneText}</div>
-            <button
-              type="button"
-              onClick={() => setMilestoneText(null)}
-              className="rounded p-1 text-orange-400 hover:bg-orange-100 hover:text-orange-600 dark:hover:bg-orange-800 dark:hover:text-orange-200"
-              aria-label="Dismiss milestone"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
-            </button>
           </div>
         </Card>
       )}
@@ -482,7 +345,7 @@ export default function Dashboard() {
             <div className="text-xs font-medium uppercase tracking-wide text-primary-600 dark:text-primary-400">
               Today's Study Time
             </div>
-            <div className="font-mono text-3xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
+            <div className="mt-1 text-3xl font-bold text-slate-800 dark:text-slate-100">
               {formatTotalToday(liveTotalTodayMinutes, isTimerActive())}
             </div>
           </div>
@@ -492,7 +355,7 @@ export default function Dashboard() {
               {formatMinutes(settings.dailyTargetMinutes)}
             </div>
             {goalPct >= 100 ? (
-              <div className="text-xs font-medium text-green-600 dark:text-green-400">You hit your daily goal, nice work!</div>
+              <div className="text-xs font-medium text-green-600 dark:text-green-400">Target reached!</div>
             ) : (
               <div className="text-xs text-slate-500 dark:text-slate-400">
                 {formatMinutes(settings.dailyTargetMinutes - Math.round(liveTotalTodayMinutes))} remaining
@@ -520,21 +383,22 @@ export default function Dashboard() {
         </div>
         <Button className="mt-4 w-full" onClick={() => setCustomizeOpen(false)}>Done</Button>
       </Modal>
+
       <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
-        <div className="flex items-center gap-4 text-sm">
-          <span>
-            Today: <strong className="font-mono tabular-nums text-slate-800 dark:text-slate-100">{formatMinutes(todayMinutes)}</strong>
-          </span>
-          <span className="text-slate-300 dark:text-slate-600">|</span>
-          <span>
-            Week: <strong className="font-mono tabular-nums text-slate-800 dark:text-slate-100">{formatMinutes(weekMinutes)}</strong>
-          </span>
-          <span className="text-slate-300 dark:text-slate-600">|</span>
-          <span>
-            Sessions: <strong className="font-mono tabular-nums text-slate-800 dark:text-slate-100">{data.sessions.filter(isActiveSession).length}</strong>
-          </span>
+          <div className="flex items-center gap-4 text-sm">
+            <span>
+              Today: <strong className="text-slate-800 dark:text-slate-100">{formatMinutes(todayMinutes)}</strong>
+            </span>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
+            <span>
+              Week: <strong className="text-slate-800 dark:text-slate-100">{formatMinutes(weekMinutes)}</strong>
+            </span>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
+            <span>
+              Sessions: <strong className="text-slate-800 dark:text-slate-100">{data.sessions.length}</strong>
+            </span>
+          </div>
         </div>
-      </div>
       {isWidgetVisible('today') && (
         <Collapsible id="dash-today" title="Today" defaultOpen={true}>
           <Card>
@@ -588,7 +452,7 @@ export default function Dashboard() {
                     .filter((a) => !a.deletedAt && !a.completed && a.dueDate !== '' && a.dueDate <= todayStr)
                     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
                     .slice(0, 5)
-                  if (due.length === 0) return <p className="text-sm text-slate-500">Nothing due today, enjoy the clear slate.</p>
+                  if (due.length === 0) return <p className="text-sm text-slate-500">No tasks due today</p>
                   return (
                     <ul className="space-y-1">
                       {due.map((a) => (
@@ -651,14 +515,14 @@ export default function Dashboard() {
             <Card>
               <div className="flex items-end justify-between">
                 <div className="flex items-end gap-2">
-                  <span className="font-mono text-4xl font-bold tabular-nums text-orange-500">{streak}</span>
+                  <span className="text-4xl font-bold text-orange-500">{streak}</span>
                   <span className="text-sm text-slate-500">day{streak !== 1 ? 's' : ''}</span>
                 </div>
                 <div className="text-right text-xs text-slate-500">
-                  <div>Best <span className="font-semibold text-slate-700 dark:text-slate-200">{bestStreak}</span></div>
+                  <div>Best <span className="font-semibold text-slate-700 dark:text-slate-200">{longestStreak}</span></div>
                 </div>
               </div>
-              {streak === 0 && <p className="mt-2 text-sm text-slate-500">Start today to begin your streak.</p>}
+              {streak === 0 && <p className="mt-2 text-sm text-slate-500">Log a session today to start your streak!</p>}
               <div className="mt-3">
                 <div className="mb-1 grid grid-cols-7 gap-px text-[10px] font-medium text-slate-400">
                   {dayLabels.map((l, i) => (
@@ -700,7 +564,7 @@ export default function Dashboard() {
                       key={m}
                       className={cn(
                         'rounded-full px-2 py-0.5 font-medium',
-                        bestStreak >= m
+                        longestStreak >= m
                           ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
                           : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                       )}
@@ -711,10 +575,20 @@ export default function Dashboard() {
                 </div>
               </div>
             </Card>
+            <Card>
+              <div className="flex items-end gap-2">
+                <span className="text-4xl font-bold text-primary-600">{goalPct}%</span>
+                <span className="text-sm text-slate-500">of {settings.dailyTargetMinutes}m</span>
+              </div>
+              <div className="mt-3 h-3 w-full rounded-full bg-slate-200"><div className={cn('h-3 rounded-full transition-all', goalPct >= 100 ? 'bg-green-500' : 'bg-primary-500')} style={{ width: `${goalPct}%` }} /></div>
+              {goalPct >= 100 && <p className="mt-2 text-sm font-medium text-green-600">Goal reached!</p>}
+              {goalPct < 100 && todayMinutes > 0 && <p className="mt-2 text-sm text-slate-500">{formatMinutes(settings.dailyTargetMinutes - todayMinutes)} to go</p>}
+            </Card>
           </div>
         </Collapsible>
         )
       })()}
+
       {isWidgetVisible('quick-timer') && (
         <Collapsible id="dash-quick-timer" title="Quick Timer" defaultOpen={true}>
           <QuickTimer />
@@ -840,7 +714,7 @@ export default function Dashboard() {
         <Collapsible id="dash-recent" title="Recent Sessions" defaultOpen={false}>
           <Card>
             {recentSessions.length === 0 ? (
-              <p className="text-sm text-slate-500">Ready to begin? Start the timer or log your first session below.</p>
+              <p className="text-sm text-slate-500">No sessions yet. Start studying!</p>
             ) : (
               <div className="space-y-3">
                 {allRecent.length > 5 && (
@@ -861,8 +735,8 @@ export default function Dashboard() {
                       {g.items.map((session) => {
                         const project = session.projectId ? data.projects.find((p) => p.id === session.projectId) : undefined
                         return (
-                            <li key={session.id} className="flex items-center justify-between py-2 transition-opacity">
-                              <div className="flex min-w-0 items-center gap-2 transition-colors">
+                          <li key={session.id} className="flex items-center justify-between py-2">
+                            <div className="flex min-w-0 items-center gap-2">
                               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.subjectColor }} />
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{session.subjectName}{project && <span className="text-slate-500"> · {project.name}</span>}</div>
@@ -870,18 +744,7 @@ export default function Dashboard() {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <div className="font-mono text-sm text-slate-600">{formatMinutes(session.durationMinutes)}</div>
-                              {session.focusTag && (
-                                <span className={cn(
-                                  'ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                                  session.focusTag === 'focused' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
-                                  session.focusTag === 'distracted' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' :
-                                  session.focusTag === 'group' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
-                                  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                                )}>
-                                  {session.focusTag}
-                                </span>
-                              )}
+                              <div className="text-sm text-slate-600">{formatMinutes(session.durationMinutes)}</div>
                               <div className="relative">
                                 <button
                                   type="button"
@@ -897,17 +760,12 @@ export default function Dashboard() {
                                     <div className="absolute right-0 z-30 mt-1 w-36 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800">
                                       <button
                                         type="button"
-                                        className="block w-full px-3 py-1.5 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-700"
+                                        className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
                                         onClick={() => {
                                           setEditLog(session)
                                           setEditDuration(session.durationMinutes)
                                           setEditDate(format(new Date(session.startAt), 'yyyy-MM-dd'))
                                           setEditSubjectId(session.subjectId)
-                                          setEditStartTime(format(new Date(session.startAt), 'HH:mm'))
-                                          setEditEndTime(format(new Date(session.endAt), 'HH:mm'))
-                                          setEditNote(session.note ?? '')
-                                          setEditProjectId(session.projectId ?? '')
-                                          setEditFocusTag(session.focusTag ?? null)
                                           setMenuSessionId(null)
                                         }}
                                       >
@@ -915,7 +773,7 @@ export default function Dashboard() {
                                       </button>
                                       <button
                                         type="button"
-                                        className="block w-full px-3 py-1.5 text-left text-red-600 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700"
+                                        className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700"
                                         onClick={() => {
                                           deleteSession(session.id)
                                           setMenuSessionId(null)
@@ -941,16 +799,20 @@ export default function Dashboard() {
         </Collapsible>
         )
       })()}
-      {/* Floating Log Time button - always visible label */}
-      <button
-        type="button"
-        onClick={() => setLogModalOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex h-14 items-center gap-2 rounded-full bg-primary-600 px-4 py-2 text-lg font-semibold text-white shadow-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:bg-primary-500 dark:hover:bg-primary-600"
-        aria-label="Log time"
-      >
-        <span aria-hidden="true">⏱</span>
-        <span className="hidden sm:inline">Log time</span>
-      </button>
+
+      {/* Floating Log Time button */}
+      <div className="fixed bottom-6 right-6 z-40 group">
+        <div className="mb-2 rounded bg-slate-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800 pointer-events-none absolute bottom-full right-0 whitespace-nowrap">
+          Log Study Time
+        </div>
+        <Button
+          className="h-14 w-14 rounded-full p-0 text-2xl shadow-lg"
+          onClick={() => setLogModalOpen(true)}
+          aria-label="Log study time"
+        >
+          ⏱
+        </Button>
+      </div>
 
       <Modal open={logModalOpen} onClose={() => setLogModalOpen(false)} title="Log Study Time">
         <div className="space-y-3">
@@ -961,7 +823,7 @@ export default function Dashboard() {
             const toGo = Math.max(0, target - previewTotal)
             return (
               <div className="text-sm text-slate-600 dark:text-slate-400">
-                Today: {formatMinutes(previewTotal)} (of {formatMinutes(target)} goal), {toGo > 0 ? `${formatMinutes(toGo)} to go` : 'Daily target complete. Rest up or keep going.'}
+                Today: {formatMinutes(previewTotal)} (of {formatMinutes(target)} goal) — {toGo > 0 ? `${formatMinutes(toGo)} to go` : 'goal reached'}
               </div>
             )
           })()}
@@ -998,11 +860,11 @@ export default function Dashboard() {
                   {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-              {logSubjectId && data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).length > 0 && (
+              {logSubjectId && (
                 <div>
                   <label className="label">Project (optional)</label>
                   <select className="input" value={logProjectId} onChange={(e) => { const pid = e.target.value; setLogProjectId(pid); setLogTaskId(''); if (pid) { const proj = data.projects.find((p) => p.id === pid); if (proj) setLogSubjectId(proj.subjectId) } }}>
-                    <option value="">- Select project -</option>
+                    <option value="">— Select project —</option>
                     {data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
@@ -1013,7 +875,7 @@ export default function Dashboard() {
                 <div>
                   <label className="label">Task (optional)</label>
                   <select className="input" value={logTaskId} onChange={(e) => setLogTaskId(e.target.value)}>
-                    <option value="">- Select task -</option>
+                    <option value="">— Select task —</option>
                     {data.assignments.filter((a) => a.projectId === logProjectId && !a.completed && !a.deletedAt).map((a) => (
                       <option key={a.id} value={a.id}>{a.title}</option>
                     ))}
@@ -1025,36 +887,16 @@ export default function Dashboard() {
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="label">Minutes</label>
-              <input type="number" min={1} className="input w-24" value={logDuration} onChange={(e) => { const n = Number(e.target.value); if (isNaN(n) || n < 1) return; setLogDuration(n) }} />
+              <input type="text" inputMode="numeric" pattern="[0-9]*" className="input w-24" value={logDuration === 1 ? '' : String(logDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setLogDuration(1); return }; const n = Number(v); if (isNaN(n)) return; setLogDuration(Math.max(1, n)) }} />
             </div>
             <div>
               <label className="label">Date</label>
               <input type="date" className="input" max={todayStr} value={logDate} onChange={(e) => setLogDate(e.target.value)} />
             </div>
-            <div>
-              <label className="label">Start (optional)</label>
-              <input type="time" className="input" value={logStartTime} onChange={(e) => setLogStartTime(e.target.value)} />
+            <div className="flex-1">
+              <label className="label">Note (optional)</label>
+              <input className="input w-full" placeholder="What did you work on?" value={logNote} onChange={(e) => setLogNote(e.target.value)} />
             </div>
-            <div>
-              <label className="label">End (optional)</label>
-              <input type="time" className="input" value={logEndTime} onChange={(e) => setLogEndTime(e.target.value)} />
-            </div>
-          </div>
-          <div>
-            <label className="label">Note (optional)</label>
-            <textarea className="input w-full" rows={3} placeholder="What did you work on?" value={logNote} onChange={(e) => setLogNote(e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Focus quality (optional)</label>
-            <select className="input w-full" value={logFocusTag ?? ''} onChange={(e) => setLogFocusTag(e.target.value as Session['focusTag'] || null)}>
-              <option value="">No tag</option>
-              <option value="focused">Focused</option>
-              <option value="distracted">Distracted</option>
-              <option value="group">Group</option>
-              <option value="revision">Revision</option>
-            </select>
-          </div>
-          <div className="flex justify-end">
             <Button
               disabled={logHobbyMode ? !logHobbyId : (!logSubjectId && !logProjectId)}
               onClick={async () => {
@@ -1069,65 +911,23 @@ export default function Dashboard() {
       </Modal>
 
       {/* Edit Session Modal */}
-      <Modal open={editLog !== null} onClose={() => { setEditLog(null); setEditStartTime(''); setEditEndTime(''); setEditNote(''); setEditProjectId(''); setEditFocusTag(null) }} title="Edit Session">
+      <Modal open={editLog !== null} onClose={() => setEditLog(null)} title="Edit Session">
         <div className="space-y-3">
           <div>
             <label className="label">Minutes</label>
-            <input type="number" min={1} className="input" value={editDuration} onChange={(e) => { const n = Number(e.target.value); if (isNaN(n) || n < 1) return; setEditDuration(n) }} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" className="input" value={editDuration === 1 ? '' : String(editDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setEditDuration(1); return }; const n = Number(v); if (isNaN(n)) return; setEditDuration(Math.max(1, n)) }} />
           </div>
           <div>
             <label className="label">Date</label>
             <input type="date" className="input" max={todayStr} value={editDate} onChange={(e) => setEditDate(e.target.value)} />
           </div>
-          <div className="flex gap-3">
-            <div>
-              <label className="label">Start (optional)</label>
-              <input type="time" className="input" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">End (optional)</label>
-              <input type="time" className="input" value={editEndTime} onChange={(e) => setEditEndTime(e.target.value)} />
-            </div>
-          </div>
           <div>
             <label className="label">Subject</label>
             <select className="input" value={editSubjectId} onChange={(e) => setEditSubjectId(e.target.value)}>
-              <option value="">- Select subject -</option>
+              <option value="">— Select subject —</option>
               {data.subjects.filter((s) => !s.deletedAt).map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
-            </select>
-          </div>
-          {editSubjectId && data.projects.filter((p) => !p.deletedAt && p.subjectId === editSubjectId).length > 0 && (
-            <div>
-              <label className="label">Project (optional)</label>
-              <select className="input" value={editProjectId} onChange={(e) => {
-                const pid = e.target.value
-                setEditProjectId(pid)
-                if (pid) {
-                  const proj = data.projects.find((p) => p.id === pid)
-                  if (proj) setEditSubjectId(proj.subjectId)
-                }
-              }}>
-                <option value="">- Select project -</option>
-                {data.projects.filter((p) => !p.deletedAt && p.subjectId === editSubjectId).map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div>
-            <label className="label">Note (optional)</label>
-            <textarea className="input w-full" rows={3} placeholder="What did you work on?" value={editNote} onChange={(e) => setEditNote(e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Focus quality (optional)</label>
-            <select className="input w-full" value={editFocusTag ?? ''} onChange={(e) => setEditFocusTag(e.target.value as Session['focusTag'] || null)}>
-              <option value="">No tag</option>
-              <option value="focused">Focused</option>
-              <option value="distracted">Distracted</option>
-              <option value="group">Group</option>
-              <option value="revision">Revision</option>
             </select>
           </div>
           <Button variant="primary" className="w-full" onClick={saveEditLog}>Save</Button>

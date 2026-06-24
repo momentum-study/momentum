@@ -12,9 +12,13 @@ import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
 import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor } from '../../lib/timer-persistence'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
+import { useGroupPresence } from '../../lib/use-group-presence'
+import { groupService } from '../../lib/group-service'
+import type { Group } from '../../domain/cloud-types'
 
 type Mode = 'pomodoro' | 'simple'
 const LAST_SUBJECT_KEY = 'momentum-last-subject'
+const LAST_GROUP_KEY = 'momentum-last-group'
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
 
 function fmt(seconds: number): string {
@@ -68,6 +72,29 @@ export function PomodoroTimer() {
   const [changeSubjectOpen, setChangeSubjectOpen] = useState(false)
   const [changeSubjectConfirmation, setChangeSubjectConfirmation] = useState('')
   const changeSubjectConfirmationTimer = useRef<number | null>(null)
+  const [groupId, setGroupId] = useState<string>('')
+  const [myGroups, setMyGroups] = useState<Group[]>([])
+  const groupPresence = useGroupPresence(groupId)
+
+  useEffect(() => {
+    const uid = localStorage.getItem('momentum-cloud-uid')
+    if (uid) {
+      groupService.listMyGroups(uid).then(setMyGroups)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (groupId) localStorage.setItem(LAST_GROUP_KEY, groupId)
+  }, [groupId])
+
+  useEffect(() => {
+    if (groupId) return
+    const last = localStorage.getItem(LAST_GROUP_KEY)
+    if (last && myGroups.some((g) => g.id === last)) {
+      setGroupId(last)
+    }
+  }, [myGroups, groupId])
+
 
   // Mode — try to restore from localStorage
   const [mode, setMode] = useState<Mode>(() => {
@@ -390,6 +417,19 @@ export function PomodoroTimer() {
     return () => { document.title = 'Momentum' }
   }, [isRunning, simpleSeconds, pomSeconds])
 
+  // Group presence: write our live status to all of our groups when the
+  // timer is running, clear it when stopped. Subscribers in other members'
+  // group-detail / timer views see the update within ~1s via Firestore.
+  useEffect(() => {
+    if (!isRunning) return
+    const uid = localStorage.getItem('momentum-cloud-uid')
+    if (!uid) return
+    const name = localStorage.getItem('momentum-cloud-name') ?? 'Anonymous'
+    const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'
+    groupService.updatePresence(uid, name, subjectName).catch(() => {})
+    return () => { groupService.clearPresence(uid).catch(() => {}) }
+  }, [isRunning, subjectId, data.subjects])
+
   // Save config to localStorage
   function saveConfig(patch: Partial<typeof config>) {
     const updated = { ...config, ...patch }
@@ -430,12 +470,7 @@ export function PomodoroTimer() {
     }
     saveTimerState(state)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
-    // Update presence: let group members know you are studying
-    const presenceUid = localStorage.getItem('momentum-cloud-uid')
-    const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'
-    if (presenceUid) {
-      import('../../lib/group-service').then(({ groupService }) => groupService.updatePresence(presenceUid, '', subjectName).catch(() => {}))
-    }
+    // Presence is managed centrally by the `isRunning` effect above.
   }
 
   function pauseSimple() {
@@ -453,11 +488,7 @@ export function PomodoroTimer() {
       simplePausedOffset: elapsed,
     }
     saveTimerState(state)
-    // Clear presence on pause
-    const pauseUid = localStorage.getItem('momentum-cloud-uid')
-    if (pauseUid) {
-      import('../../lib/group-service').then(({ groupService }) => groupService.clearPresence(pauseUid).catch(() => {}))
-    }
+    // Presence is managed centrally by the `isRunning` effect above.
   }
 
   function resumeSimple() {
@@ -710,11 +741,9 @@ export function PomodoroTimer() {
   }
 
   const currentSeconds = mode === 'simple' ? simpleSeconds : pomSeconds
-  const cycleLabel =
-    pomPhase === 'focus' ? '🎯 Focus'
-    : pomPhase === 'shortBreak' ? '☕ Short Break'
-    : '🌿 Long Break'
-
+  const cycleLabel = mode === 'pomodoro' && settings.pomodoroEnabled
+    ? `Cycle ${(pomCycles % config.cycles) + 1} of ${config.cycles}`
+    : ''
   const isTimerActive = simpleStartedAt != null || pomStartedAt != null
   // YPT-style: total minutes studied today (committed sessions + current live session)
   const totalTodayMinutes = useMemo(() => {
@@ -979,10 +1008,30 @@ export function PomodoroTimer() {
                 </select>
               </div>
             )}
+            {myGroups.length > 0 && (
+              <div>
+                <label className="label">Group</label>
+                <select
+                  className="input"
+                  value={groupId}
+                  onChange={(e) => setGroupId(e.target.value)}
+                >
+                  <option value="">No group (solo)</option>
+                  {myGroups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </>
         ) : !(mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0)) ? (
           <div className="text-sm text-slate-600 dark:text-slate-300">
             Studying <span className="font-semibold">{data.subjects.find((s) => s.id === subjectId)?.name}</span>
+            {groupId && (
+              <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                in {myGroups.find((g) => g.id === groupId)?.name ?? 'group'}
+              </span>
+            )}
           </div>
         ) : null}
       </div>
@@ -999,6 +1048,26 @@ export function PomodoroTimer() {
           <div className="text-center text-sm text-slate-500 dark:text-slate-400">
             Total today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatTotalToday(totalTodayMinutes, isTimerActive && mode === 'simple')}</span>
           </div>
+          {/* Live group presence — show when timer is running and a group is selected */}
+          {groupId && groupPresence.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {myGroups.find((g) => g.id === groupId)?.name ?? 'Group'} — Studying Now
+              </div>
+              {groupPresence.map((p) => {
+                const mins = Math.floor((p.elapsedSeconds ?? 0) / 60)
+                const secs = (p.elapsedSeconds ?? 0) % 60
+                return (
+                  <div key={p.uid} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+                    <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                    <span className="font-medium">{p.displayName}</span>
+                    <span className="text-slate-400">{p.subjectName}</span>
+                    <span className="ml-auto tabular-nums text-slate-500">{mins}:{String(secs).padStart(2, '0')}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <div className="flex justify-center gap-2">
             {simpleStartedAt !== null ? (
               <Button variant="secondary" onClick={pauseSimple}>Pause</Button>

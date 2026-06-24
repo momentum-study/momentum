@@ -223,6 +223,7 @@ export default function Dashboard() {
   const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
   const [liveTimerSubjectId, setLiveTimerSubjectId] = useState<string | null>(null)
   useEffect(() => {
+    // Always poll every second — if no timer is active, just show 0
     const tick = () => {
       const active = isTimerActive()
       setLiveTimerSeconds(active ? getLiveTimerSeconds() : 0)
@@ -263,9 +264,9 @@ export default function Dashboard() {
     const session = data.sessions.find((s) => s.id === id)
     if (!session) return
     await db.sessions.delete(id)
+    syncSessionDelete(id)
     await revertRoutineLogsForSession(session)
     await revertStreakDayForSession(session)
-    await syncSessionDelete(id)
     await loadData()
     push({
       description: `Deleted session (${session.durationMinutes}m)`,

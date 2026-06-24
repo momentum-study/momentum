@@ -68,12 +68,14 @@ export default function GroupDetailPage() {
     // Merge current user's local sessions so unsynced sessions show.
     if (currentUid) {
       const localSessions = await localDb.sessions.toArray()
+      const subjects = await localDb.subjects.toArray()
+      const subjectNameMap = new Map(subjects.map((s) => [s.id, s.name]))
       const localSynced: SyncedSession[] = localSessions
         .filter((s) => !s.deletedAt)
         .map((s) => ({
           id: s.id,
           uid: currentUid,
-          subjectName: s.note ?? 'Unknown Subject',
+          subjectName: subjectNameMap.get(s.subjectId) ?? 'Unknown Subject',
           minutes: s.durationMinutes,
           startAt: s.startAt,
           endAt: s.endAt,

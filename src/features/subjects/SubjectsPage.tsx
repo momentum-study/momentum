@@ -10,6 +10,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { ColorPicker } from '../../components/ui/ColorPicker'
+import { useUndo } from '../../lib/use-undo'
 import type { Subject } from '../../domain/types'
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -34,6 +35,7 @@ const emptyFormData: SubjectFormData = {
 export default function SubjectsPage() {
   const { data, isLoading, loadData } = useData()
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const { push: pushUndo } = useUndo()
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null)
   const [deleteSubject, setDeleteSubject] = useState<Subject | null>(null)
   const [formData, setFormData] = useState<SubjectFormData>(emptyFormData)
@@ -108,23 +110,47 @@ export default function SubjectsPage() {
     try {
       const now = isoNow()
       const subjId = deleteSubject.id
+      const deletedAt = now
+      const updatedAt = now
+      // Snapshot the subject before deletion for undo
+      const originalSubject = deleteSubject
       // Soft-delete the subject and cascade to its projects, sessions, and assignments
       // so consumers that filter by !deletedAt don't see dangling references.
-      await db.subjects.update(subjId, { deletedAt: now, updatedAt: now })
-      const projectsToSoft = await db.projects.where('subjectId').equals(subjId).toArray()
-      for (const p of projectsToSoft) {
-        await db.projects.update(p.id, { deletedAt: now, updatedAt: now })
+      await db.subjects.update(subjId, { deletedAt, updatedAt })
+      const prevProjects = await db.projects.where('subjectId').equals(subjId).toArray()
+      for (const p of prevProjects) {
+        await db.projects.update(p.id, { deletedAt, updatedAt })
       }
-      const sessionsToSoft = await db.sessions.where('subjectId').equals(subjId).toArray()
-      for (const s of sessionsToSoft) {
-        await db.sessions.update(s.id, { deletedAt: now, updatedAt: now })
+      const prevSessions = await db.sessions.where('subjectId').equals(subjId).toArray()
+      for (const s of prevSessions) {
+        await db.sessions.update(s.id, { deletedAt, updatedAt })
       }
-      const assignmentsToSoft = await db.assignments.where('subjectId').equals(subjId).toArray()
-      for (const a of assignmentsToSoft) {
-        await db.assignments.update(a.id, { deletedAt: now, updatedAt: now })
+      const prevAssignments = await db.assignments.where('subjectId').equals(subjId).toArray()
+      for (const a of prevAssignments) {
+        await db.assignments.update(a.id, { deletedAt, updatedAt })
       }
       await loadData()
       setDeleteSubject(null)
+      pushUndo({
+        description: originalSubject
+          ? `Deleted focus area "${originalSubject.name}" and ${prevProjects.length + prevSessions.length + prevAssignments.length} related items`
+          : `Deleted focus area`,
+        undo: async () => {
+          await db.subjects.update(subjId, { deletedAt: null, updatedAt: isoNow() })
+          for (const p of prevProjects) await db.projects.update(p.id, { deletedAt: null, updatedAt: isoNow() })
+          for (const s of prevSessions) await db.sessions.update(s.id, { deletedAt: null, updatedAt: isoNow() })
+          for (const a of prevAssignments) await db.assignments.update(a.id, { deletedAt: null, updatedAt: isoNow() })
+          await loadData()
+        },
+        redo: async () => {
+          const redoNow = isoNow()
+          await db.subjects.update(subjId, { deletedAt: redoNow, updatedAt: redoNow })
+          for (const p of prevProjects) await db.projects.update(p.id, { deletedAt: redoNow, updatedAt: redoNow })
+          for (const s of prevSessions) await db.sessions.update(s.id, { deletedAt: redoNow, updatedAt: redoNow })
+          for (const a of prevAssignments) await db.assignments.update(a.id, { deletedAt: redoNow, updatedAt: redoNow })
+          await loadData()
+        },
+      })
     } finally {
       setIsSaving(false)
     }
@@ -196,7 +222,7 @@ export default function SubjectsPage() {
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.subjects.filter((s) => !filterCategory || s.categoryId === filterCategory).map((subject) => (
+          {data.subjects.filter((s) => (!filterCategory || s.categoryId === filterCategory) && !s.deletedAt).map((subject) => (
             <Card key={subject.id}>
               <div className="flex items-start gap-3">
                 <div

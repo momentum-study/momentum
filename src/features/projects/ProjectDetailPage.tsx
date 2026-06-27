@@ -4,7 +4,7 @@ import { format, parseISO } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, formatMinutes, isoNow, sessionLocalDate } from '../../lib/utils'
+import { cn, formatMinutes, isoNow, sessionLocalDate, softDelete } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -111,9 +111,10 @@ export default function ProjectDetailPage() {
   }
 
   async function deleteTask(task: Assignment) {
-    await db.assignments.delete(task.id)
+    const deleted = await softDelete(db.assignments, task.id)
+    if (!deleted) return
     await loadData()
-    pushUndo({ description: `Deleted task "${task.title}"`, undo: async () => { await db.assignments.add(task); await loadData() }, redo: async () => { await db.assignments.delete(task.id); await loadData() } })
+    pushUndo({ description: `Deleted task "${task.title}"`, undo: async () => { await db.assignments.put({ ...task, deletedAt: null, updatedAt: isoNow() }); await loadData() }, redo: async () => { await db.assignments.put({ ...task, deletedAt: deleted.deletedAt, updatedAt: isoNow() }); await loadData() } })
   }
 
   async function moveTask(task: Assignment, direction: 1 | -1) {

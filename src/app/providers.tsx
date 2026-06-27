@@ -129,9 +129,13 @@ async function loadAllData(): Promise<AppData> {
       return a.dayOfWeek - b.dayOfWeek
     }),
     hobbies: [...hobbies].sort(((a, b) => a.name.localeCompare(b.name))),
-    hobbySessions: [...hobbySessions].sort(((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime())),
+    hobbySessions: [...hobbySessions]
+      .filter((s) => s.startAt && !isNaN(new Date(s.startAt).getTime()))
+      .sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
     studyAreas: [...studyAreas].sort(((a, b) => a.name.localeCompare(b.name))),
-    studyReviews: [...studyReviews].sort(((a, b) => parseISO(b.reviewedAt).getTime() - parseISO(a.reviewedAt).getTime())),
+    studyReviews: [...studyReviews]
+      .filter((r) => r.reviewedAt && !isNaN(new Date(r.reviewedAt).getTime()))
+      .sort((a, b) => parseISO(b.reviewedAt).getTime() - parseISO(a.reviewedAt).getTime()),
   }
 }
 const DataContext = createContext<DataContextValue | null>(null)

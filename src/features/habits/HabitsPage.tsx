@@ -3,7 +3,7 @@ import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, getDay, a
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { loadSettings } from '../settings/SettingsPage'
-import { cn, isoNow, sessionLocalDate } from '../../lib/utils'
+import { cn, isoNow, sessionLocalDate, softDelete } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
@@ -62,20 +62,20 @@ export default function HabitsPage() {
   const selectedHabitLogs = useMemo(() => {
     if (!selectedId) return []
     return data.habitLogs
-      .filter((l) => l.habitId === selectedId)
+      .filter((l) => l.habitId === selectedId && !l.deletedAt)
       .sort((a, b) => {
         const dateCmp = b.date.localeCompare(a.date)
         if (dateCmp !== 0) return dateCmp
         return (b.time || '').localeCompare(a.time || '')
       })
   }, [data.habitLogs, selectedId])
-  const archivedHabits = data.habits.filter((h) => !!h.archivedAt)
+  const archivedHabits = data.habits.filter((h) => !!h.archivedAt && !h.deletedAt)
   // Active = not archived AND not parked as a potential habit
-  const currentHabits = data.habits.filter((h) => !h.archivedAt && h.status !== 'potential')
-  const potentialHabits = data.habits.filter((h) => !h.archivedAt && h.status === 'potential')
+  const currentHabits = data.habits.filter((h) => !h.archivedAt && h.status !== 'potential' && !h.deletedAt)
+  const potentialHabits = data.habits.filter((h) => !h.archivedAt && h.status === 'potential' && !h.deletedAt)
   const goodHabits = currentHabits.filter((h) => h.kind === 'good')
   const badHabits = currentHabits.filter((h) => h.kind === 'bad')
-  const selectedHabit = data.habits.find((h) => h.id === selectedId) ?? null
+  const selectedHabit = data.habits.find((h) => h.id === selectedId && !h.deletedAt) ?? null
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
   // Check if we are over the habit limit
@@ -392,15 +392,33 @@ export default function HabitsPage() {
     const habit = await db.habits.get(id)
     const logs = await db.habitLogs.where('habitId').equals(id).toArray()
     if (!habit) return
-    await db.habits.delete(id)
-    await db.habitLogs.where('habitId').equals(id).delete()
+    // Soft-delete the habit
+    await softDelete(db.habits, id)
+    // Soft-delete all associated logs
+    const now = isoNow()
+    for (const log of logs) {
+      await db.habitLogs.update(log.id, { deletedAt: now, updatedAt: now })
+    }
     if (selectedId === id) setSelectedId(null)
     setDeleteConfirm(null)
     await loadData()
     pushUndo({
       description: `Deleted habit "${habit.name}"`,
-      undo: async () => { await db.habits.put(habit); if (logs.length > 0) await db.habitLogs.bulkPut(logs); await loadData() },
-      redo: async () => { await db.habits.delete(id); await db.habitLogs.where('habitId').equals(id).delete(); await loadData() },
+      undo: async () => {
+        await db.habits.put({ ...habit, deletedAt: null, updatedAt: isoNow() })
+        for (const log of logs) {
+          await db.habitLogs.put({ ...log, deletedAt: null, updatedAt: isoNow() })
+        }
+        await loadData()
+      },
+      redo: async () => {
+        const redoNow = isoNow()
+        await db.habits.update(id, { deletedAt: redoNow, updatedAt: redoNow })
+        for (const log of logs) {
+          await db.habitLogs.update(log.id, { deletedAt: redoNow, updatedAt: redoNow })
+        }
+        await loadData()
+      },
     })
   }
 

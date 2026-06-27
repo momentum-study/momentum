@@ -545,7 +545,7 @@ export default function Dashboard() {
                       >
                         <span>{date.getDate()}</span>
                         <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800">
-                          {format(date, 'd MMM')}: {minutes}m
+                          {format(date, 'd MMM')}: {formatMinutes(minutes)}
                         </div>
                       </div>
                     )
@@ -821,18 +821,24 @@ export default function Dashboard() {
               </div>
             )
           })()}
-          <div className="flex gap-2">
+          <div className="flex gap-2 p-1 rounded-md bg-slate-100 dark:bg-slate-700/50">
             <button
               type="button"
               onClick={() => { setLogHobbyMode(false); setLogHobbyId('') }}
-              className={cn('px-3 py-1.5 rounded text-sm font-medium', !logHobbyMode ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600')}
+              className={cn(
+                'flex-1 px-3 py-1.5 rounded-sm text-sm font-medium transition-all',
+                !logHobbyMode ? 'bg-white text-primary-600 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+              )}
             >
               Study
             </button>
             <button
               type="button"
               onClick={() => { setLogHobbyMode(true); setLogSubjectId(''); setLogProjectId(''); setLogTaskId('') }}
-              className={cn('px-3 py-1.5 rounded text-sm font-medium', logHobbyMode ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-600')}
+              className={cn(
+                'flex-1 px-3 py-1.5 rounded-sm text-sm font-medium transition-all',
+                logHobbyMode ? 'bg-white text-primary-600 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+              )}
             >
               Hobby
             </button>
@@ -881,7 +887,7 @@ export default function Dashboard() {
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="label">Minutes</label>
-              <input type="text" inputMode="numeric" pattern="[0-9]*" className="input w-24" value={logDuration === 1 ? '' : String(logDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setLogDuration(1); return }; const n = Number(v); if (isNaN(n)) return; setLogDuration(Math.max(1, n)) }} />
+              <input type="text" inputMode="numeric" pattern="[0-9]*" className="input w-24" value={logDuration === 0 ? '' : String(logDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setLogDuration(0); return }; const n = Number(v); if (isNaN(n)) return; setLogDuration(n) }} />
             </div>
             <div>
               <label className="label">Date</label>

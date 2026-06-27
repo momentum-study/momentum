@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { cn } from '../../lib/utils'
 
 interface ModalProps {
@@ -13,32 +13,26 @@ interface ModalProps {
 export function Modal({ open, onClose, title, children, className }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const lastFocusedRef = useRef<HTMLElement | null>(null)
-  const [isOpening, setIsOpening] = useState(false)
 
   useEffect(() => {
     const el = dialogRef.current
     if (!el) return
 
     if (open && !el.open) {
+      // Remember which element had focus before opening, so we can restore it on close
       lastFocusedRef.current = document.activeElement as HTMLElement | null
-      setIsOpening(true)
       el.showModal()
+      // Focus the first focusable element inside the modal for a11y/keyboard
       requestAnimationFrame(() => {
-        // Prefer form controls (input, select, textarea) over buttons to avoid focusing the close button first
-        const formControl = el.querySelector<HTMLElement>('input:not([type="hidden"]), select, textarea')
-        if (formControl) {
-          formControl.focus()
-        } else {
-          const focusable = el.querySelector<HTMLElement>(
-            'button, [href], [tabindex]:not([tabindex="-1"])'
-          )
-          focusable?.focus()
-        }
-        setIsOpening(false)
+        const focusable = el.querySelector<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+        focusable?.focus()
       })
     }
     if (!open && el.open) {
       el.close()
+      // Restore focus to the trigger element
       lastFocusedRef.current?.focus()
     }
   }, [open])
@@ -47,15 +41,17 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
     <dialog
       ref={dialogRef}
       onClose={onClose}
+      // The native dialog fires `cancel` (ESC) and `click` on the backdrop pseudo-element.
+      // We handle cancel explicitly here, so suppress the default native close to avoid the
+      // double-fire of the onClose handler.
       onCancel={(e) => { e.preventDefault(); onClose() }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target !== e.currentTarget) return
+        onClose()
       }}
       className={cn(
-        'w-full max-w-lg rounded-xl border border-slate-200 bg-white p-0 shadow-lg backdrop:backdrop-blur-sm backdrop:bg-black/40',
+        'w-full max-w-lg rounded-lg border border-slate-200 bg-white p-0 shadow-lg backdrop:bg-black/40',
         'dark:border-slate-700 dark:bg-slate-800',
-        'transition-opacity duration-150',
-        isOpening ? 'opacity-0 scale-[0.98]' : 'opacity-100 scale-100',
         className
       )}
       onKeyDown={(e) => {
@@ -88,7 +84,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
           </button>
         </div>
       )}
-      <div className="p-4">{children}</div>
+      <div className="p-4" onClick={(e) => e.stopPropagation()}>{children}</div>
     </dialog>
   )
 }

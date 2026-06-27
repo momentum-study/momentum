@@ -34,7 +34,7 @@ interface NavPrefs {
   hidden: string[]
 }
 
-const DEFAULT_PREFS: NavPrefs = { order: [], hidden: [] }
+const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/routines', '/marks', '/study', '/groups', '/categories', '/reports', '/reviews'] }
 
 function loadPrefs(): NavPrefs {
   if (typeof localStorage === 'undefined') return { ...DEFAULT_PREFS }

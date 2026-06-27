@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../../lib/utils'
@@ -158,6 +158,19 @@ export function AppLayout({ children }: { children: ReactNode }) {
       const target = idx + direction
       if (target < 0 || target >= order.length) return prev
       ;[order[idx], order[target]] = [order[target], order[idx]]
+      return { ...prev, order }
+    })
+  }
+  const dragFromIdx = useRef<number | null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+
+  function reorderItem(fromIdx: number, toIdx: number) {
+    if (!draftPrefs || fromIdx === toIdx) return
+    setDraftPrefs((prev) => {
+      if (!prev) return prev
+      const order = [...prev.order]
+      const [moved] = order.splice(fromIdx, 1)
+      order.splice(toIdx, 0, moved)
       return { ...prev, order }
     })
   }
@@ -329,8 +342,25 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 return (
                   <li
                     key={to}
-                    className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-900"
+                    draggable={true}
+                    onDragStart={() => { dragFromIdx.current = idx }}
+                    onDragOver={(e) => { e.preventDefault(); setDragOverIdx(idx) }}
+                    onDragEnter={(e) => { e.preventDefault(); setDragOverIdx(idx) }}
+                    onDragLeave={() => setDragOverIdx(null)}
+                    onDrop={() => {
+                      const from = dragFromIdx.current
+                      dragFromIdx.current = null
+                      setDragOverIdx(null)
+                      if (from !== null) reorderItem(from, idx)
+                    }}
+                    onDragEnd={() => { dragFromIdx.current = null; setDragOverIdx(null) }}
+                    className={cn(
+                      'flex cursor-grab items-center gap-2 rounded-md border px-2 py-1.5 active:cursor-grabbing',
+                      'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900',
+                      dragOverIdx === idx && 'border-primary-400 dark:border-primary-500'
+                    )}
                   >
+                    <span className="cursor-grab text-slate-400 dark:text-slate-500" aria-label="Drag to reorder">⠿</span>
                     <div className="flex flex-col">
                       <button
                         type="button"

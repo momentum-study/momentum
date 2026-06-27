@@ -130,11 +130,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const visibleItems = applyPrefs(NAV_ITEMS, prefs)
   function openCustomizer() {
-    // Seed draft with current effective state so the dialog reflects what's live.
-    const visibleTos = new Set(visibleItems.map((i) => i.to))
+    // Seed draft with ALL nav items so hidden ones appear and can be restored.
     setDraftPrefs({
-      order: visibleItems.map((i) => i.to),
-      hidden: NAV_ITEMS.map((i) => i.to).filter((to) => !visibleTos.has(to)),
+      order: NAV_ITEMS.map((i) => i.to),
+      hidden: [...prefs.hidden],
     })
   }
 
@@ -355,7 +354,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     <span className="text-lg" aria-hidden>{item.icon}</span>
                     <span
                       className={cn(
-                        'flex-1 text-sm font-medium',
+                        'flex-1 text-sm font-medium text-slate-700 dark:text-slate-200',
                         isHidden && 'text-slate-400 line-through dark:text-slate-500'
                       )}
                     >

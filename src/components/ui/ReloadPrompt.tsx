@@ -97,6 +97,9 @@ export function ReloadPrompt() {
                 onClick={() => {
                   setBroadcastUpdate(false)
                   void updateServiceWorker(true)
+                  // Fallback: if the SW was already activated (e.g. via BroadcastChannel
+                  // skip-waiting), updateServiceWorker won't trigger a reload on its own.
+                  setTimeout(() => window.location.reload(), 500)
                 }}
               >
                 Reload

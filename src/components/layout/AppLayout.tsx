@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useData } from '../../app/providers'
+import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { UndoToast } from '../ui/UndoToast'
 import { Modal } from '../ui/Modal'
@@ -12,7 +11,7 @@ import { FloatingTimerBanner } from '../ui/FloatingTimerBanner'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '🏠' },
-  { to: '/subjects', label: 'Subjects', icon: '📚' },
+  { to: '/subjects', label: 'Focus Areas', icon: '📚' },
   { to: '/projects', label: 'Projects', icon: '🎯' },
   { to: '/routines', label: 'Routines', icon: '📋' },
   { to: '/marks', label: 'Marks', icon: '📝' },
@@ -28,6 +27,8 @@ const NAV_ITEMS = [
 ]
 
 const PREFS_KEY = 'momentum-nav-prefs'
+const PREFS_VERSION_KEY = 'momentum-nav-prefs-version'
+const CURRENT_PREFS_VERSION = 2
 
 interface NavPrefs {
   order: string[]
@@ -39,6 +40,13 @@ const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/routines', '/marks', '/s
 function loadPrefs(): NavPrefs {
   if (typeof localStorage === 'undefined') return { ...DEFAULT_PREFS }
   try {
+    const version = Number(localStorage.getItem(PREFS_VERSION_KEY))
+    if (version < CURRENT_PREFS_VERSION) {
+      localStorage.setItem(PREFS_VERSION_KEY, String(CURRENT_PREFS_VERSION))
+      localStorage.setItem('momentum-nav-just-reset', 'true')
+      savePrefs(DEFAULT_PREFS)
+      return { ...DEFAULT_PREFS }
+    }
     const raw = localStorage.getItem(PREFS_KEY)
     if (!raw) return { ...DEFAULT_PREFS }
     const parsed = JSON.parse(raw) as Partial<NavPrefs>
@@ -108,31 +116,17 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }, [mobileSidebarOpen])
   const [prefs, setPrefs] = useState<NavPrefs>(() => loadPrefs())
   const [draftPrefs, setDraftPrefs] = useState<NavPrefs | null>(null)
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
-  const { data } = useData()
-  const dueCount = useMemo(() => {
-    const cutoff = Date.now() + 24 * 60 * 60 * 1000
-    let n = 0
-    for (const a of data.assignments) {
-      if (a.deletedAt || a.completed || !a.dueDate) continue
-      if (new Date(a.dueDate).getTime() <= cutoff) n++
-    }
-    return n
-  }, [data.assignments])
-   const location = useLocation()
-   const navigate = useNavigate()
-
-  // Ctrl+K / Cmd+K opens the command palette
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setCommandPaletteOpen((v) => !v)
+  const [navNotification, setNavNotification] = useState(() => {
+    if (typeof localStorage === 'undefined') return false
+    try {
+      if (localStorage.getItem('momentum-nav-just-reset') === 'true') {
+        localStorage.removeItem('momentum-nav-just-reset')
+        return true
       }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [])
+    } catch {}
+    return false
+  })
+  const location = useLocation()
 
   const visibleItems = applyPrefs(NAV_ITEMS, prefs)
   function openCustomizer() {
@@ -181,15 +175,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <>
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:inset-x-0 focus:top-0 focus:z-50 focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-center focus:text-sm focus:font-semibold focus:text-white focus:outline-none"
-      >
-        Skip to content
-      </a>
-      <div className="flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-        <SyncBanner />
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+      <SyncBanner />
       <div className="flex flex-1 overflow-hidden">
       <aside
         className={cn(
@@ -219,14 +206,23 @@ export function AppLayout({ children }: { children: ReactNode }) {
             >
               <span aria-hidden="true">{item.icon}</span>
               <span>{item.label}</span>
-              {item.to === '/calendar' && dueCount > 0 && (
-                <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-                  {dueCount > 9 ? '9+' : dueCount}
-                </span>
-              )}
             </NavLink>
           ))}
         </nav>
+        {navNotification && (
+          <div className="mx-2 mb-1 rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-xs text-primary-800 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
+            <div className="flex items-start justify-between gap-2">
+              <p>Sidebar cleaned up. Use <strong>Customise</strong> below to add back any pages you want.</p>
+              <button
+                onClick={() => setNavNotification(false)}
+                className="shrink-0 rounded p-0.5 text-primary-500 hover:text-primary-700 dark:text-primary-300"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
         <div className="border-t border-slate-200 px-2 py-2 dark:border-slate-700">
           <button
             onClick={openCustomizer}
@@ -281,11 +277,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 >
                   <span aria-hidden="true">{item.icon}</span>
                   <span>{item.label}</span>
-                  {item.to === '/calendar' && dueCount > 0 && (
-                    <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-                      {dueCount > 9 ? '9+' : dueCount}
-                    </span>
-                  )}
                 </NavLink>
               ))}
             </nav>
@@ -308,6 +299,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <button
             onClick={() => isMobile ? setMobileSidebarOpen(!mobileSidebarOpen) : setSidebarOpen(!sidebarOpen)}
             className="rounded p-1 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+            aria-label="Toggle sidebar"
           >
             ☰
           </button>
@@ -315,8 +307,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
             {NAV_ITEMS.find((n) => n.to === location.pathname)?.label ?? 'Momentum'}
           </h1>
         </header>
-        <main id="main-content" className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
-      </div>
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        </div>
       </div>
       <UndoToast />
       <FloatingTimerBanner />
@@ -393,50 +385,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         )}
       </Modal>
-      <Modal
-        open={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-        title="Command Palette"
-      >
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Press Ctrl+K or Cmd+K to open</p>
-          <div className="grid gap-2">
-            <button
-              type="button"
-              onClick={() => { setCommandPaletteOpen(false); navigate('/'); }}
-              className="text-left px-3 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 focus:bg-slate-100 dark:focus:bg-slate-700 focus:outline-none"
-            >
-              <div className="font-medium">Start timer</div>
-              <div className="text-xs text-slate-500">Navigate to dashboard</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => { setCommandPaletteOpen(false); navigate('/'); }}
-              className="text-left px-3 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 focus:bg-slate-100 dark:focus:bg-slate-700 focus:outline-none"
-            >
-              <div className="font-medium">Log session</div>
-              <div className="text-xs text-slate-500">Create a new session log</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => { setCommandPaletteOpen(false); navigate('/habits'); }}
-              className="text-left px-3 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 focus:bg-slate-100 dark:focus:bg-slate-700 focus:outline-none"
-            >
-              <div className="font-medium">Add habit</div>
-              <div className="text-xs text-slate-500">Navigate to habits page</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => { setCommandPaletteOpen(false); navigate('/subjects'); }}
-              className="text-left px-3 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 focus:bg-slate-100 dark:focus:bg-slate-700 focus:outline-none"
-            >
-              <div className="font-medium">Manage subjects</div>
-              <div className="text-xs text-slate-500">Navigate to subjects page</div>
-            </button>
-          </div>
-        </div>
-      </Modal>
     </div>
-    </>
   )
 }

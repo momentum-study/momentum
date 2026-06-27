@@ -45,10 +45,6 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       // We handle cancel explicitly here, so suppress the default native close to avoid the
       // double-fire of the onClose handler.
       onCancel={(e) => { e.preventDefault(); onClose() }}
-      onClick={(e) => {
-        if (e.target !== e.currentTarget) return
-        onClose()
-      }}
       className={cn(
         'w-full max-w-lg rounded-lg border border-slate-200 bg-white p-0 shadow-lg backdrop:bg-black/40',
         'dark:border-slate-700 dark:bg-slate-800',

@@ -27,6 +27,8 @@ const NAV_ITEMS = [
 ]
 
 const PREFS_KEY = 'momentum-nav-prefs'
+const PREFS_VERSION_KEY = 'momentum-nav-prefs-version'
+const CURRENT_PREFS_VERSION = 2
 
 interface NavPrefs {
   order: string[]
@@ -38,6 +40,13 @@ const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/routines', '/marks', '/s
 function loadPrefs(): NavPrefs {
   if (typeof localStorage === 'undefined') return { ...DEFAULT_PREFS }
   try {
+    const version = Number(localStorage.getItem(PREFS_VERSION_KEY))
+    if (version < CURRENT_PREFS_VERSION) {
+      localStorage.setItem(PREFS_VERSION_KEY, String(CURRENT_PREFS_VERSION))
+      localStorage.setItem('momentum-nav-just-reset', 'true')
+      savePrefs(DEFAULT_PREFS)
+      return { ...DEFAULT_PREFS }
+    }
     const raw = localStorage.getItem(PREFS_KEY)
     if (!raw) return { ...DEFAULT_PREFS }
     const parsed = JSON.parse(raw) as Partial<NavPrefs>
@@ -107,6 +116,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }, [mobileSidebarOpen])
   const [prefs, setPrefs] = useState<NavPrefs>(() => loadPrefs())
   const [draftPrefs, setDraftPrefs] = useState<NavPrefs | null>(null)
+  const [navNotification, setNavNotification] = useState(() => {
+    if (typeof localStorage === 'undefined') return false
+    try {
+      if (localStorage.getItem('momentum-nav-just-reset') === 'true') {
+        localStorage.removeItem('momentum-nav-just-reset')
+        return true
+      }
+    } catch {}
+    return false
+  })
   const location = useLocation()
 
   const visibleItems = applyPrefs(NAV_ITEMS, prefs)
@@ -190,6 +209,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
         </nav>
+        {navNotification && (
+          <div className="mx-2 mb-1 rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-xs text-primary-800 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-200">
+            <div className="flex items-start justify-between gap-2">
+              <p>Sidebar cleaned up. Use <strong>Customise</strong> below to add back any pages you want.</p>
+              <button
+                onClick={() => setNavNotification(false)}
+                className="shrink-0 rounded p-0.5 text-primary-500 hover:text-primary-700 dark:text-primary-300"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
         <div className="border-t border-slate-200 px-2 py-2 dark:border-slate-700">
           <button
             onClick={openCustomizer}

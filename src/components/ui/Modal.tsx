@@ -46,8 +46,8 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       // double-fire of the onClose handler.
       onCancel={(e) => { e.preventDefault(); onClose() }}
       onClick={(e) => {
-        // Backdrop click closes the dialog
-        if (e.target === e.currentTarget) onClose()
+        if (e.target !== e.currentTarget) return
+        onClose()
       }}
       className={cn(
         'w-full max-w-lg rounded-lg border border-slate-200 bg-white p-0 shadow-lg backdrop:bg-black/40',
@@ -84,7 +84,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
           </button>
         </div>
       )}
-      <div className="p-4">{children}</div>
+      <div className="p-4" onClick={(e) => e.stopPropagation()}>{children}</div>
     </dialog>
   )
 }

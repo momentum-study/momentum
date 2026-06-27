@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { useUndo } from '../../lib/use-undo'
@@ -24,6 +24,14 @@ export default function HobbiesPage() {
   const [detailSkillLevel, setDetailSkillLevel] = useState(0)
   const [detailNotes, setDetailNotes] = useState('')
   const [menuHobbyId, setMenuHobbyId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!detailHobby) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setDetailHobby(null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [detailHobby])
 
   const hobbySessionsByHobby = useMemo(() => {
     const map: Record<string, HobbySession[]> = {}
@@ -272,8 +280,8 @@ export default function HobbiesPage() {
       {detailHobby && (
         <>
           <div className="fixed inset-0 z-30 bg-black/40" onClick={() => setDetailHobby(null)} />
-          <div className="fixed right-0 top-0 z-40 h-full w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between mb-6">
+          <div className="fixed right-0 top-0 z-40 flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
               <div className="flex items-center gap-2">
                 <span className="w-4 h-4 rounded-full" style={{ backgroundColor: detailHobby.color }} />
                 <h3 className="text-lg font-semibold">{detailHobby.name}</h3>
@@ -283,6 +291,7 @@ export default function HobbiesPage() {
                 <button onClick={() => setDetailHobby(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700">✕</button>
               </div>
             </div>
+            <div className="flex-1 overflow-y-auto p-6">
 
             {/* 90-day heatmap */}
             <div className="mb-6">
@@ -376,6 +385,7 @@ export default function HobbiesPage() {
                   ))}
                 </ul>
               )}
+            </div>
             </div>
           </div>
         </>

@@ -11,11 +11,12 @@ export function cn(...inputs: ClassValue[]): string {
 }
 
 export function formatMinutes(minutes: number): string {
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  if (h === 0) return `${m}m`
-  if (m === 0) return `${h}h`
-  return `${h}h ${m}m`
+  const m = Math.round(minutes)
+  const h = Math.floor(m / 60)
+  const r = m % 60
+  if (h === 0) return `${r}m`
+  if (r === 0) return `${h}h`
+  return `${h}h ${r}m`
 }
 
 export function formatHours(minutes: number): string {

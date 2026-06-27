@@ -81,7 +81,7 @@ export function Collapsible({ id, title, count, badge, defaultOpen, accent, chil
           open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
         )}
       >
-        <div className="overflow-hidden">
+        <div className={cn(open ? '' : 'overflow-hidden')}>
           <div className="pt-2 pb-1">{children}</div>
         </div>
       </div>

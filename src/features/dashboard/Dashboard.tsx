@@ -269,8 +269,8 @@ export default function Dashboard() {
     })
   }
 
-  if (isLoading) return <PageSpinner />
   const settings = useMemo(() => loadSettings(), [])
+  if (isLoading) return <PageSpinner />
   const todayMinutes = academicSessions
     .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
     .reduce((sum, s) => sum + s.durationMinutes, 0)

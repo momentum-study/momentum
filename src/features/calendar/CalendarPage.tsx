@@ -428,10 +428,17 @@ export default function CalendarPage() {
                       </div>
                       <ul className="space-y-1.5">
                         {items.map((it) => (
-                          <li key={it.id}>
+                          <li key={it.id} className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={it.completed}
+                              onChange={() => void quickCompleteTask(it)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-3.5 w-3.5 flex-shrink-0 cursor-pointer"
+                            />
                             <button
                               onClick={() => openEditModal(it)}
-                              className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                              className="flex flex-1 items-center gap-2 rounded px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
                             >
                               <span
                                 className="inline-block h-2 w-2 flex-shrink-0 rounded-full"

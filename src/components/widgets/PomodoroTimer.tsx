@@ -12,14 +12,14 @@ import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
 import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor } from '../../lib/timer-persistence'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
-import { useGroupPresence } from '../../lib/use-group-presence'
+import { useAllGroupsPresence } from '../../lib/use-all-groups-presence'
 import { groupService } from '../../lib/group-service'
-import type { Group } from '../../domain/cloud-types'
+import type { Group, GroupPresence } from '../../domain/cloud-types'
 import { pushSettings } from '../../lib/settings-sync'
 
 type Mode = 'pomodoro' | 'simple'
 const LAST_SUBJECT_KEY = 'momentum-last-subject'
-const LAST_GROUP_KEY = 'momentum-last-group'
+
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
 
 function fmt(seconds: number): string {
@@ -56,6 +56,100 @@ function getPhaseDuration(phase: Phase, cfg?: { focusMinutes: number; breakMinut
   return c.longBreakMinutes * 60
 }
 
+/** Tabbed view of who's studying in each of the user's groups. */
+function GroupPresenceTabs({
+  groups,
+  presenceByGroup,
+}: {
+  groups: Group[]
+  presenceByGroup: Map<string, GroupPresence[]>
+}) {
+  const [activeId, setActiveId] = useState<string>(groups[0]?.id ?? '')
+
+  // If the active group disappears (e.g. left group), fall back to the first.
+  useEffect(() => {
+    if (activeId && groups.some((g) => g.id === activeId)) return
+    if (groups[0]) setActiveId(groups[0].id)
+  }, [groups, activeId])
+
+  const totalActive = groups.reduce(
+    (sum, g) => sum + (presenceByGroup.get(g.id)?.length ?? 0),
+    0,
+  )
+
+  if (groups.length === 0) return null
+
+  const activeRecords = presenceByGroup.get(activeId) ?? []
+
+  return (
+    <div className="space-y-2 rounded-md border border-primary-200/60 bg-white/50 p-2 dark:border-primary-800/60 dark:bg-slate-900/30">
+      <div className="flex items-center gap-1 overflow-x-auto">
+        {groups.map((g) => {
+          const count = presenceByGroup.get(g.id)?.length ?? 0
+          const isActive = g.id === activeId
+          return (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => setActiveId(g.id)}
+              className={cn(
+                'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                isActive
+                  ? 'bg-primary-100 text-primary-800 dark:bg-primary-900/50 dark:text-primary-100'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
+              )}
+              aria-pressed={isActive}
+            >
+              <span>{g.name}</span>
+              <span
+                className={cn(
+                  'flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums',
+                  count > 0
+                    ? 'bg-green-500 text-white'
+                    : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
+                )}
+              >
+                {count}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+        {groups.find((g) => g.id === activeId)?.name} —{' '}
+        {totalActive === 0
+          ? 'no one studying right now'
+          : `${totalActive} active across ${groups.filter((g) => (presenceByGroup.get(g.id)?.length ?? 0) > 0).length || 0} groups`}
+      </div>
+      {activeRecords.length === 0 ? (
+        <div className="text-xs italic text-slate-400 dark:text-slate-500">
+          No one in this group is studying right now.
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {activeRecords.map((p) => {
+            const mins = Math.floor((p.elapsedSeconds ?? 0) / 60)
+            const secs = (p.elapsedSeconds ?? 0) % 60
+            return (
+              <div
+                key={p.uid}
+                className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300"
+              >
+                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="font-medium">{p.displayName || 'Member'}</span>
+                <span className="text-slate-400">{p.subjectName}</span>
+                <span className="ml-auto tabular-nums text-slate-500">
+                  {mins}:{String(secs).padStart(2, '0')}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function PomodoroTimer() {
   const { data, loadData } = useData()
   const [settings, setSettings] = useState<Settings>(loadSettings)
@@ -76,28 +170,17 @@ export function PomodoroTimer() {
   const [changeSubjectOpen, setChangeSubjectOpen] = useState(false)
   const [changeSubjectConfirmation, setChangeSubjectConfirmation] = useState('')
   const changeSubjectConfirmationTimer = useRef<number | null>(null)
-  const [groupId, setGroupId] = useState<string>('')
   const [myGroups, setMyGroups] = useState<Group[]>([])
-  const groupPresence = useGroupPresence(groupId)
+  const [uid, setUid] = useState<string | null>(null)
+  const allGroupsPresence = useAllGroupsPresence(uid)
 
   useEffect(() => {
-    const uid = localStorage.getItem('momentum-cloud-uid')
-    if (uid) {
-      groupService.listMyGroups(uid).then(setMyGroups)
+    const stored = localStorage.getItem('momentum-cloud-uid')
+    if (stored) {
+      setUid(stored)
+      groupService.listMyGroups(stored).then(setMyGroups)
     }
   }, [])
-
-  useEffect(() => {
-    if (groupId) localStorage.setItem(LAST_GROUP_KEY, groupId)
-  }, [groupId])
-
-  useEffect(() => {
-    if (groupId) return
-    const last = localStorage.getItem(LAST_GROUP_KEY)
-    if (last && myGroups.some((g) => g.id === last)) {
-      setGroupId(last)
-    }
-  }, [myGroups, groupId])
 
 
   // Mode — try to restore from localStorage
@@ -1010,28 +1093,13 @@ export function PomodoroTimer() {
                 </select>
               </div>
             )}
-            {myGroups.length > 0 && (
-              <div>
-                <label className="label">Group</label>
-                <select
-                  className="input"
-                  value={groupId}
-                  onChange={(e) => setGroupId(e.target.value)}
-                >
-                  <option value="">No group (solo)</option>
-                  {myGroups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
           </>
         ) : !(mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0)) ? (
           <div className="text-sm text-slate-600 dark:text-slate-300">
             Studying <span className="font-semibold">{data.subjects.find((s) => s.id === subjectId)?.name}</span>
-            {groupId && (
+            {myGroups.length > 0 && (
               <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                in {myGroups.find((g) => g.id === groupId)?.name ?? 'group'}
+                {myGroups.length} group{myGroups.length === 1 ? '' : 's'}
               </span>
             )}
           </div>
@@ -1050,25 +1118,12 @@ export function PomodoroTimer() {
           <div className="text-center text-sm text-slate-500 dark:text-slate-400">
             Total today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatTotalToday(totalTodayMinutes, isTimerActive && mode === 'simple')}</span>
           </div>
-          {/* Live group presence — show when timer is running and a group is selected */}
-          {groupId && groupPresence.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {myGroups.find((g) => g.id === groupId)?.name ?? 'Group'} — Studying Now
-              </div>
-              {groupPresence.map((p) => {
-                const mins = Math.floor((p.elapsedSeconds ?? 0) / 60)
-                const secs = (p.elapsedSeconds ?? 0) % 60
-                return (
-                  <div key={p.uid} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
-                    <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="font-medium">{p.displayName}</span>
-                    <span className="text-slate-400">{p.subjectName}</span>
-                    <span className="ml-auto tabular-nums text-slate-500">{mins}:{String(secs).padStart(2, '0')}</span>
-                  </div>
-                )
-              })}
-            </div>
+          {/* Live group presence — show when timer is running */}
+          {myGroups.length > 0 && (
+            <GroupPresenceTabs
+              groups={myGroups}
+              presenceByGroup={allGroupsPresence}
+            />
           )}
           <div className="flex justify-center gap-2">
             {simpleStartedAt !== null ? (

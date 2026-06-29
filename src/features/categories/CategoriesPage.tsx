@@ -34,8 +34,8 @@ export default function CategoriesPage() {
 
   if (isLoading) return <PageSpinner />
 
-  const academic = data.categories.filter((c) => c.scope === 'academic')
-  const nonAcademic = data.categories.filter((c) => c.scope === 'nonAcademic')
+  const academic = data.categories.filter((c) => c.scope === 'academic' && !c.deletedAt)
+  const nonAcademic = data.categories.filter((c) => c.scope === 'nonAcademic' && !c.deletedAt)
 
   function openAdd() {
     setEditCategory(null)
@@ -149,7 +149,7 @@ export default function CategoriesPage() {
                   <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(cat)}>Delete</Button>
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {(() => { const n = data.subjects.filter((s) => s.categoryId === cat.id).length; return n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`; })()}
+                  {(() => { const n = data.subjects.filter((s) => s.categoryId === cat.id && !s.deletedAt).length; return n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`; })()}
                 </div>
               </Card>
             ))}
@@ -174,7 +174,7 @@ export default function CategoriesPage() {
                   <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(cat)}>Delete</Button>
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {(() => { const n = data.subjects.filter((s) => s.categoryId === cat.id).length; return n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`; })()}
+                  {(() => { const n = data.subjects.filter((s) => s.categoryId === cat.id && !s.deletedAt).length; return n === 0 ? 'No focus areas' : `${n} focus area${n === 1 ? '' : 's'}`; })()}
                 </div>
               </Card>
             ))}

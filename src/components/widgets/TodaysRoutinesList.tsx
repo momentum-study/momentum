@@ -33,11 +33,11 @@ export function TodaysRoutinesList({
     [subjects]
   )
 
-  // Filter to today's routines and sort by target minutes descending
+  // Filter to today's routines and sort by today's target minutes descending
   const todaysRoutines = useMemo(
-    () => routines.filter(r => !r.deletedAt && r.days.includes(todayDow)),
+    () => routines.filter(r => !r.deletedAt && (r.dayMinutes[todayDow] ?? 0) > 0),
     [routines, todayDow]
-  ).sort((a, b) => b.targetMinutes - a.targetMinutes)
+  ).sort((a, b) => (b.dayMinutes[todayDow] ?? 0) - (a.dayMinutes[todayDow] ?? 0))
 
   // Build log map for today
   const logMap = useMemo(
@@ -67,7 +67,7 @@ export function TodaysRoutinesList({
       {displayRoutines.map(routine => {
         const log = logMap.get(routine.id)
         const subject = subjectsMap.get(routine.subjectId)
-        const target = routine.targetMinutes
+        const target = routine.dayMinutes[todayDow] ?? 0
         const actual = log?.actualMinutes ?? 0
         const completed = log?.completed ?? false
 

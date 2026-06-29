@@ -14,9 +14,9 @@ const NAV_ITEMS = [
   { to: '/subjects', label: 'Focus Areas', icon: '📚' },
   { to: '/projects', label: 'Projects', icon: '🎯' },
   { to: '/routines', label: 'Routines', icon: '📋' },
+  { to: '/activities', label: 'Activities', icon: '🎭' },
   { to: '/marks', label: 'Marks', icon: '📝' },
   { to: '/habits', label: 'Habits', icon: '🔥' },
-  { to: '/hobbies', label: 'Hobbies', icon: '🎨' },
   { to: '/study', label: 'Study', icon: '🧠' },
   { to: '/groups', label: 'Groups', icon: '👥' },
   { to: '/calendar', label: 'Tasks', icon: '📅' },
@@ -35,7 +35,7 @@ interface NavPrefs {
   hidden: string[]
 }
 
-const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/routines', '/marks', '/study', '/groups', '/categories', '/reports', '/reviews'] }
+const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/routines', '/activities', '/marks', '/study', '/groups', '/categories', '/reports', '/reviews'] }
 
 function loadPrefs(): NavPrefs {
   if (typeof localStorage === 'undefined') return { ...DEFAULT_PREFS }

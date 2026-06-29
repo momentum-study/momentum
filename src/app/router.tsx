@@ -12,12 +12,12 @@ import ReportsPage from '../features/reports/ReportsPage'
 import SettingsPage from '../features/settings/SettingsPage'
 import MarksPage from '../features/marks/MarksPage'
 import HabitsPage from '../features/habits/HabitsPage'
-import HobbiesPage from '../features/hobbies/HobbiesPage'
 import CalendarPage from '../features/calendar/CalendarPage'
 import CategoriesPage from '../features/categories/CategoriesPage'
 import GroupsPage from '../features/groups/GroupsPage'
 import GroupDetailPage from '../features/groups/GroupDetailPage'
 import RoutinePage from '../features/routines/RoutinePage'
+import ActivitiesPage from '../features/activities/ActivitiesPage'
 import AIReviewPage from '../features/reviews/AIReviewPage'
 import StudyPage from '../features/study/StudyPage'
 import ReviewSessionPage from '../features/study/ReviewSessionPage'
@@ -34,7 +34,6 @@ function RouterContent() {
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/marks" element={<MarksPage />} />
         <Route path="/habits" element={<HabitsPage />} />
-        <Route path="/hobbies" element={<HobbiesPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/reports" element={<ReportsPage />} />
@@ -44,6 +43,7 @@ function RouterContent() {
         <Route path="/study/log" element={<ReviewLogPage />} />
         <Route path="/study/exam" element={<ExamConfigPage />} />
         <Route path="/routines" element={<RoutinePage />} />
+        <Route path="/activities" element={<ActivitiesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/groups" element={<GroupsPage />} />
         <Route path="/groups/:id" element={<GroupDetailPage />} />

@@ -49,9 +49,8 @@ export const SYNC_TABLES: TableKey[] = [
   'streakDays',
   'routines',
   'routineLogs',
-  'scheduleEntries',
-  'hobbies',
-  'hobbySessions',
+  'activities',
+  'activityLogs',
   'studyAreas',
   'studyReviews',
 ]

@@ -26,6 +26,7 @@ export default function ProjectDetailPage() {
   const [timeNote, setTimeNote] = useState('')
   const [timeTaskId, setTimeTaskId] = useState<string>('')
   const [sortMode, setSortMode] = useState<'manual' | 'alpha' | 'due'>('manual')
+  const [showCompleteModal, setShowCompleteModal] = useState(false)
 
   const project = useMemo(() => data.projects.find((p) => p.id === id), [data.projects, id])
   const subject = useMemo(() => data.subjects.find((s) => s.id === project?.subjectId), [data.subjects, project])
@@ -156,6 +157,38 @@ export default function ProjectDetailPage() {
     setTimeTaskId('')
   }
 
+  async function handleToggleComplete() {
+    if (!project) return
+    const now = isoNow()
+    const next = !project.completed
+    await db.projects.update(project.id, {
+      completed: next,
+      completedAt: next ? now : null,
+      updatedAt: now,
+    })
+    await loadData()
+    pushUndo({
+      description: next ? `Completed project "${project.name}"` : `Reopened project "${project.name}"`,
+      undo: async () => {
+        await db.projects.update(project.id, {
+          completed: !next,
+          completedAt: !next ? now : null,
+          updatedAt: isoNow(),
+        })
+        await loadData()
+      },
+      redo: async () => {
+        await db.projects.update(project.id, {
+          completed: next,
+          completedAt: next ? now : null,
+          updatedAt: isoNow(),
+        })
+        await loadData()
+      },
+    })
+    setShowCompleteModal(false)
+  }
+
   const goalTarget = project.dailyTargetMinutes ?? project.weeklyTargetMinutes ?? project.totalTargetMinutes ?? 0
   const goalPct = goalTarget > 0 ? Math.min(100, Math.round((totalMinutes / goalTarget) * 100)) : 0
   const goalLabel = project.dailyTargetMinutes ? 'daily' : project.weeklyTargetMinutes ? 'weekly' : 'total'
@@ -172,8 +205,25 @@ export default function ProjectDetailPage() {
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => { setEditTask(null); setTaskTitle(''); setTaskDue(''); setShowTaskModal(true) }}>+ Task</Button>
           <Button variant="primary" size="sm" onClick={() => setShowTimeModal(true)}>Log Time</Button>
+          <Button
+            variant={project.completed ? 'secondary' : 'primary'}
+            size="sm"
+            onClick={() => setShowCompleteModal(true)}
+          >
+            {project.completed ? 'Reopen' : 'Mark Complete'}
+          </Button>
         </div>
       </div>
+      {project.completed && (
+        <Card className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-green-700 dark:text-green-300">
+              ✓ Completed{project.completedAt ? ` on ${format(parseISO(project.completedAt), 'd MMM yyyy')}` : ''}
+            </span>
+            <Button variant="secondary" size="sm" onClick={() => setShowCompleteModal(true)}>Reopen</Button>
+          </div>
+        </Card>
+      )}
       {goalTarget > 0 && (
         <Card>
           <div className="flex items-center justify-between">
@@ -304,6 +354,20 @@ export default function ProjectDetailPage() {
             <input className="input" placeholder="What did you work on?" value={timeNote} onChange={(e) => setTimeNote(e.target.value)} />
           </div>
           <Button variant="primary" className="w-full" onClick={logTime}>Log Time</Button>
+        </div>
+      </Modal>
+
+      <Modal open={showCompleteModal} onClose={() => setShowCompleteModal(false)} title={project.completed ? 'Reopen Project' : 'Complete Project'}>
+        <div className="space-y-4">
+          <p className="text-slate-600 dark:text-slate-300">
+            {project.completed
+              ? `Mark "${project.name}" as active again?`
+              : `Mark "${project.name}" as complete? You can reopen it any time.`}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowCompleteModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleToggleComplete}>{project.completed ? 'Reopen' : 'Mark Complete'}</Button>
+          </div>
         </div>
       </Modal>
     </div>

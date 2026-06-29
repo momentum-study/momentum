@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { v4 as uuid } from 'uuid'
@@ -39,6 +39,12 @@ export default function ProjectsPage() {
   const [deleteProject, setDeleteProject] = useState<Project | null>(null)
   const [formData, setFormData] = useState<ProjectFormData>(emptyFormData)
   const [isSaving, setIsSaving] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<'active' | 'completed' | 'all'>('active')
+
+  const visibleProjects = useMemo(
+    () => data.projects.filter((p) => !p.deletedAt && (statusFilter === 'all' || (statusFilter === 'active' ? !p.completed : p.completed === true))),
+    [data.projects, statusFilter]
+  )
 
   const handleOpenModal = (project?: Project) => {
     if (project) {
@@ -169,15 +175,31 @@ export default function ProjectsPage() {
           Add Project
         </Button>
       </div>
+      <div className="inline-flex rounded-full bg-slate-200 p-1 dark:bg-slate-700">
+        {(['active', 'completed', 'all'] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={cn(
+              'rounded-full px-4 py-1 text-sm font-medium capitalize transition-colors',
+              statusFilter === s
+                ? 'bg-white text-slate-800 shadow dark:bg-slate-800 dark:text-slate-100'
+                : 'text-slate-600 hover:text-slate-800 dark:text-slate-400'
+            )}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
 
-      {data.projects.filter((p) => !p.deletedAt).length === 0 ? (
+      {visibleProjects.length === 0 ? (
         <EmptyState
-          title="No projects yet"
-          description="Add a project to track your study goals."
+          title={statusFilter === 'completed' ? 'No completed projects' : statusFilter === 'active' ? 'No active projects' : 'No projects yet'}
+          description={statusFilter === 'completed' ? 'Projects you finish will show up here.' : 'Add a project to track your study goals.'}
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.projects.filter((p) => !p.deletedAt).map((project) => {
+          {visibleProjects.map((project) => {
             const subject = data.subjects.find((s) => s.id === project.subjectId)
             const totalMinutes = data.sessions.filter((s) => s.projectId === project.id).reduce((sum, s) => sum + s.durationMinutes, 0)
             const openTasks = data.assignments.filter((a) => a.projectId === project.id && !a.completed && !a.deletedAt).length
@@ -215,7 +237,12 @@ export default function ProjectsPage() {
                       <span className="text-xs text-slate-500">logged</span>
                       {openTasks > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{openTasks} task{openTasks !== 1 ? 's' : ''}</span>}
                     </div>
-                    {goalTarget > 0 && (
+                    {project.completed && (
+                      <div className="mt-2 text-xs font-medium text-green-600 dark:text-green-400">
+                        ✓ Completed{project.completedAt ? ` ${format(parseISO(project.completedAt), 'd MMM yyyy')}` : ''}
+                      </div>
+                    )}
+                    {!project.completed && goalTarget > 0 && (
                       <div className="mt-2">
                         <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700">
                           <div className={cn('h-1.5 rounded-full transition-all', goalPct >= 100 ? 'bg-green-500' : 'bg-primary-500')} style={{ width: `${goalPct}%` }} />

@@ -1,17 +1,16 @@
 import Dexie, { type Table } from 'dexie'
 import type {
+  Activity,
+  ActivityLog,
   Assignment,
   Category,
   Habit,
   HabitLog,
-  Hobby,
-  HobbySession,
   Mark,
   Project,
   ProgressLog,
   Routine,
   RoutineLog,
-  ScheduleEntry,
   Session,
   StreakDay,
   Subject,
@@ -41,9 +40,8 @@ export class AppDB extends Dexie {
   streakDays!: Table<StreakDay, string>
   routines!: Table<Routine, string>
   routineLogs!: Table<RoutineLog, string>
-  scheduleEntries!: Table<ScheduleEntry, string>
-  hobbies!: Table<Hobby, string>
-  hobbySessions!: Table<HobbySession, string>
+  activities!: Table<Activity, string>
+  activityLogs!: Table<ActivityLog, string>
   studyAreas!: Table<StudyArea, string>
   studyReviews!: Table<StudyReview, string>
   pendingSyncOps!: Table<PendingSyncOp, string>
@@ -88,9 +86,22 @@ export class AppDB extends Dexie {
     this.version(10).stores({
       pendingSyncOps: 'id, tableKey',
     })
-    // v11: add schedule entries table for per-day subject planning
+    // v11: schedule entries (orphaned, kept for Dexie upgrade chain)
     this.version(11).stores({
       scheduleEntries: 'id, subjectId, dayOfWeek, [subjectId+dayOfWeek]',
+    })
+    // v12: add completed index for projects
+    this.version(12).stores({
+      projects: 'id, subjectId, name, completed',
+    })
+    // v13: add activities + activityLogs tables
+    this.version(13).stores({
+      activities: 'id, subjectId, name',
+      activityLogs: 'id, activityId, date',
+    })
+    // v12: add completed index for projects
+    this.version(12).stores({
+      projects: 'id, subjectId, name, completed',
     })
   }
 }

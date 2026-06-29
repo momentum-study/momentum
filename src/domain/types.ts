@@ -34,6 +34,8 @@ export interface Project {
   goalMinutes?: number
   totalTargetMinutes?: number
   dueDate?: string
+  completed?: boolean
+  completedAt?: string | null
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -158,14 +160,10 @@ export interface Routine {
   name: string                // e.g. 'Math Study Block'
   subjectId: string           // which focus area
   projectId?: string | null   // optional project within that focus area
-  targetMinutes: number       // goal for this routine block
-  days: DayOfWeek[]           // which days this applies e.g. [1, 3, 5] for Mon/Wed/Fri
+  dayMinutes: Partial<Record<DayOfWeek, number>>
   color: string               // hex color for display
   notes?: string              // optional routine notes
-  autoLog?: boolean           // auto-create placeholder session on scheduled day
-  autoLogMinutes?: number     // duration of auto-created session
   scheduledTime?: string      // optional HH:mm for display only
-  skippedWeekStart?: string   // ISO date of week start user skipped
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -180,66 +178,31 @@ export interface RoutineLog {
   createdAt: string
 }
 
-/** One row = a subject's planned minutes for a specific day of the week. */
-export interface ScheduleEntry {
-  id: string
-  subjectId: string
-  /** 0=Sun 1=Mon ... 6=Sat */
-  dayOfWeek: DayOfWeek
-  /** Planned minutes for this subject on this day */
-  targetMinutes: number
-  /** Optional notes for this slot (e.g. "focus on chapter 5") */
-  notes: string
-  createdAt: string
-  updatedAt: string
-}
 
-// Hobby tracker — non-academic activities (guitar, painting, cooking, sports).
-// Distinct from Subjects (academic, graded) and Habits (binary daily).
-// Tracks time spent, skill progression, and milestones.
-export type HobbyCategory = 'creative' | 'physical' | 'intellectual' | 'social' | 'other'
-
-export interface Hobby {
+// Activities — recurring external commitments (lessons, tutoring, etc.)
+// Distinct from Routines (self-directed study blocks) and Subjects (focus areas).
+export interface Activity {
   id: string
   name: string
-  category: HobbyCategory
+  subjectId: string | null
+  dayMinutes: Partial<Record<DayOfWeek, number>>
+  scheduledTime?: string
+  notes?: string
   color: string
-  skillLevel: number // 0-100 (self-assessed or calculated from time)
-  targetHours: number // optional goal
-  notes: string // optional description
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
 }
 
-export interface HobbySession {
+export interface ActivityLog {
   id: string
-  hobbyId: string
-  durationMinutes: number
-  startAt: string // ISO datetime
-  endAt: string // ISO datetime
-  note: string // "Practiced scales", "Finished chapter 3"
+  activityId: string
+  date: string                // YYYY-MM-DD
+  status: 'completed' | 'skipped' | 'pending'
+  actualMinutes?: number
   createdAt: string
-  updatedAt: string
-  deletedAt?: string | null
 }
 
-export const HOBBY_CATEGORIES: { value: HobbyCategory; label: string; color: string }[] = [
-  { value: 'creative', label: 'Creative', color: '#a855f7' },
-  { value: 'physical', label: 'Physical', color: '#10b981' },
-  { value: 'intellectual', label: 'Intellectual', color: '#3b82f6' },
-  { value: 'social', label: 'Social', color: '#f59e0b' },
-  { value: 'other', label: 'Other', color: '#64748b' },
-]
-
-/** Skill level label helpers */
-export function hobbySkillLevel(value: number): { label: string; color: string } {
-  if (value < 25) return { label: 'Beginner', color: 'text-slate-600 dark:text-slate-400' }
-  if (value < 50) return { label: 'Novice', color: 'text-blue-600 dark:text-blue-400' }
-  if (value < 75) return { label: 'Intermediate', color: 'text-amber-600 dark:text-amber-400' }
-  if (value < 90) return { label: 'Advanced', color: 'text-emerald-600 dark:text-emerald-400' }
-  return { label: 'Expert', color: 'text-purple-600 dark:text-purple-400' }
-}
 // Study Areas — FSRS-based spaced repetition for conceptual topics
 
 export type ReviewRating = 1 | 2 | 3 | 4  // again, hard, good, easy

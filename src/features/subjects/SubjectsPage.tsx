@@ -41,6 +41,7 @@ export default function SubjectsPage() {
   const [formData, setFormData] = useState<SubjectFormData>(emptyFormData)
   const [isSaving, setIsSaving] = useState(false)
   const [filterCategory, setFilterCategory] = useState('')
+  const activeCategories = data.categories.filter((c) => !c.deletedAt)
 
   const handleOpenModal = (subject?: Subject) => {
     if (subject) {
@@ -179,7 +180,7 @@ export default function SubjectsPage() {
         </div>
       </div>
 
-      {data.categories.length > 0 && (
+      {activeCategories.length > 0 && (
         <div className="flex flex-wrap gap-2">
           <button
             className={cn(
@@ -192,7 +193,7 @@ export default function SubjectsPage() {
           >
             All
           </button>
-          {data.categories.map((cat) => (
+          {activeCategories.map((cat) => (
             <button
               key={cat.id}
               className={cn(
@@ -209,7 +210,7 @@ export default function SubjectsPage() {
         </div>
       )}
 
-      {data.categories.length === 0 && (
+      {activeCategories.length === 0 && (
         <div className="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
           No categories yet. <Link to="/categories" className="font-medium underline">Create a category</Link> first so you can assign focus areas.
         </div>
@@ -281,7 +282,7 @@ export default function SubjectsPage() {
                 required
               >
                 <option value="">Select category</option>
-                {data.categories.map((category) => (
+                {activeCategories.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.name}
                   </option>

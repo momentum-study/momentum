@@ -1,0 +1,79 @@
+// Live presence across ALL of a user's groups — subscribes to every group's
+// presence subcollection and returns a Map<groupId, GroupPresence[]> with
+// elapsedSeconds ticked every second.
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { groupService } from './group-service'
+import type { GroupPresence } from '../domain/cloud-types'
+
+export type AllGroupsPresence = Map<string, GroupPresence[]>
+
+/**
+ * Subscribes to live presence records for every group the user belongs to.
+ * Returns a Map keyed by groupId.  Entries for groups with no active members
+ * are omitted.  Returns an empty Map when uid is null or has no groups.
+ */
+export function useAllGroupsPresence(uid: string | null): AllGroupsPresence {
+  const [presenceMap, setPresenceMap] = useState<AllGroupsPresence>(new Map())
+  const unsubscribes = useRef<(() => void)[]>([])
+
+  // Bumped every second so elapsedSeconds ticks
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    // Tear down old subscriptions
+    unsubscribes.current.forEach((u) => u())
+    unsubscribes.current = []
+    setPresenceMap(new Map())
+
+    if (!uid) return
+
+    let cancelled = false
+    groupService.listMyGroups(uid).then((groups) => {
+      if (cancelled) return
+      // Subscribe to each group's presence
+      const snapshots: Record<string, GroupPresence[]> = {}
+      for (const g of groups) {
+        const unsub = groupService.subscribePresence(g.id, (records) => {
+          snapshots[g.id] = records
+          if (!cancelled) {
+            setPresenceMap(new Map(Object.entries(snapshots)))
+          }
+        })
+        unsubscribes.current.push(unsub)
+      }
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribes.current.forEach((u) => u())
+      unsubscribes.current = []
+    }
+  }, [uid])
+
+  // Total active presence records across all groups — drives the tick interval.
+  // Changes when anyone starts/stops studying, even if the number of groups is unchanged.
+  const activeCount = useMemo(
+    () => Array.from(presenceMap.values()).reduce((sum, r) => sum + r.length, 0),
+    [presenceMap],
+  )
+
+  // Tick every second to re-derive elapsedSeconds while anyone is studying.
+  useEffect(() => {
+    if (activeCount === 0) return
+    const id = window.setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [activeCount])
+
+  // Re-derive elapsedSeconds from wall clock
+  if (activeCount === 0) return presenceMap
+  const now = Date.now()
+  const ticked: AllGroupsPresence = new Map()
+  for (const [groupId, records] of presenceMap) {
+    if (records.length === 0) continue
+    ticked.set(
+      groupId,
+      records.map((r) => ({ ...r, elapsedSeconds: Math.floor((now - r.startedAt) / 1000) })),
+    )
+  }
+  return ticked
+}

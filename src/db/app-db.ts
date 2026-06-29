@@ -99,9 +99,27 @@ export class AppDB extends Dexie {
       activities: 'id, subjectId, name',
       activityLogs: 'id, activityId, date',
     })
-    // v12: add completed index for projects
-    this.version(12).stores({
-      projects: 'id, subjectId, name, completed',
+    // v14: migrate Routine records from days+targetMinutes to dayMinutes
+    this.version(14).stores({
+      routines: 'id, subjectId, name',
+    }).upgrade(async (tx) => {
+      await tx.table('routines').toCollection().modify((routine: any) => {
+        if (!routine.dayMinutes && Array.isArray(routine.days) && typeof routine.targetMinutes === 'number') {
+          const dm: Record<number, number> = {}
+          for (const d of routine.days) {
+            dm[d] = routine.targetMinutes
+          }
+          routine.dayMinutes = dm
+        }
+        // Ensure dayMinutes exists even if migration couldn't convert
+        if (!routine.dayMinutes) routine.dayMinutes = {}
+        // Clean up old fields
+        delete routine.days
+        delete routine.targetMinutes
+        delete routine.autoLog
+        delete routine.autoLogMinutes
+        delete routine.skippedWeekStart
+      })
     })
   }
 }

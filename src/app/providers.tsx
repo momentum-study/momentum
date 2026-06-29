@@ -114,7 +114,10 @@ async function loadAllData(): Promise<AppData> {
     habits: [...habits],
     habitLogs: [...habitLogs].filter((l) => l.date),
     streakDays: [...streakDays],
-    routines: [...routines].sort((a, b) => a.name.localeCompare(b.name)),
+    routines: [...routines].map((r) => ({
+      ...r,
+      dayMinutes: r.dayMinutes ?? {},
+    })).sort((a, b) => a.name.localeCompare(b.name)),
     routineLogs: [...routineLogs].sort((a, b) => b.date.localeCompare(a.date)),
     activities: [...activities].sort((a, b) => a.name.localeCompare(b.name)),
     activityLogs: [...activityLogs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),

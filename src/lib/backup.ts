@@ -26,8 +26,8 @@ const TABLE_KEYS: (keyof AppData)[] = [
   'streakDays',
   'routines',
   'routineLogs',
-  'hobbies',
-  'hobbySessions',
+  'activities',
+  'activityLogs',
   'studyAreas',
   'studyReviews',
 ]

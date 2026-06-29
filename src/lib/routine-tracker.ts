@@ -21,7 +21,7 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
   const allRoutines = await db.routines.toArray()
   const matching = allRoutines.filter((r) => {
     if (r.deletedAt) return false
-    if (!r.days.includes(sessionDow)) return false
+    if (!r.dayMinutes[sessionDow] || r.dayMinutes[sessionDow]! <= 0) return false
     if (r.subjectId !== session.subjectId) return false
     if (r.projectId && r.projectId !== session.projectId) return false
     return true
@@ -40,7 +40,7 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
     const addedMinutes = existing
       ? existing.actualMinutes + session.durationMinutes
       : session.durationMinutes
-    const completed = addedMinutes >= routine.targetMinutes
+    const completed = addedMinutes >= (routine.dayMinutes[sessionDow] ?? 0)
 
     if (existing) {
       await db.routineLogs.update(existing.id, {
@@ -71,7 +71,7 @@ export async function revertRoutineLogsForSession(session: Session): Promise<voi
   const allRoutines = await db.routines.toArray()
   const matching = allRoutines.filter((r) => {
     if (r.deletedAt) return false
-    if (!r.days.includes(sessionDow)) return false
+    if (!r.dayMinutes[sessionDow] || r.dayMinutes[sessionDow]! <= 0) return false
     if (r.subjectId !== session.subjectId) return false
     if (r.projectId && r.projectId !== session.projectId) return false
     return true
@@ -86,7 +86,7 @@ export async function revertRoutineLogsForSession(session: Session): Promise<voi
     const remaining = Math.max(0, existing.actualMinutes - session.durationMinutes)
     await db.routineLogs.update(existing.id, {
       actualMinutes: remaining,
-      completed: remaining >= routine.targetMinutes,
+      completed: remaining >= (routine.dayMinutes[sessionDow] ?? 0),
     })
   }
 }

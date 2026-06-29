@@ -1,25 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { parseISO, format, subDays } from 'date-fns'
+import { parseISO } from 'date-fns'
 import { db } from '../db/app-db'
-import { sessionLocalDate } from '../lib/utils'
-import { sessionIdFor } from '../lib/timer-persistence'
 import { pullAllData, flushPendingDirtyTables } from '../lib/data-sync'
-import { loadSettings } from '../features/settings/SettingsPage'
 
 import type {
+  Activity,
+  ActivityLog,
   Assignment,
   Category,
-  DayOfWeek,
   Habit,
   HabitLog,
-  Hobby,
-  HobbySession,
   Mark,
   Project,
   ProgressLog,
   Routine,
   RoutineLog,
-  ScheduleEntry,
   Session,
   StreakDay,
   Subject,
@@ -39,9 +34,8 @@ export type AppData = {
   streakDays: StreakDay[]
   routines: Routine[]
   routineLogs: RoutineLog[]
-  scheduleEntries: ScheduleEntry[]
-  hobbies: Hobby[]
-  hobbySessions: HobbySession[]
+  activities: Activity[]
+  activityLogs: ActivityLog[]
   studyAreas: StudyArea[]
   studyReviews: StudyReview[]
 }
@@ -72,9 +66,8 @@ const emptyData: AppData = {
   streakDays: [],
   routines: [],
   routineLogs: [],
-  scheduleEntries: [],
-  hobbies: [],
-  hobbySessions: [],
+  activities: [],
+  activityLogs: [],
   studyAreas: [],
   studyReviews: [],
 }
@@ -83,7 +76,7 @@ async function loadAllData(): Promise<AppData> {
   const [
     categories, subjects, projects, sessions, progressLogs,
     marks, assignments, habits, habitLogs, streakDays,
-    routines, routineLogs, scheduleEntries, hobbies, hobbySessions,
+    routines, routineLogs, activities, activityLogs,
     studyAreas, studyReviews,
   ] = await Promise.all([
     db.categories.toArray(),
@@ -98,9 +91,8 @@ async function loadAllData(): Promise<AppData> {
     db.streakDays.toArray(),
     db.routines.toArray(),
     db.routineLogs.toArray(),
-    db.scheduleEntries.toArray(),
-    db.hobbies.toArray(),
-    db.hobbySessions.toArray(),
+    db.activities.toArray(),
+    db.activityLogs.toArray(),
     db.studyAreas.toArray(),
     db.studyReviews.toArray(),
   ])
@@ -124,14 +116,8 @@ async function loadAllData(): Promise<AppData> {
     streakDays: [...streakDays],
     routines: [...routines].sort((a, b) => a.name.localeCompare(b.name)),
     routineLogs: [...routineLogs].sort((a, b) => b.date.localeCompare(a.date)),
-    scheduleEntries: [...scheduleEntries].sort((a, b) => {
-      if (a.subjectId !== b.subjectId) return a.subjectId.localeCompare(b.subjectId)
-      return a.dayOfWeek - b.dayOfWeek
-    }),
-    hobbies: [...hobbies].sort(((a, b) => a.name.localeCompare(b.name))),
-    hobbySessions: [...hobbySessions]
-      .filter((s) => s.startAt && !isNaN(new Date(s.startAt).getTime()))
-      .sort((a, b) => parseISO(b.startAt).getTime() - parseISO(a.startAt).getTime()),
+    activities: [...activities].sort((a, b) => a.name.localeCompare(b.name)),
+    activityLogs: [...activityLogs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     studyAreas: [...studyAreas].sort(((a, b) => a.name.localeCompare(b.name))),
     studyReviews: [...studyReviews]
       .filter((r) => r.reviewedAt && !isNaN(new Date(r.reviewedAt).getTime()))
@@ -148,54 +134,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const loadTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const pullInProgress = useRef(false)
   const loadData = useCallback(async () => {
-    async function ensureAutoLogSessions(snapshot: AppData): Promise<boolean> {
-      const settings = loadSettings()
-      if (!settings.autoLogEnabled) return false
-
-      const today = new Date()
-      const todayStr = format(today, 'yyyy-MM-dd')
-      const todayDow = today.getDay() as DayOfWeek
-      const weekStart = format(subDays(today, today.getDay()), 'yyyy-MM-dd')
-      let created = false
-
-      for (const routine of snapshot.routines) {
-        if (routine.deletedAt || !routine.autoLog || !routine.days.includes(todayDow)) continue
-        if (routine.skippedWeekStart && weekStart <= routine.skippedWeekStart) continue
-        const exists = snapshot.sessions.some((s) => s.routineId === routine.id && sessionLocalDate(s.startAt) === todayStr)
-        if (exists) continue
-        const now = new Date()
-        const startAt = new Date(now)
-        startAt.setHours(0, 0, 0, 0)
-        const endAt = new Date(startAt.getTime() + (routine.autoLogMinutes ?? routine.targetMinutes) * 60_000)
-        const startAtIso = now.toISOString()
-        const durationMinutes = routine.autoLogMinutes ?? routine.targetMinutes
-        await db.sessions.put({
-          id: sessionIdFor(startAtIso, routine.subjectId, durationMinutes),
-          subjectId: routine.subjectId,
-          projectId: routine.projectId ?? null,
-          routineId: routine.id,
-          startAt: startAtIso,
-          endAt: endAt.toISOString(),
-          durationMinutes,
-          note: routine.notes || routine.name,
-          source: 'autoRoutine',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          deletedAt: null,
-        })
-        created = true
-      }
-      return created
-    }
 
     if (pullInProgress.current) return
     if (loadTimer.current) clearTimeout(loadTimer.current)
     loadTimer.current = setTimeout(async () => {
       loadTimer.current = null
       try {
-        const next = await loadAllData()
-        const autoCreated = await ensureAutoLogSessions(next)
-        setData(autoCreated ? await loadAllData() : next)
+        setData(await loadAllData())
       } catch (e) {
         console.error('loadAllData failed:', e)
       } finally {
@@ -245,5 +190,3 @@ export function useDataSelector<T>(selector: (data: AppData) => T): T {
 export function useSubjects()       { return useDataSelector(d => d.subjects) }
 export function useSessions()        { return useDataSelector(d => d.sessions) }
 export function useAssignments()     { return useDataSelector(d => d.assignments) }
-export function useHobbies()         { return useDataSelector(d => d.hobbies) }
-export function useHobbySessions()   { return useDataSelector(d => d.hobbySessions) }

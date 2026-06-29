@@ -4,7 +4,7 @@ import { useData } from '../../app/providers'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor, sessionLocalDate } from '../../lib/utils'
-import type { Session } from '../../domain/types'
+import type { Session, DayOfWeek } from '../../domain/types'
 import { Link } from 'react-router-dom'
 import { loadSettings } from '../settings/SettingsPage'
 
@@ -126,16 +126,16 @@ export default function ReportsPage() {
       const d = subDays(new Date(), i)
       const date = format(d, 'yyyy-MM-dd')
       const dow = d.getDay()
-      const planned = data.scheduleEntries
-        .filter((e) => e.dayOfWeek === dow)
-        .reduce((sum, e) => sum + e.targetMinutes, 0)
+      const planned = data.routines
+        .filter((r) => !r.deletedAt && (r.dayMinutes[dow as DayOfWeek] ?? 0) > 0)
+        .reduce((sum, r) => sum + (r.dayMinutes[dow as DayOfWeek] ?? 0), 0)
       const actual = sessions
         .filter((s) => sessionLocalDate(s.startAt) === date)
         .reduce((sum, s) => sum + s.durationMinutes, 0)
       rows.push({ date, dayLabel: DAY_NAMES_SHORT[dow], planned, actual })
     }
     return rows
-  }, [data.scheduleEntries, sessions, period])
+  }, [data.routines, sessions, period])
   const subjectColors = useMemo(() => {
     const m = new Map<string, string>()
     for (const s of sessions) {
@@ -589,29 +589,6 @@ export default function ReportsPage() {
         )}
       </Card>
 
-      {/* Hobby Hours */}
-      {data.hobbies.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Hobby Hours</CardTitle>
-          </CardHeader>
-          <div className="space-y-3">
-            {data.hobbies.map(h => {
-              const hobbySessions = data.hobbySessions.filter(s => s.hobbyId === h.id)
-              const totalMinutes = hobbySessions.reduce((acc, s) => acc + s.durationMinutes, 0)
-              return (
-                <div key={h.id} className="flex justify-between items-center text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: h.color }} />
-                    <span>{h.name}</span>
-                  </div>
-                  <span>{Math.floor(totalMinutes / 60)}h {totalMinutes % 60}m</span>
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-      )}
 
       {/* 7. Insights */}
       <Card>

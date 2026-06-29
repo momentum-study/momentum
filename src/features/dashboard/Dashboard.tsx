@@ -1,4 +1,5 @@
 import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
+import { ActivityConfirmationCard } from '../../components/widgets/ActivityConfirmationCard'
 import { SubjectBreakdown } from '../../components/widgets/SubjectBreakdown'
 import { formatTotalToday, getLiveTimerSeconds, getLiveTimerSubjectId, getTotalTodayMinutes, isTimerActive } from '../../lib/timer-utils'
 import { useEffect, useMemo, useState } from 'react'
@@ -19,7 +20,7 @@ import { db } from '../../db/app-db'
 import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakDayForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
 import { getDueCount } from '../../lib/fsrs-scheduler'
 import { useSessionSync } from '../../lib/use-session-sync'
-import type { Session, DayOfWeek, RoutineLog, HobbySession } from '../../domain/types'
+import type { Session, DayOfWeek, RoutineLog } from '../../domain/types'
 import { Link } from 'react-router-dom'
 import { useDashboardWidgets, DASHBOARD_WIDGETS } from '../../lib/use-dashboard-widgets'
 
@@ -35,6 +36,7 @@ export default function Dashboard() {
   const [logModalOpen, setLogModalOpen] = useState(false)
   const [showAllRecent, setShowAllRecent] = useState(false)
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
+  const [showActivityCard, setShowActivityCard] = useState(true)
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
   // Exclude soft-deleted sessions from streak / stats calculations.
@@ -125,16 +127,13 @@ export default function Dashboard() {
   const [logDuration, setLogDuration] = useState(persistedForm?.duration ?? 30)
   const [logDate, setLogDate] = useState(persistedForm?.date ?? todayStr)
   const [logNote, setLogNote] = useState(persistedForm?.note ?? '')
-  const [logHobbyMode, setLogHobbyMode] = useState(persistedForm?.hobbyMode ?? false)
-  const [logHobbyId, setLogHobbyId] = useState(persistedForm?.hobbyId ?? '')
 
   useEffect(() => {
     sessionStorage.setItem(LOG_FORM_KEY, JSON.stringify({
       subjectId: logSubjectId, projectId: logProjectId, taskId: logTaskId,
       duration: logDuration, date: logDate, note: logNote,
-      hobbyMode: logHobbyMode, hobbyId: logHobbyId,
     }))
-  }, [logSubjectId, logProjectId, logTaskId, logDuration, logDate, logNote, logHobbyMode, logHobbyId])
+  }, [logSubjectId, logProjectId, logTaskId, logDuration, logDate, logNote])
 
   async function handleLogTime() {
     const note = logNote.trim()
@@ -144,71 +143,43 @@ export default function Dashboard() {
     const startAt = now.toISOString()
     const endAt = new Date(now.getTime() + logDuration * 60_000).toISOString()
 
-    if (logHobbyMode && logHobbyId) {
-      const hobbySession: HobbySession = {
-        id: uuid(),
-        hobbyId: logHobbyId,
-        durationMinutes: logDuration,
-        startAt,
-        endAt,
-        note,
-        createdAt: isoNow(),
-        updatedAt: isoNow(),
-      }
-      await db.hobbySessions.add(hobbySession)
-      // auto-increase skill: +1 per 10h
-      const hobby = data.hobbies.find(h => h.id === logHobbyId)
-      const existingMinutes = data.hobbySessions.filter(s => s.hobbyId === logHobbyId).reduce((a, s) => a + s.durationMinutes, 0)
-      const totalMinutes = existingMinutes + logDuration
-      const newSkillLevel = Math.min(100, Math.floor(totalMinutes / 600))
-      await db.hobbies.update(logHobbyId, { skillLevel: newSkillLevel, updatedAt: isoNow() })
-      await loadData()
-      const hobbyName = hobby?.name ?? 'Hobby'
-      push({
-        description: `Logged ${logDuration}m for ${hobbyName}`,
-        undo: async () => { await db.hobbySessions.delete(hobbySession.id); await loadData() },
-        redo: async () => { await db.hobbySessions.add(hobbySession); await loadData() },
-      })
-    } else {
-      const project = logProjectId ? data.projects.find((p) => p.id === logProjectId) : undefined
-      const task = logTaskId ? data.assignments.find((a) => a.id === logTaskId) : undefined
-      const actualSubjectId = project ? project.subjectId : logSubjectId
-      if (!actualSubjectId) return
-      const taskNote = note || (task ? `Task: ${task.title}` : undefined)
-      const session = {
-        id: uuid(),
-        subjectId: actualSubjectId,
-        projectId: project?.id ?? null,
-        assignmentId: task?.id ?? null,
-        startAt,
-        endAt,
-        durationMinutes: logDuration,
-        note: taskNote,
-        source: 'quickLog' as const,
-        createdAt: isoNow(),
-        updatedAt: isoNow(),
-      }
-      await db.sessions.add(session)
-      const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
-      await updateRoutineLogsForSession(session)
-      await updateStreakDayForSession(session)
-      syncSession(session, subjectName)
-      await loadData()
-      let description = `Logged ${logDuration}m${project ? ` for ${project.name}` : ` study for ${subjectName}`}`
-      if (task) description += ` (${task.title})`
-      push({
-        description,
-        undo: async () => { await db.sessions.delete(session.id); await revertStreakDayForSession(session); await loadData() },
-        redo: async () => { await db.sessions.add(session); await updateStreakDayForSession(session); await loadData() },
-      })
+    if (!logSubjectId && !logProjectId) return
+    const project = logProjectId ? data.projects.find((p) => p.id === logProjectId) : undefined
+    const task = logTaskId ? data.assignments.find((a) => a.id === logTaskId) : undefined
+    const actualSubjectId = project ? project.subjectId : logSubjectId
+    if (!actualSubjectId) return
+    const taskNote = note || (task ? `Task: ${task.title}` : undefined)
+    const session = {
+      id: uuid(),
+      subjectId: actualSubjectId,
+      projectId: project?.id ?? null,
+      assignmentId: task?.id ?? null,
+      startAt,
+      endAt,
+      durationMinutes: logDuration,
+      note: taskNote,
+      source: 'quickLog' as const,
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
     }
+    await db.sessions.add(session)
+    const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
+    await updateRoutineLogsForSession(session)
+    await updateStreakDayForSession(session)
+    syncSession(session, subjectName)
+    await loadData()
+    let description = `Logged ${logDuration}m${project ? ` for ${project.name}` : ` study for ${subjectName}`}`
+    if (task) description += ` (${task.title})`
+    push({
+      description,
+      undo: async () => { await db.sessions.delete(session.id); await revertStreakDayForSession(session); await loadData() },
+      redo: async () => { await db.sessions.add(session); await updateStreakDayForSession(session); await loadData() },
+    })
     sessionStorage.removeItem(LOG_FORM_KEY)
     setLogSubjectId('')
     setLogProjectId('')
     setLogTaskId('')
     setLogNote('')
-    setLogHobbyMode(false)
-    setLogHobbyId('')
   }
 
   const [editLog, setEditLog] = useState<Session | null>(null)
@@ -378,6 +349,10 @@ export default function Dashboard() {
         <Button className="mt-4 w-full" onClick={() => setCustomizeOpen(false)}>Done</Button>
       </Modal>
 
+      {showActivityCard && (
+        <ActivityConfirmationCard onDismiss={() => setShowActivityCard(false)} />
+      )}
+
       <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
           <div className="flex items-center gap-4 text-sm">
             <span>
@@ -404,14 +379,14 @@ export default function Dashboard() {
                 </div>
                 {(() => {
                   const todayDow = new Date().getDay() as DayOfWeek
-                  const todaysRoutines = data.routines.filter((r) => !r.deletedAt && r.days.includes(todayDow))
+                  const todaysRoutines = data.routines.filter((r) => !r.deletedAt && (r.dayMinutes[todayDow] ?? 0) > 0)
                   if (todaysRoutines.length === 0) return <p className="text-sm text-slate-500">No routines scheduled</p>
                   const logMap: Record<string, RoutineLog> = {}
                   data.routineLogs.forEach((l) => { if (l.date === todayStr) logMap[l.routineId] = l })
-                  const scheduled = todaysRoutines.reduce((s, r) => s + r.targetMinutes, 0)
+                  const scheduled = todaysRoutines.reduce((s, r) => s + (r.dayMinutes[todayDow] ?? 0), 0)
                   const completed = todaysRoutines.reduce((s, r) => {
                     const log = logMap[r.id]
-                    return s + (log ? Math.min(log.actualMinutes, r.targetMinutes) : 0)
+                    return s + (log ? Math.min(log.actualMinutes, r.dayMinutes[todayDow] ?? 0) : 0)
                   }, 0)
                   const pct = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0
                   return (
@@ -821,69 +796,37 @@ export default function Dashboard() {
               </div>
             )
           })()}
-          <div className="flex gap-2 p-1 rounded-md bg-slate-100 dark:bg-slate-700/50">
-            <button
-              type="button"
-              onClick={() => { setLogHobbyMode(false); setLogHobbyId('') }}
-              className={cn(
-                'flex-1 px-3 py-1.5 rounded-sm text-sm font-medium transition-all',
-                !logHobbyMode ? 'bg-white text-primary-600 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
-              )}
-            >
-              Study
-            </button>
-            <button
-              type="button"
-              onClick={() => { setLogHobbyMode(true); setLogSubjectId(''); setLogProjectId(''); setLogTaskId('') }}
-              className={cn(
-                'flex-1 px-3 py-1.5 rounded-sm text-sm font-medium transition-all',
-                logHobbyMode ? 'bg-white text-primary-600 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
-              )}
-            >
-              Hobby
-            </button>
-          </div>
-          {logHobbyMode ? (
+          <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="label">Hobby</label>
-              <select className="input" value={logHobbyId} onChange={(e) => setLogHobbyId(e.target.value)}>
-                <option value="">Select hobby</option>
-                {data.hobbies.filter(h => !h.deletedAt).map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              <label className="label">Subject</label>
+              <select className="input" value={logSubjectId} onChange={(e) => { setLogSubjectId(e.target.value); setLogProjectId(''); setLogTaskId('') }}>
+                <option value="">Select subject</option>
+                {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-          ) : (
-            <div className="flex flex-wrap items-end gap-3">
+            {logSubjectId && (
               <div>
-                <label className="label">Subject</label>
-                <select className="input" value={logSubjectId} onChange={(e) => { setLogSubjectId(e.target.value); setLogProjectId(''); setLogTaskId('') }}>
-                  <option value="">Select subject</option>
-                  {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                <label className="label">Project (optional)</label>
+                <select className="input" value={logProjectId} onChange={(e) => { const pid = e.target.value; setLogProjectId(pid); setLogTaskId(''); if (pid) { const proj = data.projects.find((p) => p.id === pid); if (proj) setLogSubjectId(proj.subjectId) } }}>
+                  <option value="">— Select project —</option>
+                  {data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
                 </select>
               </div>
-              {logSubjectId && (
-                <div>
-                  <label className="label">Project (optional)</label>
-                  <select className="input" value={logProjectId} onChange={(e) => { const pid = e.target.value; setLogProjectId(pid); setLogTaskId(''); if (pid) { const proj = data.projects.find((p) => p.id === pid); if (proj) setLogSubjectId(proj.subjectId) } }}>
-                    <option value="">— Select project —</option>
-                    {data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {logProjectId && (
-                <div>
-                  <label className="label">Task (optional)</label>
-                  <select className="input" value={logTaskId} onChange={(e) => setLogTaskId(e.target.value)}>
-                    <option value="">— Select task —</option>
-                    {data.assignments.filter((a) => a.projectId === logProjectId && !a.completed && !a.deletedAt).map((a) => (
-                      <option key={a.id} value={a.id}>{a.title}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+            {logProjectId && (
+              <div>
+                <label className="label">Task (optional)</label>
+                <select className="input" value={logTaskId} onChange={(e) => setLogTaskId(e.target.value)}>
+                  <option value="">— Select task —</option>
+                  {data.assignments.filter((a) => a.projectId === logProjectId && !a.completed && !a.deletedAt).map((a) => (
+                    <option key={a.id} value={a.id}>{a.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="label">Minutes</label>
@@ -898,7 +841,7 @@ export default function Dashboard() {
               <input className="input w-full" placeholder="What did you work on?" value={logNote} onChange={(e) => setLogNote(e.target.value)} />
             </div>
             <Button
-              disabled={logHobbyMode ? !logHobbyId : (!logSubjectId && !logProjectId)}
+              disabled={!logSubjectId && !logProjectId}
               onClick={async () => {
                 await handleLogTime()
                 setLogModalOpen(false)

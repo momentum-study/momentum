@@ -42,12 +42,12 @@ export default function SubjectsPage() {
   const [deleteSubject, setDeleteSubject] = useState<Subject | null>(null)
   const [formData, setFormData] = useState<SubjectFormData>(emptyFormData)
   const [isSaving, setIsSaving] = useState(false)
+  const [filterCategory, setFilterCategory] = useState('')
 
   const activeSubjects = data.subjects.filter((s) => !s.deletedAt)
   const topLevelSubjects = activeSubjects
     .filter((s) => isTopLevelSubject(s) && (!filterCategory || s.categoryId === filterCategory))
     .sort((a, b) => a.name.localeCompare(b.name))
-  const [filterCategory, setFilterCategory] = useState('')
   const activeCategories = data.categories.filter((c) => !c.deletedAt)
 
   const handleOpenModal = (subject?: Subject) => {

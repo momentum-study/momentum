@@ -121,6 +121,16 @@ export class AppDB extends Dexie {
         delete routine.skippedWeekStart
       })
     })
+    // v15: add parentSubjectId for subject hierarchy
+    this.version(15).stores({
+      subjects: 'id, categoryId, name, parentSubjectId',
+    }).upgrade(async (tx) => {
+      await tx.table('subjects').toCollection().modify((subject: any) => {
+        if (subject.parentSubjectId === undefined) {
+          subject.parentSubjectId = null
+        }
+      })
+    })
   }
 }
 

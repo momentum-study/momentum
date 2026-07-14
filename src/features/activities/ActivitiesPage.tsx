@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { isoNow } from '../../lib/utils'
+import { isoNow, getSubjectPathLabel, getSubjectPickerOptions } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -37,7 +37,12 @@ export default function ActivitiesPage() {
   const todayDow = new Date().getDay() as DayOfWeek
 
   const activeActivities = useMemo(
-    () => data.activities.filter((a) => !a.deletedAt).sort((a, b) => a.name.localeCompare(b.name)),
+    () => data.activities.filter((a) => !a.deletedAt).sort((a, b) => {
+      const nameA = a.name.toLowerCase(), nameB = b.name.toLowerCase()
+      if (nameA < nameB) return -1
+      if (nameA > nameB) return 1
+      return 0
+    }),
     [data.activities],
   )
 
@@ -358,20 +363,31 @@ export default function ActivitiesPage() {
                   const subject = data.subjects.find((s) => s.id === activity.subjectId)
                   return (
                     <tr key={activity.id} className="border-b last:border-b-0">
-                      <td className="py-2 pr-3 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
+                      <td className="py-2 pr-3">
+                        <div className="flex items-start gap-3">
                           <div
-                            className="h-3 w-3 rounded-full flex-shrink-0"
+                            className="mt-1 h-3 w-3 rounded-full flex-shrink-0"
                             style={{ backgroundColor: activity.color }}
                           />
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
                               {activity.name}
                             </div>
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                              {subject?.name}
+                            <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                              {subject && (
+                                <span className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                                  {getSubjectPathLabel(activity.subjectId, data.subjects)}
+                                </span>
+                              )}
                               {activity.scheduledTime && (
-                                <>{' · '}{activity.scheduledTime}</>
+                                <span className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                                  {activity.scheduledTime}
+                                </span>
+                              )}
+                              {typeof activity.dayMinutes[todayDow] === 'number' && (activity.dayMinutes[todayDow] ?? 0) > 0 && (
+                                <span className="rounded-full border px-2 py-0.5" style={{ borderColor: activity.color, color: activity.color }}>
+                                  {activity.dayMinutes[todayDow]} min today
+                                </span>
                               )}
                             </div>
                           </div>
@@ -489,10 +505,8 @@ export default function ActivitiesPage() {
               onChange={(e) => setSubjectId(e.target.value)}
             >
               <option value="">— None —</option>
-              {data.subjects.map((subject) => (
-                <option key={subject.id} value={subject.id}>
-                  {subject.name}
-                </option>
+              {getSubjectPickerOptions(data.subjects).map((s) => (
+                <option key={s.id} value={s.id}>{s.label}</option>
               ))}
             </select>
           </div>

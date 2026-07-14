@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { format, subDays, differenceInCalendarDays } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { PomodoroTimer } from '../../components/widgets/PomodoroTimer'
-import QuickTimer from '../../components/widgets/QuickTimer'
 import { useData } from '../../app/providers'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
@@ -211,6 +210,7 @@ export default function Dashboard() {
       startAt: newStart.toISOString(),
       endAt: newEnd.toISOString(),
       durationMinutes: editDuration,
+      durationSeconds: editDuration * 60,
       subjectId: editSubjectId,
       updatedAt: isoNow(),
     }
@@ -220,7 +220,7 @@ export default function Dashboard() {
     setEditLog(null)
     push({
       description: `Edited session`,
-      undo: async () => { await db.sessions.update(editLog.id, { startAt: prevSession.startAt, endAt: prevSession.endAt, durationMinutes: prevSession.durationMinutes, subjectId: prevSession.subjectId, updatedAt: prevSession.updatedAt }); await loadData() },
+      undo: async () => { await db.sessions.update(editLog.id, { startAt: prevSession.startAt, endAt: prevSession.endAt, durationMinutes: prevSession.durationMinutes, durationSeconds: prevSession.durationSeconds, subjectId: prevSession.subjectId, updatedAt: prevSession.updatedAt }); await loadData() },
       redo: async () => { await db.sessions.update(editLog.id, updated); await loadData() },
     })
   }
@@ -246,12 +246,6 @@ export default function Dashboard() {
     .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
     .reduce((sum, s) => sum + s.durationMinutes, 0)
   const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
-  const weekStart = new Date()
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
-  weekStart.setHours(0, 0, 0, 0)
-  const weekMinutes = academicSessions
-    .filter((s) => new Date(s.startAt) >= weekStart)
-    .reduce((sum, s) => sum + s.durationMinutes, 0)
   const goalPct = Math.min(100, Math.round((todayMinutes / settings.dailyTargetMinutes) * 100))
   const allRecent = academicSessions
     .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
@@ -353,21 +347,6 @@ export default function Dashboard() {
         <ActivityConfirmationCard onDismiss={() => setShowActivityCard(false)} />
       )}
 
-      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
-          <div className="flex items-center gap-4 text-sm">
-            <span>
-              Today: <strong className="text-slate-800 dark:text-slate-100">{formatMinutes(todayMinutes)}</strong>
-            </span>
-            <span className="text-slate-300 dark:text-slate-600">|</span>
-            <span>
-              Week: <strong className="text-slate-800 dark:text-slate-100">{formatMinutes(weekMinutes)}</strong>
-            </span>
-            <span className="text-slate-300 dark:text-slate-600">|</span>
-            <span>
-              Sessions: <strong className="text-slate-800 dark:text-slate-100">{data.sessions.length}</strong>
-            </span>
-          </div>
-        </div>
       {isWidgetVisible('today') && (
         <Collapsible id="dash-today" title="Today" defaultOpen={true}>
           <Card>
@@ -466,17 +445,14 @@ export default function Dashboard() {
           const ds = format(d, 'yyyy-MM-dd')
           return { date: d, ds, minutes: minutesByDay[ds] ?? 0 }
         })
-        const heatMax90 = Math.max(60, ...heatDays.map((d) => d.minutes))
+        const targetMinutes = Math.max(1, settings.dailyTargetMinutes)
         const dayLabels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-        // Layout: pad so first column is Sunday
         const firstDow = heatDays[0].date.getDay()
-        function getIntensityStep(minutes: number, max: number): number {
-          const intensity = max > 0 ? minutes / max : 0
-          if (intensity === 0) return 0
-          if (intensity < 0.2) return 1
-          if (intensity < 0.4) return 2
-          if (intensity < 0.6) return 3
-          return 4 // >= 0.6
+        function getHeatCategory(minutes: number): 'none' | 'started' | 'near' | 'met' {
+          if (minutes <= 0) return 'none'
+          if (minutes >= targetMinutes) return 'met'
+          if (minutes >= targetMinutes * 0.75) return 'near'
+          return 'started'
         }
         return (
         <Collapsible id="dash-streak-goal" title="Streak & Goal" defaultOpen={true}>
@@ -502,29 +478,37 @@ export default function Dashboard() {
                   {Array.from({ length: firstDow }).map((_, i) => <div key={`pad-${i}`} />)}
                   {heatDays.map(({ date, ds, minutes }) => {
                     const isToday = ds === todayStr
-                    const isMissed = minutes === 0 && !isToday
-                    const step = getIntensityStep(minutes, heatMax90)
+                    const category = getHeatCategory(minutes)
+                    const metTarget = minutes >= targetMinutes
                     return (
                       <div
                         key={ds}
                         className={cn(
-                          'group relative flex h-4 items-center justify-center text-[10px] font-medium transition-all',
+                          'group relative flex h-4 items-center justify-center text-[10px] font-medium transition-all border',
                           isToday && 'ring-2 ring-orange-400 ring-inset z-10',
-                          isMissed && 'bg-red-50 dark:bg-red-900/20',
-                          !isMissed && step === 0 && 'bg-white dark:bg-slate-800',
-                          step === 1 && 'bg-orange-200 dark:bg-orange-900/50',
-                          step === 2 && 'bg-orange-400 dark:bg-orange-800',
-                          step === 3 && 'bg-orange-600 text-white dark:bg-orange-700',
-                          step === 4 && 'bg-orange-800 text-white dark:bg-orange-900',
+                          category === 'none' && 'border-slate-300 bg-slate-100 text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400',
+                          category === 'started' && 'border-amber-200 bg-amber-200 text-amber-900 dark:border-amber-800 dark:bg-amber-900/50 dark:text-amber-100',
+                          category === 'near' && 'border-orange-400 bg-orange-500 text-white dark:border-orange-300 dark:bg-orange-600',
+                          category === 'met' && 'border-green-600 bg-green-700 text-white dark:border-green-400 dark:bg-green-500',
                         )}
                       >
                         <span>{date.getDate()}</span>
-                        <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800">
-                          {format(date, 'd MMM')}: {formatMinutes(minutes)}
+                        <div className="pointer-events-none absolute -top-10 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800">
+                          {format(date, 'd MMM')}: {formatMinutes(minutes)} • {metTarget ? 'Target met' : minutes > 0 ? 'Below target' : 'No study'}
                         </div>
                       </div>
                     )
                   })}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
+                  <span>No study</span>
+                  <div className="h-3 w-3 rounded-sm border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-800" />
+                  <span>Started</span>
+                  <div className="h-3 w-3 rounded-sm border border-amber-200 bg-amber-200 dark:border-amber-800 dark:bg-amber-900/50" />
+                  <span>Near target</span>
+                  <div className="h-3 w-3 rounded-sm border border-orange-400 bg-orange-500" />
+                  <span>Target met</span>
+                  <div className="h-3 w-3 rounded-sm border border-green-600 bg-green-700 dark:border-green-400 dark:bg-green-500" />
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
                   <span>Milestones:</span>
@@ -558,11 +542,6 @@ export default function Dashboard() {
         )
       })()}
 
-      {isWidgetVisible('quick-timer') && (
-        <Collapsible id="dash-quick-timer" title="Quick Timer" defaultOpen={true}>
-          <QuickTimer />
-        </Collapsible>
-      )}
       {isWidgetVisible('study-review') && (
         <Collapsible id="dash-study-review" title="Study Review" defaultOpen={true}>
           <Card>

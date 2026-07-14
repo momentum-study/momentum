@@ -92,3 +92,43 @@ export function sessionLocalDate(isoDate: string | null | undefined): string {
   if (isNaN(d.getTime())) return ''
   return format(d, 'yyyy-MM-dd')
 }
+
+export function isTopLevelSubject(subject: Subject): boolean {
+  return subject.parentSubjectId == null
+}
+
+export function getChildSubjects(parentId: string, subjects: Subject[]): Subject[] {
+  return subjects.filter((s) => !s.deletedAt && s.parentSubjectId === parentId)
+}
+
+export function getTopLevelSubject(subjectId: string, subjects: Subject[]): Subject | null {
+  const subject = subjects.find((s) => s.id === subjectId && !s.deletedAt)
+  if (!subject) return null
+  if (!subject.parentSubjectId) return subject
+  return subjects.find((s) => s.id === subject.parentSubjectId && !s.deletedAt) ?? subject
+}
+
+export function getSubjectPathLabel(subjectId: string | null | undefined, subjects: Subject[]): string {
+  if (!subjectId) return ''
+  const subject = subjects.find((s) => s.id === subjectId && !s.deletedAt)
+  if (!subject) return 'Unknown'
+  if (!subject.parentSubjectId) return subject.name
+  const parent = subjects.find((s) => s.id === subject.parentSubjectId && !s.deletedAt)
+  return parent ? `${parent.name} > ${subject.name}` : subject.name
+}
+
+export function getSubjectPickerOptions(subjects: Subject[]): { id: string; label: string; parentId: string | null }[] {
+  const active = subjects.filter((s) => !s.deletedAt)
+  const parents = active.filter(isTopLevelSubject).sort((a, b) => a.name.localeCompare(b.name))
+  const options: { id: string; label: string; parentId: string | null }[] = []
+  for (const parent of parents) {
+    options.push({ id: parent.id, label: parent.name, parentId: null })
+    const children = active
+      .filter((s) => s.parentSubjectId === parent.id)
+      .sort((a, b) => a.name.localeCompare(b.name))
+    for (const child of children) {
+      options.push({ id: child.id, label: `${parent.name} > ${child.name}`, parentId: parent.id })
+    }
+  }
+  return options
+}

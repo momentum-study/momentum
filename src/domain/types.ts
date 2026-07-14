@@ -17,7 +17,8 @@ export interface Subject {
   categoryId: string
   name: string
   color: string
-  routine?: number[] // 0-6 (Sun-Sat); days of week the subject is studied
+  parentSubjectId?: string | null
+  routine?: number[]
   weeklyTargetMinutes?: number
   createdAt: string
   updatedAt: string

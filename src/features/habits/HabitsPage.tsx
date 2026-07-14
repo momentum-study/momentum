@@ -23,6 +23,16 @@ export default function HabitsPage() {
   const { data, loadData } = useData()
   const { push: pushUndo } = useUndo()
   const settings = loadSettings()
+  // Local optimistic overlay for habit logs — written to Dexie, then reflected
+  // here instantly so the UI updates before loadData() finishes.
+  const [localLogAdditions, setLocalLogAdditions] = useState<HabitLog[]>([])
+  const [localLogDeletions, setLocalLogDeletions] = useState<Set<string>>(new Set())
+  const effectiveHabitLogs = useMemo(
+    () => data.habitLogs
+      .filter((l) => !localLogDeletions.has(l.id))
+      .concat(localLogAdditions),
+    [data.habitLogs, localLogAdditions, localLogDeletions],
+  )
   // Debounce guard for quickLogToday: prevents double-click race conditions
   // when toggling tick-mode habits.
   const quickLogInFlightRef = useRef<Set<string>>(new Set())
@@ -61,14 +71,14 @@ export default function HabitsPage() {
   // NOTE: hooks must be called unconditionally on every render — do NOT early-return before them.
   const selectedHabitLogs = useMemo(() => {
     if (!selectedId) return []
-    return data.habitLogs
+    return effectiveHabitLogs
       .filter((l) => l.habitId === selectedId && !l.deletedAt)
       .sort((a, b) => {
         const dateCmp = b.date.localeCompare(a.date)
         if (dateCmp !== 0) return dateCmp
         return (b.time || '').localeCompare(a.time || '')
       })
-  }, [data.habitLogs, selectedId])
+  }, [effectiveHabitLogs, selectedId])
   const archivedHabits = data.habits.filter((h) => !!h.archivedAt && !h.deletedAt)
   // Active = not archived AND not parked as a potential habit
   const currentHabits = data.habits.filter((h) => !h.archivedAt && h.status !== 'potential' && !h.deletedAt)
@@ -101,7 +111,7 @@ export default function HabitsPage() {
         const createdDate = format(new Date(habit.createdAt), 'yyyy-MM-dd')
         if (todayStr === createdDate) { map.set(habit.id, 0); continue }
       }
-      const logDates = new Set(data.habitLogs.filter((l) => l.habitId === habit.id).map((l) => l.date))
+      const logDates = new Set(effectiveHabitLogs.filter((l) => l.habitId === habit.id).map((l) => l.date))
       const habitStart = habit.createdAt ? new Date(habit.createdAt) : null
       const daysSinceCreation = habitStart
         ? Math.max(0, Math.floor((Date.now() - habitStart.getTime()) / 86400000))
@@ -129,21 +139,19 @@ export default function HabitsPage() {
       map.set(habit.id, streak)
     }
     return map
-  }, [data.habits, data.habitLogs, todayStr])
+  }, [data.habits, effectiveHabitLogs, todayStr])
 
   function getTodayCount(habitId: string): number {
-    return data.habitLogs.filter((l) => l.habitId === habitId && l.date === todayStr).length
+    return effectiveHabitLogs.filter((l) => l.habitId === habitId && l.date === todayStr).length
   }
-
   function getDaysLogged(habitId: string): number {
-    const uniqueDays = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
+    const uniqueDays = new Set(effectiveHabitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
     return uniqueDays.size
   }
-
   function getForgivenDates(habitId: string): Set<string> {
     const habit = data.habits.find((h) => h.id === habitId)
     if (!habit || habit.kind === 'bad') return new Set()
-    const logDates = new Set(data.habitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
+    const logDates = new Set(effectiveHabitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
     const forgiven = new Set<string>()
     let streak = 0
     let missed = 0
@@ -151,87 +159,80 @@ export default function HabitsPage() {
     const maxDays = habit.createdAt
       ? Math.min(365, Math.ceil((Date.now() - new Date(habit.createdAt).getTime()) / 86400000))
       : 365
-    while (streak < maxDays) {
-      const ds = format(d, 'yyyy-MM-dd')
-      if (logDates.has(ds)) {
-        streak++
-        missed = 0
-        d = subDays(d, 1)
-      } else {
-        missed++
-        if (missed > 1) break
-        if (missed === 1) forgiven.add(ds)
-        d = subDays(d, 1)
-      }
+  while (streak < maxDays) {
+    const ds = format(d, 'yyyy-MM-dd')
+    if (logDates.has(ds)) {
+      streak++
+      missed = 0
+      d = subDays(d, 1)
+    } else {
+      missed++
+      if (missed > 1) break
+      if (missed === 1) forgiven.add(ds)
+      d = subDays(d, 1)
     }
-    return forgiven
   }
-
-  // One-click log: directly insert a timestamped log without opening a modal.
-  // Undo is queued so the user can revert the mistake easily.
-  // In tick mode, the button toggles today's log on/off (one log per day).
+  return forgiven
+}
   async function quickLogToday(habitId: string) {
-    // Re-entrancy guard: drop double-clicks while a toggle is in flight
     if (quickLogInFlightRef.current.has(habitId)) return
     quickLogInFlightRef.current.add(habitId)
     try {
-      // Read latest data to avoid stale closures after a previous toggle
       const live = latestDataRef.current
       const habit = live.habits.find((h) => h.id === habitId)
       const now = new Date()
       const todayDate = format(now, 'yyyy-MM-dd')
       const isTick = habit?.mode === 'tick'
-      const subject = habit?.kind === 'bad' ? `Quitting ${habit.name}` : (habit?.name ?? 'habit')
+      const subject = habit?.kind === 'bad' ? `Quitting ${habit?.name ?? 'habit'}` : (habit?.name ?? 'habit')
       if (isTick) {
-        const existing = live.habitLogs.find(
-          (l) => l.habitId === habitId && l.date === todayDate
-        )
+        const existing = live.habitLogs.find((l) => l.habitId === habitId && l.date === todayDate)
         if (existing) {
-          await db.habitLogs.delete(existing.id)
-          await loadData()
-          pushUndo({
-            description: `Unchecked: ${subject}`,
-            undo: async () => { await db.habitLogs.put(existing); await loadData() },
-            redo: async () => { await db.habitLogs.delete(existing.id); await loadData() },
-          })
-        } else {
-          const newLog = {
-            id: uuid(),
-            habitId,
-            date: todayDate,
-            time: format(now, 'HH:mm'),
-            createdAt: isoNow(),
-            updatedAt: isoNow(),
+          setLocalLogDeletions((prev) => new Set(prev).add(existing.id))
+          try {
+            await db.habitLogs.delete(existing.id)
+            await loadData()
+            pushUndo({
+              description: `Unchecked: ${subject}`,
+              undo: async () => { await db.habitLogs.put(existing); await loadData() },
+              redo: async () => { await db.habitLogs.delete(existing.id); await loadData() },
+            })
+          } catch (e) {
+            setLocalLogDeletions((prev) => { const next = new Set(prev); next.delete(existing.id); return next })
+            throw e
           }
-          await db.habitLogs.add(newLog)
-          await loadData()
-          pushUndo({
-            description: `Ticked: ${subject}`,
-            undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
-            redo: async () => { await db.habitLogs.add(newLog); await loadData() },
-          })
+        } else {
+          const newLog = { id: uuid(), habitId, date: todayDate, time: format(now, 'HH:mm'), createdAt: isoNow(), updatedAt: isoNow() }
+          setLocalLogAdditions((prev) => [...prev, newLog])
+          try {
+            await db.habitLogs.add(newLog)
+            await loadData()
+            pushUndo({
+              description: `Ticked: ${subject}`,
+              undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
+              redo: async () => { await db.habitLogs.add(newLog); await loadData() },
+            })
+          } catch (e) {
+            setLocalLogAdditions((prev) => prev.filter((l) => l.id !== newLog.id))
+            throw e
+          }
         }
         return
       }
-
-      // Count mode: append a new log
-      const newLog = {
-        id: uuid(),
-        habitId,
-        date: todayDate,
-        time: format(now, 'HH:mm'),
-        createdAt: isoNow(),
-        updatedAt: isoNow(),
+      const newLog = { id: uuid(), habitId, date: todayDate, time: format(now, 'HH:mm'), createdAt: isoNow(), updatedAt: isoNow() }
+      setLocalLogAdditions((prev) => [...prev, newLog])
+      try {
+        await db.habitLogs.add(newLog)
+        await loadData()
+        pushUndo({
+          description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${subject}`,
+          undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
+          redo: async () => { await db.habitLogs.add(newLog); await loadData() },
+        })
+      } catch (e) {
+        setLocalLogAdditions((prev) => prev.filter((l) => l.id !== newLog.id))
+        throw e
       }
-      await db.habitLogs.add(newLog)
-      await loadData()
-      pushUndo({
-        description: `Logged ${habit?.kind === 'bad' ? 'lapse' : 'occurrence'}: ${subject}`,
-        undo: async () => { await db.habitLogs.delete(newLog.id); await loadData() },
-        redo: async () => { await db.habitLogs.add(newLog); await loadData() },
-      })
     } finally {
-      // Release the debounce lock
       quickLogInFlightRef.current.delete(habitId)
     }
   }
@@ -452,7 +453,7 @@ export default function HabitsPage() {
     const last7 = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(new Date(), 6 - i)
       const ds = format(d, 'yyyy-MM-dd')
-      const hasLog = data.habitLogs.some((l) => l.habitId === habit.id && l.date === ds)
+      const hasLog = effectiveHabitLogs.some((l) => l.habitId === habit.id && l.date === ds)
       const daysAgo = 6 - i
       const isForgiven = !isBad && !hasLog && streak > 0 && streak > daysAgo
       return { date: ds, hasLog, isForgiven }

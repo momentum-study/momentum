@@ -9,26 +9,25 @@ import { Button } from '../ui/Button'
 import { SyncBanner } from '../ui/SyncBanner'
 import { FloatingTimerBanner } from '../ui/FloatingTimerBanner'
 
-const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', icon: '🏠' },
-  { to: '/subjects', label: 'Focus Areas', icon: '📚' },
-  { to: '/projects', label: 'Projects', icon: '🎯' },
-  { to: '/routines', label: 'Routines', icon: '📋' },
-  { to: '/activities', label: 'Activities', icon: '🎭' },
-  { to: '/marks', label: 'Marks', icon: '📝' },
-  { to: '/habits', label: 'Habits', icon: '🔥' },
-  { to: '/study', label: 'Study', icon: '🧠' },
-  { to: '/groups', label: 'Groups', icon: '👥' },
-  { to: '/calendar', label: 'Tasks', icon: '📅' },
-  { to: '/categories', label: 'Categories', icon: '🗂️' },
-  { to: '/reports', label: 'Reports', icon: '📈' },
-  { to: '/reviews', label: 'AI Review', icon: '🤖' },
-  { to: '/settings', label: 'Settings', icon: '⚙️' },
-]
-
-const PREFS_KEY = 'momentum-nav-prefs'
-const PREFS_VERSION_KEY = 'momentum-nav-prefs-version'
-const CURRENT_PREFS_VERSION = 2
+  const NAV_ITEMS = [
+    { to: '/', label: 'Dashboard', icon: '🏠' },
+    { to: '/subjects', label: 'Focus Areas', icon: '📚' },
+    { to: '/projects', label: 'Projects', icon: '🎯' },
+    { to: '/routines', label: 'Routines', icon: '📋' },
+    { to: '/activities', label: 'Activities', icon: '🎭' },
+    { to: '/calendar', label: 'Tasks', icon: '📅' },
+    { to: '/marks', label: 'Marks', icon: '📝' },
+    { to: '/habits', label: 'Habits', icon: '🔥' },
+    { to: '/study', label: 'Study', icon: '🧠' },
+    { to: '/groups', label: 'Groups', icon: '👥' },
+    { to: '/categories', label: 'Categories', icon: '🗂️' },
+    { to: '/reports', label: 'Reports', icon: '📈' },
+    { to: '/reviews', label: 'AI Review', icon: '🤖' },
+    { to: '/settings', label: 'Settings', icon: '⚙️' },
+  ]
+  const PREFS_KEY = 'momentum-nav-prefs'
+  const PREFS_VERSION_KEY = 'momentum-nav-prefs-version'
+  const CURRENT_PREFS_VERSION = 3
 
 interface NavPrefs {
   order: string[]
@@ -148,19 +147,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
     setDraftPrefs(null)
   }
 
-  function moveItem(to: string, direction: -1 | 1) {
-    if (!draftPrefs) return
-    setDraftPrefs((prev) => {
-      if (!prev) return prev
-      const order = [...prev.order]
-      const idx = order.indexOf(to)
-      if (idx === -1) return prev
-      const target = idx + direction
-      if (target < 0 || target >= order.length) return prev
-      ;[order[idx], order[target]] = [order[target], order[idx]]
-      return { ...prev, order }
-    })
-  }
   const dragFromIdx = useRef<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
 
@@ -332,7 +318,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         {draftPrefs && (
           <div className="space-y-3">
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Reorder items or hide them from the sidebar.
+              Drag items to reorder them or hide them from the sidebar.
             </p>
             <ul className="space-y-1">
               {draftPrefs.order.map((to, idx) => {
@@ -361,26 +347,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     )}
                   >
                     <span className="cursor-grab text-slate-400 dark:text-slate-500" aria-label="Drag to reorder">⠿</span>
-                    <div className="flex flex-col">
-                      <button
-                        type="button"
-                        onClick={() => moveItem(to, -1)}
-                        disabled={idx === 0}
-                        className="rounded px-1 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent dark:text-slate-400 dark:hover:bg-slate-700"
-                        aria-label={`Move ${item.label} up`}
-                      >
-                        ▲
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveItem(to, 1)}
-                        disabled={idx === draftPrefs.order.length - 1}
-                        className="rounded px-1 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent dark:text-slate-400 dark:hover:bg-slate-700"
-                        aria-label={`Move ${item.label} down`}
-                      >
-                        ▼
-                      </button>
-                    </div>
                     <span className="text-lg" aria-hidden>{item.icon}</span>
                     <span
                       className={cn(

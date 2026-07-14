@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { isoNow } from '../../lib/utils'
+import { isoNow, getSubjectPathLabel } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { v4 as uuid } from 'uuid'
 import type { Activity, ActivityLog, DayOfWeek, Session } from '../../domain/types'
@@ -139,13 +139,38 @@ export function ActivityConfirmationCard({ onDismiss }: ActivityConfirmationCard
     }, 15 * 60 * 1000)
   }
 
+  const subject = data.subjects.find((s) => s.id === activity.subjectId)
   return (
     <div className="rounded-lg border border-primary-200 bg-primary-50 p-4 dark:border-primary-800 dark:bg-primary-900/20">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-primary-800 dark:text-primary-200">
-            {activity.name} — {dayMinutes} min scheduled
-          </p>
+          <div className="flex items-center gap-2">
+            <div
+              className="h-3 w-3 rounded-full flex-shrink-0"
+              style={{ backgroundColor: activity.color }}
+            />
+            <p className="text-sm font-medium text-primary-800 dark:text-primary-200">
+              {activity.name}
+            </p>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1 text-[11px]">
+            {subject && (
+              <span className="rounded-full border border-primary-300 bg-white px-2 py-0.5 text-primary-700 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+                {getSubjectPathLabel(activity.subjectId, data.subjects)}
+              </span>
+            )}
+            {activity.scheduledTime && (
+              <span className="rounded-full border border-primary-300 bg-white px-2 py-0.5 text-primary-700 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+                {activity.scheduledTime}
+              </span>
+            )}
+            <span className="rounded-full border px-2 py-0.5" style={{ borderColor: activity.color, color: activity.color }}>
+              {dayMinutes} min
+            </span>
+          </div>
+          {activity.notes && (
+            <p className="mt-1.5 text-xs text-primary-600 dark:text-primary-400 italic">{activity.notes}</p>
+          )}
           {pendingCount > 1 && (
             <p className="mt-0.5 text-xs text-primary-600 dark:text-primary-400">
               {pendingCount - 1} more pending

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, gradeColor, isoNow, pctToGrade } from '../../lib/utils'
+import { cn, gradeColor, isoNow, pctToGrade, getSubjectPathLabel, getSubjectPickerOptions } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
@@ -62,7 +62,6 @@ export default function MarksPage() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [filterSubject, setFilterSubject] = useState('')
   const [filterName, setFilterName] = useState('')
-  const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
@@ -70,8 +69,7 @@ export default function MarksPage() {
   const subjects = data.subjects
   const categories = data.categories
 
-  const subjectName = (id: string) =>
-    subjects.find((s) => s.id === id)?.name ?? 'Unknown'
+  const subjectName = (id: string) => getSubjectPathLabel(id, subjects)
 
   const subjectOptions = useMemo(() => {
     return [...subjects].sort((a, b) => {
@@ -87,13 +85,9 @@ export default function MarksPage() {
     if (filterSubject) {
       result = result.filter((m) => m.subjectId === filterSubject)
     }
-    const q = search.toLowerCase()
-    if (q) {
-      result = result.filter((m) => m.name.toLowerCase().includes(q) || subjectName(m.subjectId).toLowerCase().includes(q))
-    }
     if (filterName) {
-      const qName = filterName.toLowerCase()
-      result = result.filter((m) => m.name.toLowerCase().includes(qName))
+      const q = filterName.toLowerCase()
+      result = result.filter((m) => m.name.toLowerCase().includes(q))
     }
     result.sort((a, b) => {
       let cmp = 0
@@ -109,7 +103,7 @@ export default function MarksPage() {
       return sortOrder === 'asc' ? cmp : -cmp
     })
     return result
-  }, [marks, filterSubject, filterName, search, sortKey, sortOrder, subjectName])
+  }, [marks, filterSubject, filterName, sortKey, sortOrder, subjectName])
 
   // Early return AFTER all hooks
   if (isLoading) return <PageSpinner />
@@ -186,16 +180,6 @@ export default function MarksPage() {
         <Button variant="primary" size="sm" onClick={openAdd}>Add Mark</Button>
       </div>
 
-      <div className="mb-4">
-        <input
-          className="input w-full"
-          placeholder="Search marks..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search marks"
-        />
-      </div>
-
       {/* Filters */}
       {marks.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -212,7 +196,7 @@ export default function MarksPage() {
       {/* Mark list */}
       {marks.length === 0 ? (
         <EmptyState
-          title="No marks recorded yet. Add your first mark to track grades."
+          title="No marks yet"
           description="Add a mark to start tracking your academic results."
           action={<Button variant="primary" size="sm" onClick={openAdd}>Add Mark</Button>}
         />
@@ -229,7 +213,7 @@ export default function MarksPage() {
                 <th className="pb-2 pr-4 font-medium">Weight</th>
                 <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('score')}>%<SortIcon column="score" /></th>
                 <th className="pb-2 pr-4 font-medium">Grade</th>
-                <th className="pb-2 pr-4 font-medium">Class Avg</th>
+                <th className="pb-2 pr-4 font-medium">Grade Average</th>
                 <th className="pb-2 pr-4 font-medium">Avg %</th>
                 <th className="pb-2 pr-4 font-medium">Avg Grade</th>
                 <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('date')}>Date<SortIcon column="date" /></th>
@@ -253,7 +237,7 @@ export default function MarksPage() {
                     <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{m.weight}%</td>
                     <td className={cn('py-2.5 pr-4 font-medium', pctColor)}>{pct.toFixed(1)}%</td>
                     <td className={cn('py-2.5 pr-4 font-medium', gradeColor(grade))}>{grade}</td>
-                    <td className={cn('py-2.5 pr-4 text-slate-600 dark:text-slate-300')}>{hasAvg ? m.averageMark!.toFixed(1) : '-'}</td>
+                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{hasAvg ? m.averageMark!.toFixed(1) : '—'}</td>
                     <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">
                       {avgPct != null ? (
                         <span>
@@ -264,9 +248,9 @@ export default function MarksPage() {
                             </span>
                           )}
                         </span>
-                      ) : '-'}
+                      ) : '—'}
                     </td>
-                    <td className={cn('py-2.5 pr-4 font-medium', avgGrade ? gradeColor(avgGrade) : '')}>{avgGrade ?? '-'}</td>
+                    <td className={cn('py-2.5 pr-4 font-medium', avgGrade ? gradeColor(avgGrade) : '')}>{avgGrade ?? '—'}</td>
                     <td className="py-2.5 pr-4 text-slate-500 dark:text-slate-400">{m.date}</td>
                     <td className="py-2.5 whitespace-nowrap text-right">
                       <Button variant="secondary" size="sm" className="mr-1" onClick={() => openEdit(m)}>Edit</Button>
@@ -302,7 +286,7 @@ export default function MarksPage() {
             <label className="label" htmlFor="mark-subject">Subject</label>
             <select id="mark-subject" className="input" value={form.subjectId} onChange={(e) => updateField('subjectId', e.target.value)}>
               <option value="">Select subject</option>
-              {subjectOptions.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+              {getSubjectPickerOptions(subjects).map((s) => (<option key={s.id} value={s.id}>{s.label}</option>))}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -328,7 +312,7 @@ export default function MarksPage() {
           <div>
             <label className="label" htmlFor="mark-average">Grade Average (optional)</label>
             <input id="mark-average" className="input" type="number" value={form.averageMark} onChange={(e) => updateField('averageMark', e.target.value)} placeholder="e.g. 72" />
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Used to compare your mark against the grade average.</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Used to compare your mark against the grade average (e.g. cohort average).</p>
           </div>
           <div>
             <label className="label" htmlFor="mark-date">Date</label>

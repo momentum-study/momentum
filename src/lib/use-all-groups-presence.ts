@@ -11,8 +11,11 @@ export type AllGroupsPresence = Map<string, GroupPresence[]>
  * Subscribes to live presence records for every group the user belongs to.
  * Returns a Map keyed by groupId.  Entries for groups with no active members
  * are omitted.  Returns an empty Map when uid is null or has no groups.
+ *
+ * If `filterUid` is provided, presence records for that uid are excluded from
+ * the returned map (so group presence shows "other people studying").
  */
-export function useAllGroupsPresence(uid: string | null): AllGroupsPresence {
+export function useAllGroupsPresence(uid: string | null, filterUid?: string | null): AllGroupsPresence {
   const [presenceMap, setPresenceMap] = useState<AllGroupsPresence>(new Map())
   const unsubscribes = useRef<(() => void)[]>([])
 
@@ -34,7 +37,11 @@ export function useAllGroupsPresence(uid: string | null): AllGroupsPresence {
       const snapshots: Record<string, GroupPresence[]> = {}
       for (const g of groups) {
         const unsub = groupService.subscribePresence(g.id, (records) => {
-          snapshots[g.id] = records
+          // Filter out the current user's own presence if requested
+          const filtered = filterUid
+            ? records.filter((r) => r.uid !== filterUid)
+            : records
+          snapshots[g.id] = filtered
           if (!cancelled) {
             setPresenceMap(new Map(Object.entries(snapshots)))
           }
@@ -48,10 +55,9 @@ export function useAllGroupsPresence(uid: string | null): AllGroupsPresence {
       unsubscribes.current.forEach((u) => u())
       unsubscribes.current = []
     }
-  }, [uid])
+  }, [uid, filterUid])
 
   // Total active presence records across all groups — drives the tick interval.
-  // Changes when anyone starts/stops studying, even if the number of groups is unchanged.
   const activeCount = useMemo(
     () => Array.from(presenceMap.values()).reduce((sum, r) => sum + r.length, 0),
     [presenceMap],

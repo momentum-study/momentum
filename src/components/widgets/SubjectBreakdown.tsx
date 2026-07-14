@@ -3,7 +3,7 @@
 
 import { useMemo } from 'react'
 import type { Session, Subject } from '../../domain/types'
-import { sessionLocalDate } from '../../lib/utils'
+import { sessionLocalDate, getTopLevelSubject } from '../../lib/utils'
 
 interface SubjectBreakdownProps {
   sessions: Session[]
@@ -31,18 +31,19 @@ export function SubjectBreakdown({
     for (const s of sessions) {
       if (s.deletedAt) continue
       if (sessionLocalDate(s.startAt) !== todayStr) continue
-      minutesBySubject.set(s.subjectId, (minutesBySubject.get(s.subjectId) ?? 0) + s.durationMinutes)
+      const topLevel = getTopLevelSubject(s.subjectId, subjects)
+      if (!topLevel) continue
+      minutesBySubject.set(topLevel.id, (minutesBySubject.get(topLevel.id) ?? 0) + s.durationMinutes)
     }
-
-    // Add live timer seconds
     if (liveTimerSeconds > 0 && liveTimerSubjectId) {
       const liveMinutes = liveTimerSeconds / 60
-      minutesBySubject.set(liveTimerSubjectId, (minutesBySubject.get(liveTimerSubjectId) ?? 0) + liveMinutes)
+      const topLevel = getTopLevelSubject(liveTimerSubjectId, subjects)
+      if (topLevel) {
+        minutesBySubject.set(topLevel.id, (minutesBySubject.get(topLevel.id) ?? 0) + liveMinutes)
+      }
     }
-
     const total = Array.from(minutesBySubject.values()).reduce((a, b) => a + b, 0)
     if (total === 0) return []
-
     return Array.from(minutesBySubject.entries())
       .map(([id, minutes]) => ({
         id,

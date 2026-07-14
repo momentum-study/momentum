@@ -4,7 +4,7 @@ import { differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, formatMinutes, isoNow } from '../../lib/utils'
+import { cn, formatMinutes, isoNow, getSubjectPickerOptions, getSubjectPathLabel } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -34,7 +34,6 @@ const emptyFormData: ProjectFormData = {
 export default function ProjectsPage() {
   const { data, isLoading, loadData } = useData()
   const { push: pushUndo } = useUndo()
-  const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [deleteProject, setDeleteProject] = useState<Project | null>(null)
@@ -193,41 +192,14 @@ export default function ProjectsPage() {
         ))}
       </div>
 
-<<<<<<< HEAD
-      <div className="mb-4">
-        <input
-          className="input w-full"
-          placeholder="Search projects..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search projects"
-        />
-      </div>
-
-      {data.projects.filter((p) => !p.deletedAt).filter((p) => {
-        const subject = data.subjects.find((s) => s.id === p.subjectId)
-        const q = search.toLowerCase()
-        return !search || p.name.toLowerCase().includes(q) || (subject?.name.toLowerCase().includes(q) ?? false)
-      }).length === 0 ? (
-=======
       {visibleProjects.length === 0 ? (
->>>>>>> eded1e7 (refactor: replace ScheduleEntry with Activities, redesign Routines with dayMinutes)
         <EmptyState
           title={statusFilter === 'completed' ? 'No completed projects' : statusFilter === 'active' ? 'No active projects' : 'No projects yet'}
           description={statusFilter === 'completed' ? 'Projects you finish will show up here.' : 'Add a project to track your study goals.'}
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-<<<<<<< HEAD
-          {data.projects.filter((p) => !p.deletedAt).filter((p) => {
-            const subject = data.subjects.find((s) => s.id === p.subjectId)
-            const q = search.toLowerCase()
-            return !search || p.name.toLowerCase().includes(q) || (subject?.name.toLowerCase().includes(q) ?? false)
-          }).map((project) => {
-=======
           {visibleProjects.map((project) => {
->>>>>>> eded1e7 (refactor: replace ScheduleEntry with Activities, redesign Routines with dayMinutes)
-            const subject = data.subjects.find((s) => s.id === project.subjectId)
             const totalMinutes = data.sessions.filter((s) => s.projectId === project.id).reduce((sum, s) => sum + s.durationMinutes, 0)
             const openTasks = data.assignments.filter((a) => a.projectId === project.id && !a.completed && !a.deletedAt).length
             const goalTarget = project.dailyTargetMinutes ?? project.weeklyTargetMinutes ?? project.totalTargetMinutes ?? 0
@@ -249,7 +221,7 @@ export default function ProjectsPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-slate-800 dark:text-slate-100 truncate">{project.name}</div>
-                        <div className="mt-1 text-sm text-slate-500">{subject?.name ?? 'No focus area'}</div>
+                        <div className="mt-1 text-sm text-slate-500">{getSubjectPathLabel(project.subjectId, data.subjects)}</div>
                       </div>
                       <div className="flex gap-1 ml-2" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
                         <Button variant="secondary" size="sm" onClick={() => handleOpenModal(project)} className="px-2 py-1">Edit</Button>
@@ -337,9 +309,9 @@ export default function ProjectsPage() {
               required
             >
               <option value="">Select a focus area</option>
-              {data.subjects.map((subject) => (
+              {getSubjectPickerOptions(data.subjects).map((subject) => (
                 <option key={subject.id} value={subject.id}>
-                  {subject.name}
+                  {subject.label}
                 </option>
               ))}
             </select>

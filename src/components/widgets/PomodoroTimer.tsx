@@ -4,7 +4,7 @@ import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
-import { cn, isoNow } from '../../lib/utils'
+import { cn, isoNow, isTopLevelSubject, getChildSubjects, getSubjectPathLabel } from '../../lib/utils'
 import { formatTotalToday, getTotalTodayMinutes } from '../../lib/timer-utils'
 import { loadSettings, saveSettings } from '../../features/settings/SettingsPage'
 import type { Settings } from '../../features/settings/SettingsPage'
@@ -60,91 +60,80 @@ function getPhaseDuration(phase: Phase, cfg?: { focusMinutes: number; breakMinut
 function GroupPresenceTabs({
   groups,
   presenceByGroup,
+  myPresence,
 }: {
   groups: Group[]
   presenceByGroup: Map<string, GroupPresence[]>
+  myPresence?: { subjectName: string; elapsedSeconds: number } | null
 }) {
-  const [activeId, setActiveId] = useState<string>(groups[0]?.id ?? '')
-
-  // If the active group disappears (e.g. left group), fall back to the first.
+  const visibleGroups = groups.filter((g) => (presenceByGroup.get(g.id)?.length ?? 0) > 0)
+  const [activeId, setActiveId] = useState<string>(visibleGroups[0]?.id ?? '')
   useEffect(() => {
-    if (activeId && groups.some((g) => g.id === activeId)) return
-    if (groups[0]) setActiveId(groups[0].id)
-  }, [groups, activeId])
-
-  const totalActive = groups.reduce(
-    (sum, g) => sum + (presenceByGroup.get(g.id)?.length ?? 0),
-    0,
-  )
-
-  if (groups.length === 0) return null
-
-  const activeRecords = presenceByGroup.get(activeId) ?? []
-
+    if (activeId && visibleGroups.some((g) => g.id === activeId)) return
+    setActiveId(visibleGroups[0]?.id ?? '')
+  }, [visibleGroups, activeId])
+  if (visibleGroups.length === 0 && !myPresence) return null
+  const activeRecords = activeId ? (presenceByGroup.get(activeId) ?? []) : []
   return (
     <div className="space-y-2 rounded-md border border-primary-200/60 bg-white/50 p-2 dark:border-primary-800/60 dark:bg-slate-900/30">
-      <div className="flex items-center gap-1 overflow-x-auto">
-        {groups.map((g) => {
-          const count = presenceByGroup.get(g.id)?.length ?? 0
-          const isActive = g.id === activeId
-          return (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => setActiveId(g.id)}
-              className={cn(
-                'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                isActive
-                  ? 'bg-primary-100 text-primary-800 dark:bg-primary-900/50 dark:text-primary-100'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
-              )}
-              aria-pressed={isActive}
-            >
-              <span>{g.name}</span>
-              <span
-                className={cn(
-                  'flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums',
-                  count > 0
-                    ? 'bg-green-500 text-white'
-                    : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
-                )}
-              >
-                {count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-      <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-        {groups.find((g) => g.id === activeId)?.name} —{' '}
-        {totalActive === 0
-          ? 'no one studying right now'
-          : `${totalActive} active across ${groups.filter((g) => (presenceByGroup.get(g.id)?.length ?? 0) > 0).length || 0} groups`}
-      </div>
-      {activeRecords.length === 0 ? (
-        <div className="text-xs italic text-slate-400 dark:text-slate-500">
-          No one in this group is studying right now.
+      {myPresence && (
+        <div className="rounded-md border border-primary-100 bg-primary-50 px-3 py-2 text-xs text-primary-800 dark:border-primary-900/60 dark:bg-primary-900/20 dark:text-primary-100">
+          You are studying {myPresence.subjectName} — {Math.floor(myPresence.elapsedSeconds / 60)}m {myPresence.elapsedSeconds % 60}s
         </div>
-      ) : (
-        <div className="space-y-1">
-          {activeRecords.map((p) => {
-            const mins = Math.floor((p.elapsedSeconds ?? 0) / 60)
-            const secs = (p.elapsedSeconds ?? 0) % 60
-            return (
-              <div
-                key={p.uid}
-                className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300"
-              >
-                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="font-medium">{p.displayName || 'Member'}</span>
-                <span className="text-slate-400">{p.subjectName}</span>
-                <span className="ml-auto tabular-nums text-slate-500">
-                  {mins}:{String(secs).padStart(2, '0')}
-                </span>
-              </div>
-            )
-          })}
-        </div>
+      )}
+      {visibleGroups.length > 0 && (
+        <>
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {visibleGroups.map((g) => {
+              const count = presenceByGroup.get(g.id)?.length ?? 0
+              const isActive = g.id === activeId
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setActiveId(g.id)}
+                  className={cn(
+                    'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                    isActive
+                      ? 'bg-primary-100 text-primary-800 dark:bg-primary-900/50 dark:text-primary-100'
+                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
+                  )}
+                  aria-pressed={isActive}
+                >
+                  <span>{g.name}</span>
+                  <span className={cn('flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums', count > 0 ? 'bg-green-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400')}>
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            {visibleGroups.find((g) => g.id === activeId)?.name ?? 'All Groups'}
+          </div>
+          {activeRecords.length === 0 ? (
+            <div className="text-xs italic text-slate-400 dark:text-slate-500">
+              No one in this group is studying right now.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {activeRecords.map((p) => {
+                const mins = Math.floor((p.elapsedSeconds ?? 0) / 60)
+                const secs = (p.elapsedSeconds ?? 0) % 60
+                return (
+                  <div key={p.uid} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+                    <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                    <span className="font-medium">{p.displayName || 'Member'}</span>
+                    <span className="text-slate-400">{p.subjectName}</span>
+                    <span className="ml-auto tabular-nums text-slate-500">
+                      {mins}:{String(secs).padStart(2, '0')}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -172,7 +161,18 @@ export function PomodoroTimer() {
   const changeSubjectConfirmationTimer = useRef<number | null>(null)
   const [myGroups, setMyGroups] = useState<Group[]>([])
   const [uid, setUid] = useState<string | null>(null)
-  const allGroupsPresence = useAllGroupsPresence(uid)
+  const allGroupsPresence = useAllGroupsPresence(uid, uid)
+
+  const activeSubjects = data.subjects.filter((s) => !s.deletedAt)
+  const topLevelSubjects = activeSubjects.filter(isTopLevelSubject).sort((a, b) => a.name.localeCompare(b.name))
+  const selectedSubject = activeSubjects.find((s) => s.id === subjectId) ?? null
+  const selectedParentSubject = selectedSubject?.parentSubjectId
+    ? activeSubjects.find((s) => s.id === selectedSubject.parentSubjectId) ?? null
+    : selectedSubject
+  const childSubjects = selectedParentSubject ? getChildSubjects(selectedParentSubject.id, activeSubjects).sort((a, b) => a.name.localeCompare(b.name)) : []
+  const selectedParentId = selectedParentSubject?.id ?? ''
+  const availableProjects = data.projects.filter((p) => p.subjectId === subjectId && !p.deletedAt)
+  const availableTasks = data.assignments.filter((a) => a.projectId === projectId && !a.completed && !a.deletedAt)
 
   useEffect(() => {
     const stored = localStorage.getItem('momentum-cloud-uid')
@@ -545,7 +545,8 @@ export function PomodoroTimer() {
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
       mode: 'simple',
-    subjectId: subjectId,
+      subjectId: subjectId,
+      parentSubjectId: selectedParentId || null,
       startedAt: now,
       phaseRemaining: null,
       phase: 'focus',
@@ -564,7 +565,8 @@ export function PomodoroTimer() {
     setSimpleStartedAt(null)
     const state: PersistedTimerState = {
       mode: 'simple',
-    subjectId: subjectId,
+      subjectId: subjectId,
+      parentSubjectId: selectedParentId || null,
       startedAt: null,
       phaseRemaining: null,
       phase: 'focus',
@@ -581,7 +583,8 @@ export function PomodoroTimer() {
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
       mode: 'simple',
-    subjectId: subjectId,
+      subjectId: subjectId,
+      parentSubjectId: selectedParentId || null,
       startedAt: now,
       phaseRemaining: null,
       phase: 'focus',
@@ -717,11 +720,11 @@ export function PomodoroTimer() {
     setTaskId('')
     const now = Date.now()
     if (mode === 'simple') {
-      setSimpleStartedAt(now)
       const state: PersistedTimerState = {
         mode: 'simple',
-      subjectId: subjectId,
-      simplePausedOffset: 0,
+        subjectId: newSubjectId,
+        parentSubjectId: selectedParentId || null,
+        simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: null,
         phase: 'focus',
@@ -733,8 +736,9 @@ export function PomodoroTimer() {
       setPomStartedAt(now)
       const state: PersistedTimerState = {
         mode: 'pomodoro',
-      subjectId: subjectId,
-      simplePausedOffset: 0,
+        subjectId: newSubjectId,
+        parentSubjectId: selectedParentId || null,
+        simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
         phase: pomPhase,
@@ -755,8 +759,9 @@ export function PomodoroTimer() {
     setPomStartedAt(now)
     const state: PersistedTimerState = {
       mode: 'pomodoro',
-    subjectId: subjectId,
-    simplePausedOffset: 0,
+      subjectId: subjectId,
+      parentSubjectId: selectedParentId || null,
+      simplePausedOffset: 0,
       startedAt: now,
       phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
       phase: pomPhase,
@@ -768,11 +773,11 @@ export function PomodoroTimer() {
   }
 
   function pausePomodoro() {
-    setPomStartedAt(null)
     const state: PersistedTimerState = {
       mode: 'pomodoro',
-    subjectId: subjectId,
-    simplePausedOffset: 0,
+      subjectId: subjectId,
+      parentSubjectId: selectedParentId || null,
+      simplePausedOffset: 0,
       startedAt: null,
       phaseRemaining: pomSeconds,
       phase: pomPhase,
@@ -1058,12 +1063,27 @@ export function PomodoroTimer() {
                 onChange={(e) => { setSubjectId(e.target.value); setProjectId(''); setTaskId('') }}
               >
                 <option value="">— Select focus area —</option>
-                {data.subjects.filter(s => !s.deletedAt).map((s) => (
+                {topLevelSubjects.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
             </div>
-            {subjectId && (
+            {selectedParentId && childSubjects.length > 0 && (
+              <div>
+                <label className="label">Sub-focus Area</label>
+                <select
+                  className="input"
+                  value={subjectId}
+                  onChange={(e) => { setSubjectId(e.target.value); setProjectId(''); setTaskId('') }}
+                >
+                  <option value={selectedParentId}>General / overall subject</option>
+                  {childSubjects.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {subjectId && availableProjects.length > 0 && (
               <div>
                 <label className="label">Project (optional)</label>
                 <select
@@ -1072,13 +1092,13 @@ export function PomodoroTimer() {
                   onChange={(e) => { setProjectId(e.target.value); setTaskId('') }}
                 >
                   <option value="">— Select project —</option>
-                  {data.projects.filter((p) => p.subjectId === subjectId && !p.deletedAt).map((p) => (
+                  {availableProjects.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </div>
             )}
-            {projectId && (
+            {projectId && availableTasks.length > 0 && (
               <div>
                 <label className="label">Task (optional)</label>
                 <select
@@ -1087,7 +1107,7 @@ export function PomodoroTimer() {
                   onChange={(e) => setTaskId(e.target.value)}
                 >
                   <option value="">— Select task —</option>
-                  {data.assignments.filter((a) => a.projectId === projectId && !a.completed && !a.deletedAt).map((a) => (
+                  {availableTasks.map((a) => (
                     <option key={a.id} value={a.id}>{a.title}</option>
                   ))}
                 </select>
@@ -1096,7 +1116,7 @@ export function PomodoroTimer() {
           </>
         ) : !(mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0)) ? (
           <div className="text-sm text-slate-600 dark:text-slate-300">
-            Studying <span className="font-semibold">{data.subjects.find((s) => s.id === subjectId)?.name}</span>
+            Studying <span className="font-semibold">{getSubjectPathLabel(subjectId, data.subjects)}</span>
             {myGroups.length > 0 && (
               <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
                 {myGroups.length} group{myGroups.length === 1 ? '' : 's'}
@@ -1110,7 +1130,7 @@ export function PomodoroTimer() {
       {mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0) ? (
         <div className="mt-4 space-y-4 rounded-lg border border-primary-200 bg-primary-50/40 p-5 dark:border-primary-800 dark:bg-primary-900/20">
           <div className="text-center text-base font-medium text-slate-700 dark:text-slate-200">
-            Studying <span className="font-semibold text-slate-900 dark:text-slate-50">{data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'}</span>
+            Studying <span className="font-semibold text-slate-900 dark:text-slate-50">{getSubjectPathLabel(subjectId, data.subjects) || 'Unknown'}</span>
           </div>
           <div className="text-center text-6xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
             {fmt(simpleSeconds)}
@@ -1119,12 +1139,20 @@ export function PomodoroTimer() {
             Total today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatTotalToday(totalTodayMinutes, isTimerActive && mode === 'simple')}</span>
           </div>
           {/* Live group presence — show when timer is running */}
-          {myGroups.length > 0 && (
-            <GroupPresenceTabs
-              groups={myGroups}
-              presenceByGroup={allGroupsPresence}
-            />
-          )}
+          {myGroups.length > 0 && (() => {
+            const isTimerRunning = simpleStartedAt !== null || pomStartedAt !== null
+            const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? ''
+            const elapsedSeconds = simpleStartedAt
+              ? simplePausedOffset + Math.floor((Date.now() - simpleStartedAt) / 1000)
+              : 0
+            return (
+              <GroupPresenceTabs
+                groups={myGroups}
+                presenceByGroup={allGroupsPresence}
+                myPresence={isTimerRunning ? { subjectName, elapsedSeconds } : null}
+              />
+            )
+          })()}
           <div className="flex justify-center gap-2">
             {simpleStartedAt !== null ? (
               <Button variant="secondary" onClick={pauseSimple}>Pause</Button>

@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid'
 import { Link } from 'react-router-dom'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, isoNow } from '../../lib/utils'
+import { cn, isoNow, isTopLevelSubject, getChildSubjects } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -20,6 +20,7 @@ interface SubjectFormData {
   name: string
   categoryId: string
   color: string
+  parentSubjectId: string
   routine: number[]
   weeklyTargetMinutes: number
 }
@@ -28,6 +29,7 @@ const emptyFormData: SubjectFormData = {
   name: '',
   categoryId: '',
   color: DEFAULT_COLOR,
+  parentSubjectId: '',
   routine: [],
   weeklyTargetMinutes: 60,
 }
@@ -40,6 +42,11 @@ export default function SubjectsPage() {
   const [deleteSubject, setDeleteSubject] = useState<Subject | null>(null)
   const [formData, setFormData] = useState<SubjectFormData>(emptyFormData)
   const [isSaving, setIsSaving] = useState(false)
+
+  const activeSubjects = data.subjects.filter((s) => !s.deletedAt)
+  const topLevelSubjects = activeSubjects
+    .filter((s) => isTopLevelSubject(s) && (!filterCategory || s.categoryId === filterCategory))
+    .sort((a, b) => a.name.localeCompare(b.name))
   const [filterCategory, setFilterCategory] = useState('')
   const activeCategories = data.categories.filter((c) => !c.deletedAt)
 
@@ -50,6 +57,7 @@ export default function SubjectsPage() {
         name: subject.name,
         categoryId: subject.categoryId,
         color: subject.color || DEFAULT_COLOR,
+        parentSubjectId: subject.parentSubjectId ?? '',
         routine: subject.routine || [],
         weeklyTargetMinutes: subject.weeklyTargetMinutes || 60,
       })
@@ -72,15 +80,16 @@ export default function SubjectsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name.trim() || !formData.categoryId) return
-
     setIsSaving(true)
     try {
       const now = isoNow()
+      const parentId = formData.parentSubjectId || null
       if (editingSubject) {
         await db.subjects.update(editingSubject.id, {
           name: formData.name.trim(),
           categoryId: formData.categoryId,
           color: formData.color,
+          parentSubjectId: parentId,
           routine: formData.routine,
           weeklyTargetMinutes: formData.weeklyTargetMinutes,
           updatedAt: now,
@@ -91,6 +100,7 @@ export default function SubjectsPage() {
           name: formData.name.trim(),
           categoryId: formData.categoryId,
           color: formData.color,
+          parentSubjectId: parentId,
           routine: formData.routine,
           weeklyTargetMinutes: formData.weeklyTargetMinutes,
           createdAt: now,
@@ -222,38 +232,59 @@ export default function SubjectsPage() {
           description="Add a focus area to start tracking your study time."
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.subjects.filter((s) => (!filterCategory || s.categoryId === filterCategory) && !s.deletedAt).map((subject) => (
-            <Card key={subject.id}>
-              <div className="flex items-start gap-3">
-                <div
-                  className="mt-1.5 h-3 w-3 shrink-0 rounded-full"
-                  style={{ backgroundColor: subject.color || DEFAULT_COLOR }}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium text-slate-800 dark:text-slate-100">
-                    {subject.name}
-                  </div>
-                  <div className="text-sm text-slate-500">
-                    {data.categories.find((c) => c.id === subject.categoryId)?.name ?? 'Uncategorized'}
-                  </div>
-                  {subject.routine && subject.routine.length > 0 && (
-                    <div className="mt-1 text-xs text-slate-400">
-                      {subject.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}
+        <div className="space-y-4">
+          {topLevelSubjects.map((subject) => {
+            const children = getChildSubjects(subject.id, activeSubjects)
+              .filter((s) => !filterCategory || s.categoryId === filterCategory)
+              .sort((a, b) => a.name.localeCompare(b.name))
+            return (
+              <div key={subject.id} className="space-y-2">
+                <Card>
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="mt-1.5 h-3 w-3 shrink-0 rounded-full"
+                      style={{ backgroundColor: subject.color || DEFAULT_COLOR }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium text-slate-800 dark:text-slate-100">
+                        {subject.name}
+                      </div>
+                      <div className="text-sm text-slate-500">
+                        {data.categories.find((c) => c.id === subject.categoryId)?.name ?? 'Uncategorized'}
+                      </div>
+                      {subject.routine && subject.routine.length > 0 && (
+                        <div className="mt-1 text-xs text-slate-400">
+                          {subject.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button variant="secondary" size="sm" onClick={() => handleOpenModal(subject)}>
-                    Edit
-                  </Button>
-                  <Button variant="danger" size="sm" onClick={() => setDeleteSubject(subject)}>
-                    Delete
-                  </Button>
-                </div>
+                    <div className="flex shrink-0 gap-1">
+                      <Button variant="secondary" size="sm" onClick={() => handleOpenModal(subject)}>Edit</Button>
+                      <Button variant="danger" size="sm" onClick={() => setDeleteSubject(subject)}>Delete</Button>
+                    </div>
+                  </div>
+                </Card>
+                {children.map((child) => (
+                  <Card key={child.id} className="ml-6 border-dashed">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-1.5 h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: child.color || DEFAULT_COLOR }} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium text-slate-800 dark:text-slate-100">{child.name}</div>
+                        <div className="text-sm text-slate-500">Sub-focus area under {subject.name}</div>
+                        {child.routine && child.routine.length > 0 && (
+                          <div className="mt-1 text-xs text-slate-400">{child.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}</div>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button variant="secondary" size="sm" onClick={() => handleOpenModal(child)}>Edit</Button>
+                        <Button variant="danger" size="sm" onClick={() => setDeleteSubject(child)}>Delete</Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
               </div>
-            </Card>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -290,6 +321,27 @@ export default function SubjectsPage() {
               </select>
               <Link to="/categories" className="btn-secondary text-xs">+ New</Link>
             </div>
+          </div>
+
+          <div>
+            <label className="label">Parent subject</label>
+            <select
+              className="input w-full"
+              value={formData.parentSubjectId}
+              onChange={(e) => setFormData((prev) => ({ ...prev, parentSubjectId: e.target.value }))}
+            >
+              <option value="">Top-level subject</option>
+              {activeSubjects
+                .filter((subject) => isTopLevelSubject(subject) && subject.id !== editingSubject?.id)
+                .map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name}
+                  </option>
+                ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Leave empty to create a top-level focus area.
+            </p>
           </div>
 
           <div>

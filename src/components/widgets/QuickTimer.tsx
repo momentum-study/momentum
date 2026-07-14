@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { useData } from '../../app/providers'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
-import { isoNow } from '../../lib/utils'
+import { isoNow, getSubjectPickerOptions } from '../../lib/utils'
 
 function fmt(seconds: number): string {
   const h = Math.floor(seconds / 3600)
@@ -54,57 +54,76 @@ function savePersisted(state: PersistedTimer) {
 export default function QuickTimer() {
   const { data, loadData } = useData()
   const { syncSession } = useSessionSync()
-  const [running, setRunning] = useState(() => loadPersisted().running)
-  const [seconds, setSeconds] = useState(() => loadPersisted().seconds)
-  const [label, setLabel] = useState(() => loadPersisted().label)
-  const [subjectId, setSubjectId] = useState(() => loadPersisted().subjectId)
+  const [running, setRunning] = useState(false)
+  const [seconds, setSeconds] = useState(0)
+  const [label, setLabel] = useState('')
+  const [subjectId, setSubjectId] = useState('')
   const intervalRef = useRef<number | null>(null)
+  const startedAtRef = useRef<number | null>(null)
 
+  // Load persisted state on init
   useEffect(() => {
-    if (running) {
-      intervalRef.current = window.setInterval(() => {
-        setSeconds((s) => s + 1)
-      }, 1000)
+    const persisted = loadPersisted()
+    setRunning(persisted.running)
+    setSeconds(persisted.seconds)
+    setLabel(persisted.label)
+    setSubjectId(persisted.subjectId)
+    if (persisted.running && persisted.startedAt) {
+      startedAtRef.current = persisted.startedAt
     }
+  }, [])
+
+  // Simple timer tick - compute display from wall clock
+  useEffect(() => {
+    if (!running || startedAtRef.current === null) return
+
+    intervalRef.current = window.setInterval(() => {
+      // Trigger a re-render so displaySeconds recomputes from wall clock.
+      setSeconds((prev) => prev)
+    }, 1000)
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
   }, [running])
 
-  function start() {
-    setRunning(true)
-  }
-
   // Persist whenever any timer state changes
   useEffect(() => {
-    savePersisted({ running, seconds, label, subjectId, startedAt: running ? Date.now() : null })
+    savePersisted({ running, seconds, label, subjectId, startedAt: running ? startedAtRef.current : null })
   }, [running, seconds, label, subjectId])
+
+  function start() {
+    startedAtRef.current = Date.now()
+    setRunning(true)
+  }
 
   async function stop() {
     if (intervalRef.current) clearInterval(intervalRef.current)
     intervalRef.current = null
     setRunning(false)
 
-    const total = seconds
+    // Calculate final total including any elapsed time since last startedAt
+    const now = Date.now()
+    const elapsedSinceStart = startedAtRef.current !== null ? Math.floor((now - startedAtRef.current) / 1000) : 0
+    const total = seconds + elapsedSinceStart
     if (total < 10) return
     let subject = data.subjects.find((s) => s.id === subjectId)
     if (!subject) {
       subject = data.subjects[0]
     }
     if (!subject) {
-      // No subjects exist — notify the user instead of silently dropping the session
       window.alert('No subjects found. Please create a subject first so your session can be logged.')
       return
     }
-    const now = new Date()
-    const start = new Date(now.getTime() - total * 1000)
+    const nowDate = new Date()
+    const start = new Date(nowDate.getTime() - total * 1000)
     const session = {
       id: uuid(),
       subjectId: subject.id,
       projectId: null,
       assignmentId: null,
       startAt: start.toISOString(),
-      endAt: now.toISOString(),
+      endAt: nowDate.toISOString(),
       durationMinutes: Math.max(1, Math.round(total / 60)),
       durationSeconds: Math.max(10, Math.round(total)),
       note: label || undefined,
@@ -126,7 +145,13 @@ export default function QuickTimer() {
     setSeconds(0)
     setLabel('')
     setSubjectId('')
+    startedAtRef.current = null
   }
+
+  // Compute display seconds: base accumulated + wall-clock elapsed since last start
+  const displaySeconds = running && startedAtRef.current !== null
+    ? seconds + Math.floor((Date.now() - startedAtRef.current) / 1000)
+    : seconds
 
   const recentSessions = data.sessions
     .filter((s) => s.source === 'timer' && s.note)
@@ -147,8 +172,8 @@ export default function QuickTimer() {
         >
           {data.subjects.length === 0 && <option value="">No subjects yet</option>}
           {!subjectId && data.subjects.length > 0 && <option value="" disabled>Select a subject…</option>}
-          {data.subjects.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
+          {getSubjectPickerOptions(data.subjects).map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
           ))}
         </select>
         <input
@@ -159,7 +184,7 @@ export default function QuickTimer() {
           disabled={running}
         />
         <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
-          {fmt(seconds)}
+          {fmt(displaySeconds)}
         </div>
         <div className="flex justify-center gap-2">
           {!running ? (

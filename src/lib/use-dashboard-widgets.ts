@@ -5,7 +5,6 @@ export const DASHBOARD_WIDGETS: { id: string; label: string }[] = [
   { id: 'today',        label: 'Today Overview' },
   { id: 'streak-goal',  label: 'Study Streak & Daily Goal' },
   { id: 'pomodoro',     label: 'Study Timer' },
-  { id: 'quick-timer',  label: 'Quick Timer' },
   { id: 'log-time',     label: 'Log Study Time' },
   { id: 'study-review', label: 'Study Review' },
   { id: 'calendar',     label: 'Study Calendar' },
@@ -21,7 +20,9 @@ export function useDashboardWidgets() {
       const saved = localStorage.getItem('momentum-dashboard-widgets')
       if (!saved) return DEFAULT_WIDGETS
       const parsed = JSON.parse(saved) as string[]
-      return Array.isArray(parsed) ? parsed : DEFAULT_WIDGETS
+      return Array.isArray(parsed)
+        ? parsed.filter((id) => DEFAULT_WIDGETS.includes(id))
+        : DEFAULT_WIDGETS
     } catch {
       return DEFAULT_WIDGETS
     }

@@ -78,6 +78,7 @@ export interface PersistedTimerState {
   /** Simple timer: total seconds accumulated before the most recent pause (0 if not paused). */
   simplePausedOffset: number
   subjectId?: string
+  parentSubjectId?: string | null
 }
 export function saveTimerState(state: PersistedTimerState): void {
   try {

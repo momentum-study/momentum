@@ -148,7 +148,17 @@ export default function ProjectDetailPage() {
     }
     await db.sessions.add(session)
     await loadData()
-    pushUndo({ description: `Logged ${timeMinutes}m for ${p.name}${timeTask ? ` (${timeTask.title})` : ''}`, undo: async () => { await db.sessions.delete(session.id); await loadData() }, redo: async () => { await db.sessions.add(session); await loadData() } })
+    pushUndo({
+      description: `Logged ${timeMinutes}m for ${p.name}${timeTask ? ` (${timeTask.title})` : ''}`,
+      undo: async () => {
+        await db.sessions.update(session.id, { deletedAt: isoNow(), updatedAt: isoNow() })
+        await loadData()
+      },
+      redo: async () => {
+        await db.sessions.update(session.id, { deletedAt: null, updatedAt: isoNow() })
+        await loadData()
+      },
+    })
     setShowTimeModal(false)
     setTimeMinutes(30)
     setTimeNote('')
@@ -264,7 +274,7 @@ export default function ProjectDetailPage() {
                     {tasks.find((t) => t.id === s.assignmentId)?.title}
                   </span>
                 )}
-                {s.note && <span className="ml-2 text-slate-500">— {s.note}</span>}
+                {s.note && <span className="ml-2 text-slate-500">. {s.note}</span>}
               </div>
               <span className="font-medium text-slate-800 dark:text-slate-100">{formatMinutes(s.durationMinutes)}</span>
             </div>

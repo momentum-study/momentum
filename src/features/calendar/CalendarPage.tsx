@@ -763,7 +763,7 @@ export default function CalendarPage() {
                 })
               }}
             >
-              <option value="">— Select project —</option>
+              <option value="">Select project</option>
               {data.projects.filter((p) => !p.deletedAt).map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -797,7 +797,7 @@ export default function CalendarPage() {
           </div>
 
           <div>
-            <label className="label" htmlFor="task-weight">Weight (%) — grade contribution (0 = not graded)</label>
+            <label className="label" htmlFor="task-weight">Weight (%): grade contribution (0 = not graded)</label>
             <input
               id="task-weight"
               type="number"

@@ -6,7 +6,8 @@ import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { useData } from '../../app/providers'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
-import { isoNow } from '../../lib/utils'
+import type { Session } from '../../domain/types'
+import { cn, isoNow } from '../../lib/utils'
 
 function fmt(seconds: number): string {
   const h = Math.floor(seconds / 3600)
@@ -57,28 +58,48 @@ export default function QuickTimer() {
   const [seconds, setSeconds] = useState(() => loadPersisted().seconds)
   const [label, setLabel] = useState(() => loadPersisted().label)
   const intervalRef = useRef<number | null>(null)
+  const startedAtRef = useRef<number | null>(loadPersisted().startedAt)
+  const [focusTag, setFocusTag] = useState<Session['focusTag'] | null>(null)
+
+  const [selectedSubjectId, setSelectedSubjectId] = useState(() => localStorage.getItem('momentum-quick-timer-subject') ?? '')
 
   useEffect(() => {
-    if (running) {
-      intervalRef.current = window.setInterval(() => {
-        setSeconds((s) => s + 1)
-      }, 1000)
+    if (running && startedAtRef.current) {
+      const tick = () => {
+        const elapsed = Math.floor((Date.now() - startedAtRef.current!) / 1000)
+        setSeconds(elapsed)
+      }
+      tick()
+      intervalRef.current = window.setInterval(tick, 1000)
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
   }, [running])
 
-  function start() {
-    setRunning(true)
-  }
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!document.hidden && running && startedAtRef.current) {
+        const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000)
+        setSeconds(elapsed)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [running])
 
+  function start() {
+    startedAtRef.current = Date.now()
+    setRunning(true)
+    setFocusTag(null)
+  }
   // Persist whenever any timer state changes
   useEffect(() => {
-    savePersisted({ running, seconds, label, startedAt: running ? Date.now() : null })
+    savePersisted({ running, seconds, label, startedAt: startedAtRef.current })
   }, [running, seconds, label])
 
   async function stop() {
+    startedAtRef.current = null
     if (intervalRef.current) clearInterval(intervalRef.current)
     intervalRef.current = null
     setRunning(false)
@@ -86,10 +107,9 @@ export default function QuickTimer() {
     const total = seconds
     if (total < 10) return
 
-    const subject = data.subjects[0]
+    const subject = data.subjects.find(s => s.id === selectedSubjectId)
     if (!subject) {
-      // No subjects exist — notify the user instead of silently dropping the session
-      window.alert('No subjects found. Please create a subject first so your session can be logged.')
+      window.alert('Please select a subject before saving.')
       return
     }
     const now = new Date()
@@ -107,20 +127,24 @@ export default function QuickTimer() {
       source: 'timer' as const,
       createdAt: isoNow(),
       updatedAt: isoNow(),
+      ...(focusTag ? { focusTag } : {}),
     }
     await db.sessions.add(session)
     syncSession(session, subject.name)
     await updateRoutineLogsForSession(session)
     await updateStreakDayForSession(session)
     await loadData()
+    setFocusTag(null)
   }
 
   function reset() {
+    startedAtRef.current = null
     if (intervalRef.current) clearInterval(intervalRef.current)
     intervalRef.current = null
     setRunning(false)
     setSeconds(0)
     setLabel('')
+    setFocusTag(null)
   }
 
   const recentSessions = data.sessions
@@ -134,6 +158,17 @@ export default function QuickTimer() {
         <CardTitle>⏱️ Quick Timer</CardTitle>
       </CardHeader>
       <div className="space-y-3">
+        <select
+          className="input w-full"
+          value={selectedSubjectId}
+          onChange={(e) => { setSelectedSubjectId(e.target.value); localStorage.setItem('momentum-quick-timer-subject', e.target.value) }}
+          disabled={running}
+        >
+          <option value="">Select subject</option>
+          {data.subjects.filter(s => !s.deletedAt).map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
         <input
           className="input w-full"
           placeholder="Optional label (e.g. Math Test)"
@@ -143,6 +178,24 @@ export default function QuickTimer() {
         />
         <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
           {fmt(seconds)}
+        </div>
+        {/* Focus tag selector */}
+        <div className="flex gap-1 flex-wrap" role="group" aria-label="Focus tag">
+          {(['focused', 'distracted', 'group', 'revision'] as const).map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => setFocusTag(focusTag === tag ? null : tag)}
+              className={cn(
+                'rounded-full px-2 py-0.5 text-xs border',
+                focusTag === tag
+                  ? 'border-primary-500 bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200'
+                  : 'border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400'
+              )}
+            >
+              {tag}
+            </button>
+          ))}
         </div>
         <div className="flex justify-center gap-2">
           {!running ? (

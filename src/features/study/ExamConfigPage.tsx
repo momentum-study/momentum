@@ -146,7 +146,7 @@ export default function ExamConfigPage() {
                         <p className="text-sm text-purple-600 dark:text-purple-400 mt-1 ml-6">
                           {daysLeft > 0
                             ? `${daysLeft} days until exam`
-                            : 'Exam passed — consider updating date'}
+                            : 'Exam passed. Consider updating the date.'}
                         </p>
                       )}
                     </div>

@@ -15,8 +15,19 @@ export function formatMinutes(minutes: number): string {
 }
 
 export function formatHours(minutes: number): string {
-  return (minutes / 60).toFixed(1)
+  const h = Math.floor(minutes / 60)
+  const m = Math.round(minutes % 60)
+  if (h === 0) return `${m}m`
+  if (m === 0) return `${h}h`
+  return `${h}h ${m}m`
 }
+/** Returns true if the session is not soft-deleted. */
+export function isActiveSession(s: { deletedAt?: string | null }): boolean {
+  return !s.deletedAt
+}
+
+/** Streak milestones (days) for display badges. */
+export const STREAK_MILESTONES = [7, 14, 21, 30, 66, 100] as const
 
 export function isoNow(): string {
   return new Date().toISOString()
@@ -28,7 +39,7 @@ export function pctToGrade(pct: number): string {
   if (pct >= 75) return 'B'
   if (pct >= 65) return 'C'
   if (pct >= 50) return 'D'
-  return 'E'
+  return 'F'
 }
 
 /** Get color class for a letter grade. */

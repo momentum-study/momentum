@@ -62,6 +62,7 @@ export default function MarksPage() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [filterSubject, setFilterSubject] = useState('')
   const [filterName, setFilterName] = useState('')
+  const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
@@ -86,9 +87,13 @@ export default function MarksPage() {
     if (filterSubject) {
       result = result.filter((m) => m.subjectId === filterSubject)
     }
+    const q = search.toLowerCase()
+    if (q) {
+      result = result.filter((m) => m.name.toLowerCase().includes(q) || subjectName(m.subjectId).toLowerCase().includes(q))
+    }
     if (filterName) {
-      const q = filterName.toLowerCase()
-      result = result.filter((m) => m.name.toLowerCase().includes(q))
+      const qName = filterName.toLowerCase()
+      result = result.filter((m) => m.name.toLowerCase().includes(qName))
     }
     result.sort((a, b) => {
       let cmp = 0
@@ -104,7 +109,7 @@ export default function MarksPage() {
       return sortOrder === 'asc' ? cmp : -cmp
     })
     return result
-  }, [marks, filterSubject, filterName, sortKey, sortOrder, subjectName])
+  }, [marks, filterSubject, filterName, search, sortKey, sortOrder, subjectName])
 
   // Early return AFTER all hooks
   if (isLoading) return <PageSpinner />
@@ -181,6 +186,16 @@ export default function MarksPage() {
         <Button variant="primary" size="sm" onClick={openAdd}>Add Mark</Button>
       </div>
 
+      <div className="mb-4">
+        <input
+          className="input w-full"
+          placeholder="Search marks..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search marks"
+        />
+      </div>
+
       {/* Filters */}
       {marks.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -197,7 +212,7 @@ export default function MarksPage() {
       {/* Mark list */}
       {marks.length === 0 ? (
         <EmptyState
-          title="No marks yet"
+          title="No marks recorded yet. Add your first mark to track grades."
           description="Add a mark to start tracking your academic results."
           action={<Button variant="primary" size="sm" onClick={openAdd}>Add Mark</Button>}
         />
@@ -238,7 +253,7 @@ export default function MarksPage() {
                     <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{m.weight}%</td>
                     <td className={cn('py-2.5 pr-4 font-medium', pctColor)}>{pct.toFixed(1)}%</td>
                     <td className={cn('py-2.5 pr-4 font-medium', gradeColor(grade))}>{grade}</td>
-                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{hasAvg ? m.averageMark!.toFixed(1) : '—'}</td>
+                    <td className={cn('py-2.5 pr-4 text-slate-600 dark:text-slate-300')}>{hasAvg ? m.averageMark!.toFixed(1) : '-'}</td>
                     <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">
                       {avgPct != null ? (
                         <span>
@@ -249,9 +264,9 @@ export default function MarksPage() {
                             </span>
                           )}
                         </span>
-                      ) : '—'}
+                      ) : '-'}
                     </td>
-                    <td className={cn('py-2.5 pr-4 font-medium', avgGrade ? gradeColor(avgGrade) : '')}>{avgGrade ?? '—'}</td>
+                    <td className={cn('py-2.5 pr-4 font-medium', avgGrade ? gradeColor(avgGrade) : '')}>{avgGrade ?? '-'}</td>
                     <td className="py-2.5 pr-4 text-slate-500 dark:text-slate-400">{m.date}</td>
                     <td className="py-2.5 whitespace-nowrap text-right">
                       <Button variant="secondary" size="sm" className="mr-1" onClick={() => openEdit(m)}>Edit</Button>

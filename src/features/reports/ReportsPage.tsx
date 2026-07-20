@@ -8,7 +8,7 @@ import type { Session } from '../../domain/types'
 import { loadSettings } from '../settings/SettingsPage'
 
 type ScopeOption = 'academic' | 'nonAcademic' | 'all'
-type Period = 'week' | 'month' | 'threeMonths' | 'all'
+type Period = 'week' | 'month' | 'threeMonths' | 'all' | 'today'
 
 const SCOPE_OPTIONS: { value: ScopeOption; label: string }[] = [
   { value: 'academic', label: 'Academic' },
@@ -21,19 +21,24 @@ const PERIOD_OPTIONS: { value: Period; label: string }[] = [
   { value: 'month', label: 'This Month' },
   { value: 'threeMonths', label: 'Last 3 Months' },
   { value: 'all', label: 'All Time' },
+  { value: 'today', label: 'Today' },
 ]
 
 const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function periodDays(period: Period): number {
+  if (period === 'today') return 1
   if (period === 'week') return 7
   if (period === 'month') return 30
   if (period === 'threeMonths') return 90
   return 0 // 'all'
 }
-
 function filterSessionsByPeriod(sessions: Session[], period: Period): Session[] {
+  if (period === 'today') {
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+    return sessions.filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
+  }
   const days = periodDays(period)
   if (days === 0) return sessions
   const cutoff = subDays(new Date(), days)
@@ -67,6 +72,10 @@ export default function ReportsPage() {
   // Previous period for comparison
   const prevSessions = useMemo(() => {
     if (period === 'all') return [] as Session[]
+    if (period === 'today') {
+      const yesterdayStr = format(subDays(new Date(), 1), 'yyyy-MM-dd')
+      return scopeFiltered.filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === yesterdayStr)
+    }
     const days = periodDays(period)
     const now = new Date()
     const periodStart = subDays(now, days)
@@ -77,10 +86,7 @@ export default function ReportsPage() {
       return d >= prevStart && d <= prevEnd
     })
   }, [scopeFiltered, period])
-
   const subjectsById = useMemo(() => new Map(data.subjects.map((s) => [s.id, s])), [data.subjects])
-
-  // ── Overview metrics ──
   const overview = useMemo(() => {
     const totalMinutes = sessions.reduce((sum, s) => sum + s.durationMinutes, 0)
     const sessionCount = sessions.length
@@ -114,7 +120,24 @@ export default function ReportsPage() {
     }
     return [...acc.entries()].sort((a, b) => b[1] - a[1])
   }, [sessions, subjectsById])
-
+  const productivityInsight = useMemo(() => {
+    if (sessions.length < 10) return { message: 'Study more to see your patterns.', active: false }
+    const buckets = new Array(12).fill(0)
+    for (const s of sessions) {
+      const hour = new Date(s.startAt).getHours()
+      const bucket = Math.floor(hour / 2)
+      buckets[bucket] += s.durationMinutes
+    }
+    let maxIdx = 0
+    for (let i = 1; i < 12; i++) {
+      if (buckets[i] > buckets[maxIdx]) maxIdx = i
+    }
+    const startHour = maxIdx * 2
+    const endHour = startHour + 2
+    const startLabel = startHour === 0 ? '12 AM' : startHour === 12 ? '12 PM' : startHour > 12 ? `${startHour - 12} PM` : `${startHour} AM`
+    const endLabel = endHour === 24 ? '12 AM' : endHour === 12 ? '12 PM' : endHour > 12 ? `${endHour - 12} PM` : `${endHour} AM`
+    return { message: `Most productive time: ${startLabel} to ${endLabel}`, active: true }
+  }, [sessions])
 
   // ── Schedule adherence (planned vs actual) ──
   const scheduleAdherence = useMemo(() => {
@@ -213,7 +236,7 @@ export default function ReportsPage() {
     // Most studied subject
     if (bySubject.length > 0) {
       const [topName, topMinutes] = bySubject[0]
-      out.push(`Most studied subject: ${topName} with ${formatHours(topMinutes)}h`)
+      out.push(`Most studied subject: ${topName} with ${formatHours(topMinutes)}`)
     }
 
     // Best day of week
@@ -226,13 +249,16 @@ export default function ReportsPage() {
     out.push(`Average session length: ${formatMinutes(Math.round(avgSessionLength))}`)
 
     // Longest session
-    out.push(`Longest session: ${formatHours(longestSession)}h`)
-
+    out.push(`Longest session: ${formatHours(longestSession)}`)
     // Comparison vs last period
     if (pctChange !== null && period !== 'all') {
       const arrow = pctChange >= 0 ? '↑' : '↓'
-      const periodLabel = period === 'week' ? 'week' : period === 'month' ? 'month' : '3 months'
-      out.push(`${arrow} ${Math.abs(pctChange)}% vs last ${periodLabel} (${formatHours(prevTotal)}h → ${formatHours(totalMinutes)}h)`)
+      if (period === 'today') {
+        out.push(`${arrow} ${Math.abs(pctChange)}% vs yesterday (${formatHours(prevTotal)} → ${formatHours(totalMinutes)})`)
+      } else {
+        const periodLabel = period === 'week' ? 'week' : period === 'month' ? 'month' : '3 months'
+        out.push(`${arrow} ${Math.abs(pctChange)}% vs last ${periodLabel} (${formatHours(prevTotal)} → ${formatHours(totalMinutes)})`)
+      }
     }
 
     // Session count insight
@@ -307,7 +333,7 @@ export default function ReportsPage() {
           <div>
             <div className="text-sm text-slate-500">Total Time</div>
             <div className="text-2xl font-semibold text-slate-800 dark:text-slate-100">
-              {formatHours(totalMinutes)}h
+              {formatHours(totalMinutes)}
             </div>
             {pctChange !== null && period !== 'all' && (
               <div className={cn('text-xs font-medium', pctChange >= 0 ? 'text-green-600' : 'text-red-600')}>
@@ -340,11 +366,30 @@ export default function ReportsPage() {
           </div>
           <div>
             <div className="text-sm text-slate-500">Longest Session</div>
-            <div className="text-2xl font-semibold text-slate-800 dark:text-slate-100">{formatHours(longestSession)}h</div>
+            <div className="text-2xl font-semibold text-slate-800 dark:text-slate-100">{formatHours(longestSession)}</div>
           </div>
         </div>
       </Card>
-
+      {/* Productivity Insight Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Productivity Insights</CardTitle>
+        </CardHeader>
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div>
+            <div className="text-sm text-slate-500">Most Productive Time</div>
+            <div className="mt-1 text-lg font-medium text-slate-800 dark:text-slate-100">
+              {productivityInsight.message}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm text-slate-500">Avg Session Duration</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-800 dark:text-slate-100">
+              {formatMinutes(Math.round(avgSessionLength))}
+            </div>
+          </div>
+        </div>
+      </Card>
       {/* Schedule adherence chart */}
       {scheduleAdherence.length > 0 && scheduleAdherence.some((r) => r.planned > 0) && (
         <Card>
@@ -587,8 +632,6 @@ export default function ReportsPage() {
           </div>
         )}
       </Card>
-
-      {/* Hobby Hours */}
       {data.hobbies.length > 0 && (
         <Card>
           <CardHeader>
@@ -604,7 +647,7 @@ export default function ReportsPage() {
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: h.color }} />
                     <span>{h.name}</span>
                   </div>
-                  <span>{Math.floor(totalMinutes / 60)}h {totalMinutes % 60}m</span>
+                  <span>{formatHours(totalMinutes)}</span>
                 </div>
               )
             })}

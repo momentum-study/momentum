@@ -278,8 +278,8 @@ export interface RatingLabel {
 }
 
 export const RATING_LABELS: RatingLabel[] = [
-  { value: 1, label: 'Again', color: 'bg-red-500', description: 'Complete blackout — couldn\'t recall anything' },
-  { value: 2, label: 'Hard', color: 'bg-orange-500', description: 'Significant difficulty — partial recall only' },
-  { value: 3, label: 'Good', color: 'bg-emerald-500', description: 'Comfortable recall — correct after some thought' },
-  { value: 4, label: 'Easy', color: 'bg-blue-500', description: 'Instant recall — no hesitation at all' },
+  { value: 1, label: 'Again', color: 'bg-red-500', description: 'Complete blackout. Couldn\'t recall anything' },
+  { value: 2, label: 'Hard', color: 'bg-orange-500', description: 'Significant difficulty. Partial recall only' },
+  { value: 3, label: 'Good', color: 'bg-emerald-500', description: 'Comfortable recall. Correct after some thought' },
+  { value: 4, label: 'Easy', color: 'bg-blue-500', description: 'Instant recall. No hesitation at all' },
 ]

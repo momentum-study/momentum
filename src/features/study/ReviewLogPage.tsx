@@ -115,7 +115,7 @@ export default function ReviewLogPage() {
             ) : (
               <div className="space-y-3">
                 <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
-                  {selectedArea?.name} — {selectedReviews.length} reviews
+                  {selectedArea?.name}: {selectedReviews.length} reviews
                 </h2>
                 {selectedReviews.map((review) => {
                   const ratingLabel = RATING_LABELS[review.rating - 1]
@@ -135,7 +135,7 @@ export default function ReviewLogPage() {
                             </span>
                           </div>
                           <div className="text-sm mt-2">
-                            {review.minutesSpent} min{review.notes ? ` — ${review.notes}` : ''}
+                            {review.minutesSpent} min{review.notes ? `. ${review.notes}` : ''}
                           </div>
                         </div>
                         <Button

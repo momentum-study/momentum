@@ -34,6 +34,7 @@ const emptyFormData: ProjectFormData = {
 export default function ProjectsPage() {
   const { data, isLoading, loadData } = useData()
   const { push: pushUndo } = useUndo()
+  const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [deleteProject, setDeleteProject] = useState<Project | null>(null)
@@ -170,14 +171,32 @@ export default function ProjectsPage() {
         </Button>
       </div>
 
-      {data.projects.filter((p) => !p.deletedAt).length === 0 ? (
+      <div className="mb-4">
+        <input
+          className="input w-full"
+          placeholder="Search projects..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search projects"
+        />
+      </div>
+
+      {data.projects.filter((p) => !p.deletedAt).filter((p) => {
+        const subject = data.subjects.find((s) => s.id === p.subjectId)
+        const q = search.toLowerCase()
+        return !search || p.name.toLowerCase().includes(q) || (subject?.name.toLowerCase().includes(q) ?? false)
+      }).length === 0 ? (
         <EmptyState
           title="No projects yet"
           description="Add a project to track your study goals."
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.projects.filter((p) => !p.deletedAt).map((project) => {
+          {data.projects.filter((p) => !p.deletedAt).filter((p) => {
+            const subject = data.subjects.find((s) => s.id === p.subjectId)
+            const q = search.toLowerCase()
+            return !search || p.name.toLowerCase().includes(q) || (subject?.name.toLowerCase().includes(q) ?? false)
+          }).map((project) => {
             const subject = data.subjects.find((s) => s.id === project.subjectId)
             const totalMinutes = data.sessions.filter((s) => s.projectId === project.id).reduce((sum, s) => sum + s.durationMinutes, 0)
             const openTasks = data.assignments.filter((a) => a.projectId === project.id && !a.completed && !a.deletedAt).length

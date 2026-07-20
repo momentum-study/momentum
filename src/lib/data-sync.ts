@@ -139,9 +139,9 @@ export async function pushTable(uid: string, tableKey: TableKey): Promise<void> 
     const message = err.message ?? String(e)
     console.error(`[sync] Failed to push ${tableKey}: ${code} ${message}`)
     if (code === 'resource-exhausted') {
-      syncStatus.notifyFailure(`Firestore quota exceeded — sync paused until tomorrow (UTC)`)
+      syncStatus.notifyFailure(`Firestore quota exceeded. Sync paused until tomorrow (UTC)`)
     } else if (code === 'unavailable' || /BLOCKED|offline/i.test(message)) {
-      syncStatus.notifyFailure(`Sync blocked — check that ad-blocker (Brave Shields) is off for this site`)
+      syncStatus.notifyFailure(`Sync blocked. Check that ad-blocker (Brave Shields) is off for this site`)
     } else {
       syncStatus.notifyFailure(`Sync failed for ${tableKey} (${code})`)
     }

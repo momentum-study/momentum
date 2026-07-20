@@ -158,7 +158,7 @@ export default function HobbiesPage() {
         </p>
         <p className="mt-2">
           For structured practice that should count in your study timer,
-          daily totals, and routines — create a <strong>General</strong> focus area instead.
+          daily totals, and routines: create a <strong>General</strong> focus area instead.
         </p>
       </Card>
       
@@ -362,7 +362,7 @@ export default function HobbiesPage() {
             <div>
               <h4 className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">Session History</h4>
               {detailSessions.length === 0 ? (
-                <p className="text-sm text-slate-500">No sessions logged yet.</p>
+                <p className="text-sm text-slate-500">No sessions logged yet. Log your first activity to start tracking.</p>
               ) : (
                 <ul className="space-y-2">
                   {detailSessions.slice(0, 20).map(s => (

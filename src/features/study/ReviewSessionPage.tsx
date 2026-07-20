@@ -170,7 +170,7 @@ export default function ReviewSessionPage() {
           {currentArea.examMode?.enabled && (
             <div className="mb-6 p-3 bg-purple-50 dark:bg-purple-900/30 rounded-lg">
               <p className="text-sm text-purple-700 dark:text-purple-300">
-                📚 Exam mode — due {format(parseISO(currentArea.examMode.dueDate), 'MMM d, yyyy')}
+                📚 Exam mode: due {format(parseISO(currentArea.examMode.dueDate), 'MMM d, yyyy')}
               </p>
             </div>
           )}

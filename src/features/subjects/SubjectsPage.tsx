@@ -33,6 +33,7 @@ const emptyFormData: SubjectFormData = {
 
 export default function SubjectsPage() {
   const { data, isLoading, loadData } = useData()
+  const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null)
   const [deleteSubject, setDeleteSubject] = useState<Subject | null>(null)
@@ -189,14 +190,24 @@ export default function SubjectsPage() {
         </div>
       )}
 
-      {data.subjects.length === 0 ? (
+        <div className="mb-4">
+          <input
+            className="input w-full"
+            placeholder="Search subjects..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search subjects"
+          />
+        </div>
+
+      {data.subjects.filter((s) => !filterCategory || s.categoryId === filterCategory).filter((s) => s.name.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
         <EmptyState
           title="No focus areas yet"
           description="Add a focus area to start tracking your study time."
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.subjects.filter((s) => !filterCategory || s.categoryId === filterCategory).map((subject) => (
+          {data.subjects.filter((s) => !filterCategory || s.categoryId === filterCategory).filter((s) => s.name.toLowerCase().includes(search.toLowerCase())).map((subject) => (
             <Card key={subject.id}>
               <div className="flex items-start gap-3">
                 <div

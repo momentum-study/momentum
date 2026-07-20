@@ -501,7 +501,7 @@ export default function RoutinePage() {
                         <span className="block text-center text-xs text-slate-700 dark:text-slate-300">
                           {(() => {
                             const saved = getSaved(subject.id, d)
-                            if (!saved) return '—'
+                            if (!saved) return '-'
                             return `${saved.targetMinutes}m` + (saved.notes ? ` · ${saved.notes}` : '')
                           })()}
                         </span>

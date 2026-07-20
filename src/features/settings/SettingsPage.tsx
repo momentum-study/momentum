@@ -237,11 +237,11 @@ function DataImport() {
               <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Import mode</p>
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <input type="radio" name="importMode" value="merge" checked={mode === 'merge'} onChange={() => setMode('merge')} />
-                <span><strong>Merge</strong> — update existing records by id, keep everything else</span>
+                <span><strong>Merge</strong>: update existing records by id, keep everything else</span>
               </label>
               <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <input type="radio" name="importMode" value="replace" checked={mode === 'replace'} onChange={() => setMode('replace')} />
-                <span><strong>Replace</strong> — clear all tables first, then import (destructive)</span>
+                <span><strong>Replace</strong>: clear all tables first, then import (destructive)</span>
               </label>
             </div>
 

@@ -55,6 +55,7 @@ export interface Session {
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
+  focusTag?: 'focused' | 'distracted' | 'group' | 'revision'
 }
 
 export interface ProgressLog {
@@ -124,6 +125,10 @@ export interface Habit {
   updatedAt: string
   deletedAt?: string | null
   archivedAt?: string | null
+  // Distinct from archivedAt: a finished/graduated habit is one the user has
+  // permanently established. It stops appearing as an active habit and moves
+  // to a "Finished" section, but is preserved separately from the archive.
+  finishedAt?: string | null
   archivedAfterDays?: number | null
   status?: 'active' | 'potential'
   targetPerDay?: number
@@ -139,6 +144,7 @@ export interface HabitLog {
   updatedAt: string
   deletedAt?: string | null
   value?: number
+  focusTag?: 'focused' | 'distracted' | 'group' | 'revision'
 }
 
 // Streak — one row per day that had study activity

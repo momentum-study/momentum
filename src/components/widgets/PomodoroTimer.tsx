@@ -19,7 +19,8 @@ import { pushSettings } from '../../lib/settings-sync'
 
 type Mode = 'pomodoro' | 'simple'
 const LAST_SUBJECT_KEY = 'momentum-last-subject'
-
+const SAFETY_LIMIT_HOURS = 12
+const SAFETY_LIMIT_SECONDS = SAFETY_LIMIT_HOURS * 3600
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
 
 function fmt(seconds: number): string {
@@ -211,8 +212,11 @@ export function PomodoroTimer() {
   // Tracks the cumulative simpleSeconds value at the time of the last session save.
   // Used to compute per-session deltas so the cumulative timer doesn't reset.
   const lastSavedCumulativeRef = useRef(0)
-
-  // Pomodoro timer
+  // Safety guard: 12-hour runaway timer limit. Tracks whether the guard has
+  // already fired for the current run so it only triggers once.
+  const [safetyMessage, setSafetyMessage] = useState('')
+  const simpleSafetyFiredRef = useRef(false)
+  const pomSafetyFiredRef = useRef(false)
   const [pomPhase, setPomPhase] = useState<Phase>(() => {
     const saved = loadTimerState()
     return saved?.phase ?? 'focus'
@@ -302,9 +306,16 @@ export function PomodoroTimer() {
       setSimpleSeconds(simplePausedOffset)
       return
     }
+    simpleSafetyFiredRef.current = false
     const tick = () => {
       const elapsed = simplePausedOffset + Math.floor((Date.now() - simpleStartedAt) / 1000)
       setSimpleSeconds(elapsed)
+      // 12-hour safety guard — auto-pause if elapsed exceeds limit
+      if (elapsed >= SAFETY_LIMIT_SECONDS && !simpleSafetyFiredRef.current) {
+        simpleSafetyFiredRef.current = true
+        pauseSimple()
+        setSafetyMessage('Timer auto-paused after 12 hours. Take a break!')
+      }
     }
     tick()
     const interval = window.setInterval(tick, 1000)
@@ -314,6 +325,7 @@ export function PomodoroTimer() {
   // Pomodoro timer tick — compute remaining from wall clock
   useEffect(() => {
     if (!pomStartedAt) return
+    pomSafetyFiredRef.current = false
     const tick = () => {
       const saved = loadTimerState()
       const currentPhase = saved?.phase ?? pomPhase
@@ -321,6 +333,12 @@ export function PomodoroTimer() {
       const elapsed = Math.floor((Date.now() - pomStartedAt) / 1000)
       const remaining = Math.max(0, duration - elapsed)
       setPomSeconds(remaining)
+      // 12-hour safety guard — auto-pause if elapsed exceeds limit
+      if (elapsed >= SAFETY_LIMIT_SECONDS && !pomSafetyFiredRef.current) {
+        pomSafetyFiredRef.current = true
+        pausePomodoro()
+        setSafetyMessage('Timer auto-paused after 12 hours. Take a break!')
+      }
     }
     tick()
     const interval = window.setInterval(tick, 1000)
@@ -541,6 +559,10 @@ export function PomodoroTimer() {
 
   // Simple timer
   function startSimple() {
+    setSafetyMessage('')
+    simpleSafetyFiredRef.current = false
+    lastSavedCumulativeRef.current = 0
+    void null
     const now = Date.now()
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
@@ -577,8 +599,9 @@ export function PomodoroTimer() {
     saveTimerState(state)
     // Presence is managed centrally by the `isRunning` effect above.
   }
-
   function resumeSimple() {
+    setSafetyMessage('')
+    simpleSafetyFiredRef.current = false
     const now = Date.now()
     setSimpleStartedAt(now)
     const state: PersistedTimerState = {
@@ -633,6 +656,8 @@ export function PomodoroTimer() {
       await loadData()
     }
     lastSavedCumulativeRef.current = total
+    simpleSafetyFiredRef.current = false
+    setSafetyMessage('')
   }
 
   async function changeSubject(newSubjectId: string) {
@@ -755,6 +780,8 @@ export function PomodoroTimer() {
   }
 
   function startPomodoro() {
+    setSafetyMessage('')
+    pomSafetyFiredRef.current = false
     const now = Date.now()
     setPomStartedAt(now)
     const state: PersistedTimerState = {
@@ -771,8 +798,9 @@ export function PomodoroTimer() {
     saveTimerState(state)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
   }
-
   function pausePomodoro() {
+    pomSafetyFiredRef.current = false
+    setPomStartedAt(null)
     const state: PersistedTimerState = {
       mode: 'pomodoro',
       subjectId: subjectId,
@@ -788,6 +816,8 @@ export function PomodoroTimer() {
   }
 
   async function resetPomodoro() {
+    setSafetyMessage('')
+    pomSafetyFiredRef.current = false
     // Save partial focus session before discarding
     if (pomPhase === 'focus' && pomStartedAt) {
       const actualSubjId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
@@ -992,6 +1022,12 @@ export function PomodoroTimer() {
           </div>
         )
       })()}
+      {/* Safety message — 12-hour runaway timer guard */}
+      {safetyMessage && (
+        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-center text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+          {safetyMessage}
+        </div>
+      )}
 
       {/* Timer display — hidden when YPT simple view is active */}
       {!(mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0)) && (

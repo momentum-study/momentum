@@ -126,13 +126,14 @@ export default function Dashboard() {
   const [logDuration, setLogDuration] = useState(persistedForm?.duration ?? 30)
   const [logDate, setLogDate] = useState(persistedForm?.date ?? todayStr)
   const [logNote, setLogNote] = useState(persistedForm?.note ?? '')
+  const [logFocusTag, setLogFocusTag] = useState<Session['focusTag'] | null>(persistedForm?.focusTag ?? null)
 
   useEffect(() => {
     sessionStorage.setItem(LOG_FORM_KEY, JSON.stringify({
       subjectId: logSubjectId, projectId: logProjectId, taskId: logTaskId,
-      duration: logDuration, date: logDate, note: logNote,
+      duration: logDuration, date: logDate, note: logNote, focusTag: logFocusTag,
     }))
-  }, [logSubjectId, logProjectId, logTaskId, logDuration, logDate, logNote])
+  }, [logSubjectId, logProjectId, logTaskId, logDuration, logDate, logNote, logFocusTag])
 
   async function handleLogTime() {
     const note = logNote.trim()
@@ -157,6 +158,7 @@ export default function Dashboard() {
       endAt,
       durationMinutes: logDuration,
       note: taskNote,
+      focusTag: logFocusTag ?? undefined,
       source: 'quickLog' as const,
       createdAt: isoNow(),
       updatedAt: isoNow(),
@@ -179,6 +181,7 @@ export default function Dashboard() {
     setLogProjectId('')
     setLogTaskId('')
     setLogNote('')
+    setLogFocusTag(null)
   }
 
   const [editLog, setEditLog] = useState<Session | null>(null)
@@ -783,7 +786,7 @@ export default function Dashboard() {
                 {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            {logSubjectId && (
+            {logSubjectId && data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).length > 0 && (
               <div>
                 <label className="label">Project (optional)</label>
                 <select className="input" value={logProjectId} onChange={(e) => { const pid = e.target.value; setLogProjectId(pid); setLogTaskId(''); if (pid) { const proj = data.projects.find((p) => p.id === pid); if (proj) setLogSubjectId(proj.subjectId) } }}>
@@ -818,6 +821,26 @@ export default function Dashboard() {
             <div className="flex-1">
               <label className="label">Note (optional)</label>
               <input className="input w-full" placeholder="What did you work on?" value={logNote} onChange={(e) => setLogNote(e.target.value)} />
+            </div>
+            <div className="w-full">
+              <label className="label">Focus quality (optional)</label>
+              <div className="flex gap-1 flex-wrap" role="group" aria-label="Focus tag">
+                {(['focused', 'distracted', 'group', 'revision'] as const).map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setLogFocusTag(logFocusTag === tag ? null : tag)}
+                    className={cn(
+                      'rounded-full px-2 py-0.5 text-xs border',
+                      logFocusTag === tag
+                        ? 'border-primary-500 bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200'
+                        : 'border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400'
+                    )}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
             </div>
             <Button
               disabled={!logSubjectId && !logProjectId}

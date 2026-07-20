@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
 import { db } from '../../db/app-db'
+import type { Session } from '../../domain/types'
 import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { useData } from '../../app/providers'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
-import { isoNow, getSubjectPickerOptions } from '../../lib/utils'
+import { isoNow, getSubjectPickerOptions, cn } from '../../lib/utils'
 
 function fmt(seconds: number): string {
   const h = Math.floor(seconds / 3600)
@@ -17,20 +18,19 @@ function fmt(seconds: number): string {
 }
 
 const STORAGE_KEY = 'momentum-quick-timer'
-
 interface PersistedTimer {
   running: boolean
   seconds: number
   label: string
   subjectId: string
+  focusTag?: Session['focusTag'] | null
   startedAt: number | null // ms epoch when the timer last started/resumed
 }
-
 function loadPersisted(): PersistedTimer {
-  if (typeof localStorage === 'undefined') return { running: false, seconds: 0, label: '', subjectId: '', startedAt: null }
+  if (typeof localStorage === 'undefined') return { running: false, seconds: 0, label: '', subjectId: '', focusTag: null, startedAt: null }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { running: false, seconds: 0, label: '', subjectId: '', startedAt: null }
+    if (!raw) return { running: false, seconds: 0, label: '', subjectId: '', focusTag: null, startedAt: null }
     const parsed = JSON.parse(raw) as PersistedTimer
     // If the timer was running, add elapsed wall-clock time since it was started
     if (parsed.running && parsed.startedAt) {
@@ -40,10 +40,9 @@ function loadPersisted(): PersistedTimer {
     }
     return parsed
   } catch {
-    return { running: false, seconds: 0, label: '', subjectId: '', startedAt: null }
+    return { running: false, seconds: 0, label: '', subjectId: '', focusTag: null, startedAt: null }
   }
 }
-
 function savePersisted(state: PersistedTimer) {
   if (typeof localStorage === 'undefined') return
   try {
@@ -58,16 +57,16 @@ export default function QuickTimer() {
   const [seconds, setSeconds] = useState(0)
   const [label, setLabel] = useState('')
   const [subjectId, setSubjectId] = useState('')
+  const [focusTag, setFocusTag] = useState<Session['focusTag'] | null>(null)
   const intervalRef = useRef<number | null>(null)
   const startedAtRef = useRef<number | null>(null)
-
-  // Load persisted state on init
   useEffect(() => {
     const persisted = loadPersisted()
     setRunning(persisted.running)
     setSeconds(persisted.seconds)
     setLabel(persisted.label)
     setSubjectId(persisted.subjectId)
+    setFocusTag(persisted.focusTag ?? null)
     if (persisted.running && persisted.startedAt) {
       startedAtRef.current = persisted.startedAt
     }
@@ -86,14 +85,14 @@ export default function QuickTimer() {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
   }, [running])
-
   // Persist whenever any timer state changes
   useEffect(() => {
-    savePersisted({ running, seconds, label, subjectId, startedAt: running ? startedAtRef.current : null })
-  }, [running, seconds, label, subjectId])
+    savePersisted({ running, seconds, label, subjectId, focusTag, startedAt: running ? startedAtRef.current : null })
+  }, [running, seconds, label, subjectId, focusTag])
 
   function start() {
     startedAtRef.current = Date.now()
+    setFocusTag(null)
     setRunning(true)
   }
 
@@ -128,6 +127,7 @@ export default function QuickTimer() {
       durationSeconds: Math.max(10, Math.round(total)),
       note: label || undefined,
       source: 'timer' as const,
+      ...(focusTag ? { focusTag } : {}),
       createdAt: isoNow(),
       updatedAt: isoNow(),
     }
@@ -135,6 +135,7 @@ export default function QuickTimer() {
     syncSession(session, subject.name)
     await updateRoutineLogsForSession(session)
     await updateStreakDayForSession(session)
+    setFocusTag(null)
     await loadData()
   }
 
@@ -146,6 +147,7 @@ export default function QuickTimer() {
     setLabel('')
     setSubjectId('')
     startedAtRef.current = null
+    setFocusTag(null)
   }
 
   // Compute display seconds: base accumulated + wall-clock elapsed since last start
@@ -185,6 +187,24 @@ export default function QuickTimer() {
         />
         <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
           {fmt(displaySeconds)}
+        </div>
+        {/* Focus tag selector */}
+        <div className="flex gap-1 flex-wrap" role="group" aria-label="Focus tag">
+          {(['focused', 'distracted', 'group', 'revision'] as const).map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => setFocusTag(focusTag === tag ? null : tag)}
+              className={cn(
+                'rounded-full px-2 py-0.5 text-xs border',
+                focusTag === tag
+                  ? 'border-primary-500 bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-200'
+                  : 'border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400'
+              )}
+            >
+              {tag}
+            </button>
+          ))}
         </div>
         <div className="flex justify-center gap-2">
           {!running ? (

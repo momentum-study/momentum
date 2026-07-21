@@ -65,7 +65,7 @@ export default function SubjectsPage() {
       setEditingSubject(null)
       setFormData({
         ...emptyFormData,
-        categoryId: data.categories[0]?.id || '',
+        categoryId: activeCategories[0]?.id || '',
       })
     }
     setIsModalOpen(true)
@@ -203,7 +203,7 @@ export default function SubjectsPage() {
   if (isLoading) return <PageSpinner />
 
   return (
-    <div className="space-y-4">
+    <div data-tour="subjects" className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Focus Areas</h2>
         <div className="flex gap-2">
@@ -250,7 +250,7 @@ export default function SubjectsPage() {
         </div>
       )}
 
-      {data.subjects.length === 0 ? (
+      {activeSubjects.length === 0 ? (
         <EmptyState
           title="No focus areas yet"
           description="Add a focus area to start tracking your study time."

@@ -40,6 +40,9 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
   return (
     <dialog
       ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={title ? 'modal-title' : undefined}
       onClose={onClose}
       // The native dialog fires `cancel` (ESC) and `click` on the backdrop pseudo-element.
       // We handle cancel explicitly here, so suppress the default native close to avoid the
@@ -75,7 +78,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
     >
       {title && (
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-          <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
+          <h2 id="modal-title" className="text-base font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
           <button
             type="button"
             aria-label="Close"

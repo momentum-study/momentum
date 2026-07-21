@@ -177,24 +177,26 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="flex flex-col gap-2" onKeyDown={handleKeyDown}>
+      <div className="flex flex-col gap-2" onKeyDown={handleKeyDown} aria-live="polite">
         <div className="relative">
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="palette-listbox"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Type to search… (${shortcut} to close)`}
             className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500 dark:focus:border-primary-400"
           />
         </div>
-
-        <div ref={listRef} className="max-h-80 overflow-y-auto">
+        <div ref={listRef} id="palette-listbox" className="max-h-80 overflow-y-auto" role="listbox">
           {filtered.length === 0 && (
             <p className="py-6 text-center text-sm text-slate-400">No results found</p>
           )}
           {grouped.map((g) => (
-            <div key={g.group}>
+            <div key={g.group} role="group" aria-label={g.group}>
               <div className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                 {g.group}
               </div>
@@ -205,6 +207,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                     key={item.id}
                     data-idx={idx}
                     type="button"
+                    role="option"
+                    aria-selected={idx === activeIndex}
                     onClick={() => selectItem(item)}
                     onMouseEnter={() => setActiveIndex(idx)}
                     className={cn(

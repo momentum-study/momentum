@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, gradeColor, isoNow, pctToGrade, getSubjectPathLabel, getSubjectPickerOptions } from '../../lib/utils'
+import { filterActive } from '../../lib/filterActive'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
@@ -64,10 +65,9 @@ export default function MarksPage() {
   const [filterName, setFilterName] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
-
   const marks = data.marks.filter((m) => !m.deletedAt)
-  const subjects = data.subjects
-  const categories = data.categories
+  const subjects = filterActive(data.subjects)
+  const categories = filterActive(data.categories)
 
   const subjectName = (id: string) => getSubjectPathLabel(id, subjects)
 

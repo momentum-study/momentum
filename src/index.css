@@ -83,3 +83,34 @@
     @apply border-slate-700 bg-slate-800;
   }
 }
+
+/* ----- Focus mode: hide sidebar/header chrome and widen main ----- */
+body.focus-mode .sidebar-container,
+body.focus-mode header.app-header {
+  display: none !important;
+}
+body.focus-mode .app-main {
+  max-width: 100% !important;
+  padding: 2rem;
+}
+/* ----- Confetti celebration animation ----- */
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-200px) rotate(720deg) scale(0.3);
+    opacity: 0;
+  }
+}
+
+/* ----- Pulse animation for approaching milestone ----- */
+@keyframes milestone-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(234, 88, 12, 0);
+  }
+}

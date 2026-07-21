@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '../../lib/utils'
+import { isInputFocused, eventToShortcutKey, SHORTCUTS } from '../../lib/shortcuts'
+import { Kbd } from '../ui/Kbd'
 import { UndoToast } from '../ui/UndoToast'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 
 import { SyncBanner } from '../ui/SyncBanner'
 import { FloatingTimerBanner } from '../ui/FloatingTimerBanner'
+import { OnboardingTour } from '../ui/OnboardingTour'
+import { useFocusMode } from '../../lib/use-focus-mode'
 
   const NAV_ITEMS = [
     { to: '/', label: 'Dashboard', icon: '🏠' },
@@ -95,6 +99,7 @@ function applyPrefs(base: typeof NAV_ITEMS, prefs: NavPrefs): typeof NAV_ITEMS {
 
 
 export function AppLayout({ children }: { children: ReactNode }) {
+  const { toggle: toggleFocusMode } = useFocusMode()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -126,7 +131,84 @@ export function AppLayout({ children }: { children: ReactNode }) {
     } catch {}
     return false
   })
+  const [showHelp, setShowHelp] = useState(false)
+  const navigate = useNavigate()
   const location = useLocation()
+
+  // ── Global keyboard shortcuts ──
+  useEffect(() => {
+    const NAV_ROUTE: Record<string, string> = {
+      'nav-dashboard': '/',
+      'nav-subjects': '/subjects',
+      'nav-projects': '/projects',
+      'nav-habits': '/habits',
+      'nav-reports': '/reports',
+      'nav-calendar': '/calendar',
+      'nav-settings': '/settings',
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      const focused = isInputFocused()
+      const shortcutKey = eventToShortcutKey(e)
+
+      // Find matching shortcut by keys string
+      const shortcut = SHORTCUTS.find((s) => s.keys === shortcutKey)
+      if (!shortcut) return
+
+      // Suppress all shortcuts except Esc and Cmd+K/Ctrl+K when in input
+      if (focused) {
+        const allowed = shortcutKey === 'Esc' || shortcutKey === 'Cmd+K' || shortcutKey === 'Ctrl+K'
+        if (!allowed) return
+      }
+
+      // Special: ? shortcut only fires when not in input (suppressInInput is already true)
+      if (shortcut.id === 'help' && (e.shiftKey || focused)) return
+
+      e.preventDefault()
+      e.stopPropagation()
+
+      const route = NAV_ROUTE[shortcut.id]
+      if (route) {
+        navigate(route)
+        return
+      }
+
+      switch (shortcut.id) {
+        case 'command-palette':
+          window.dispatchEvent(new CustomEvent('momentum:command-palette'))
+          break
+        case 'help':
+        case 'help-alt':
+          setShowHelp(true)
+          break
+        case 'focus-mode':
+          toggleFocusMode()
+          break
+        case 'toggle-sidebar':
+          setSidebarOpen((prev) => !prev)
+          break
+        case 'undo':
+          window.dispatchEvent(new CustomEvent('momentum:undo'))
+          break
+        case 'redo':
+          window.dispatchEvent(new CustomEvent('momentum:redo'))
+          break
+        case 'escape':
+          window.dispatchEvent(new CustomEvent('momentum:escape'))
+          break
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [navigate, setSidebarOpen, toggleFocusMode])
+
+  // Listen for momentum:help events from other components
+  useEffect(() => {
+    function onHelp() { setShowHelp(true) }
+    window.addEventListener('momentum:help', onHelp)
+    return () => window.removeEventListener('momentum:help', onHelp)
+  }, [])
 
   const visibleItems = applyPrefs(NAV_ITEMS, prefs)
   function openCustomizer() {
@@ -183,8 +265,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <SyncBanner />
       <div className="flex flex-1 overflow-hidden">
       <aside
+        role="navigation"
+        aria-label="Main navigation"
         className={cn(
-          'hidden md:flex flex-col border-r border-slate-200 bg-white transition-all duration-200',
+          'sidebar-container hidden md:flex flex-col border-r border-slate-200 bg-white transition-all duration-200',
           'dark:border-slate-700 dark:bg-slate-800',
           sidebarOpen ? 'w-56' : 'w-0 overflow-hidden border-r-0'
         )}
@@ -253,8 +337,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
           />
           {/* Slide-over panel */}
           <aside
+            role="navigation"
+            aria-label="Main navigation"
             className={cn(
-              'fixed left-0 top-0 z-40 flex h-full w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-200',
+              'sidebar-container fixed left-0 top-0 z-40 flex h-full w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-200',
               'dark:border-slate-700 dark:bg-slate-800',
               mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
             )}
@@ -299,7 +385,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-700 dark:bg-slate-800">
+        <header className="app-header flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-700 dark:bg-slate-800">
           <button
             onClick={() => isMobile ? setMobileSidebarOpen(!mobileSidebarOpen) : setSidebarOpen(!sidebarOpen)}
             className="rounded p-1 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
@@ -311,11 +397,45 @@ export function AppLayout({ children }: { children: ReactNode }) {
             {NAV_ITEMS.find((n) => n.to === location.pathname)?.label ?? 'Momentum'}
           </h1>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
-        </div>
+        <main className="app-main flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
+    </div>
       <UndoToast />
       <FloatingTimerBanner />
+      <OnboardingTour />
+      <Modal
+        open={showHelp}
+        onClose={() => setShowHelp(false)}
+        title="Keyboard Shortcuts"
+        className="max-w-3xl"
+      >
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          {['global', 'dashboard', 'subjects', 'habits', 'marks', 'calendar', 'reports', 'timer'].map((category) => {
+            const items = SHORTCUTS.filter((s) => s.category === category)
+            if (items.length === 0) return null
+            return (
+              <div key={category} className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  {category}
+                </h3>
+                <ul className="space-y-1.5">
+                  {items.map((shortcut) => (
+                    <li key={shortcut.id} className="flex items-center justify-between gap-4 text-sm">
+                      <span className="text-slate-700 dark:text-slate-300">{shortcut.label}</span>
+                      <Kbd>{shortcut.keys}</Kbd>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })}
+        </div>
+        <div className="mt-4 flex justify-end border-t border-slate-200 pt-4 dark:border-slate-700">
+          <Button variant="secondary" size="sm" onClick={() => { setShowHelp(false); window.dispatchEvent(new CustomEvent('momentum:replay-tour')) }}>
+            Replay Tour
+          </Button>
+        </div>
+      </Modal>
       <Modal
         open={draftPrefs !== null}
         onClose={closeCustomizer}

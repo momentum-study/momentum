@@ -107,3 +107,113 @@ export function clearTimerState(): void {
     // ignore
   }
 }
+
+/** Get the start of the next day (midnight) in local time, as ms since epoch. */
+function getLocalMidnightMs(date: Date): number {
+  const d = new Date(date)
+  d.setHours(24, 0, 0, 0)
+  return d.getTime()
+}
+
+/**
+ * Check if a session crosses local midnight. If so, split it into two sessions:
+ * one ending at midnight, one starting at midnight.
+ * Returns an array of one or two session-like objects.
+ *
+ * Both sessions get the same subjectId, projectId, source, note, assignmentId.
+ */
+export function splitSessionAtMidnight(
+  session: {
+    id: string
+    subjectId: string
+    projectId: string | null
+    assignmentId: string | null
+    startAt: string
+    endAt: string
+    durationMinutes: number
+    durationSeconds?: number
+    note: string | undefined
+    source: 'timer' | 'pomodoro' | 'quickLog'
+    createdAt: string
+    updatedAt: string
+  }
+): Array<{
+  id: string
+  subjectId: string
+  projectId: string | null
+  assignmentId: string | null
+  startAt: string
+  endAt: string
+  durationMinutes: number
+  durationSeconds: number
+  note: string | undefined
+  source: 'timer' | 'pomodoro' | 'quickLog'
+  createdAt: string
+  updatedAt: string
+}> {
+  const start = new Date(session.startAt)
+  const end = new Date(session.endAt)
+  const startDay = formatLocalDate(start)
+  const endDay = formatLocalDate(end)
+
+  // Same day — no split needed
+  if (startDay === endDay) {
+    return [{
+      ...session,
+      durationSeconds: session.durationSeconds ?? session.durationMinutes * 60,
+    }]
+  }
+
+  const midnightMs = getLocalMidnightMs(start)
+  const midnightDate = new Date(midnightMs)
+  const totalMs = end.getTime() - start.getTime()
+  const beforeMidnightMs = midnightMs - start.getTime()
+  const afterMidnightMs = totalMs - beforeMidnightMs
+
+  const beforeMinutes = Math.max(1, Math.round(beforeMidnightMs / 60000))
+  const beforeSeconds = Math.max(10, Math.round(beforeMidnightMs / 1000))
+  const afterMinutes = Math.max(1, Math.round(afterMidnightMs / 60000))
+  const afterSeconds = Math.max(10, Math.round(afterMidnightMs / 1000))
+
+  const beforeId = sessionIdFor(session.startAt, session.subjectId, beforeMinutes)
+  const afterId = sessionIdFor(midnightDate.toISOString(), session.subjectId, afterMinutes)
+
+  return [
+    {
+      id: beforeId,
+      subjectId: session.subjectId,
+      projectId: session.projectId,
+      assignmentId: session.assignmentId,
+      startAt: session.startAt,
+      endAt: midnightDate.toISOString(),
+      durationMinutes: beforeMinutes,
+      durationSeconds: beforeSeconds,
+      note: session.note,
+      source: session.source,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    },
+    {
+      id: afterId,
+      subjectId: session.subjectId,
+      projectId: session.projectId,
+      assignmentId: session.assignmentId,
+      startAt: midnightDate.toISOString(),
+      endAt: session.endAt,
+      durationMinutes: afterMinutes,
+      durationSeconds: afterSeconds,
+      note: session.note,
+      source: session.source,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    },
+  ]
+}
+
+/** Format a date as yyyy-MM-dd in local timezone. */
+function formatLocalDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}

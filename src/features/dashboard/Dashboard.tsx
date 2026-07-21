@@ -19,13 +19,13 @@ import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakD
 import { getDueCount } from '../../lib/fsrs-scheduler'
 import { useSessionSync } from '../../lib/use-session-sync'
 import type { Session, DayOfWeek, RoutineLog } from '../../domain/types'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useDashboardWidgets, DASHBOARD_WIDGETS_METADATA } from '../../lib/use-dashboard-widgets'
 import { DashboardWidget } from '../../components/widgets/DashboardWidget'
 
 const STREAK_MILESTONES = [7, 14, 21, 30, 66, 100] as const
 const BEST_STREAK_KEY = 'momentum-best-streak'
-
+const CELEBRATION_KEY = 'momentum-last-celebration'
 export default function Dashboard() {
   const { data, isLoading, loadData } = useData()
   const { syncSession, syncSessionDelete } = useSessionSync()
@@ -36,6 +36,9 @@ export default function Dashboard() {
   const [showAllRecent, setShowAllRecent] = useState(false)
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
   const [showActivityCard, setShowActivityCard] = useState(true)
+  const [showCelebration, setShowCelebration] = useState(false)
+  const navigate = useNavigate()
+  const [fabOpen, setFabOpen] = useState(false)
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
   // Exclude soft-deleted sessions from streak / stats calculations.
@@ -43,6 +46,7 @@ export default function Dashboard() {
     () => data.sessions.filter((s) => !s.deletedAt && getSessionScope(s, data.subjects, data.categories) === 'academic'),
     [data.sessions, data.subjects, data.categories]
   )
+  const settings = useMemo(() => loadSettings(), [])
 
   const streak = useMemo(() => {
     const daySet = new Set<string>()
@@ -92,6 +96,33 @@ export default function Dashboard() {
       localStorage.setItem(BEST_STREAK_KEY, String(longestStreak))
     } catch {}
   }, [longestStreak])
+  // Celebration: trigger once per day when the daily goal is met or a streak
+  // milestone is reached today. Guarded by localStorage so it only fires once.
+  useEffect(() => {
+    try {
+      const today = format(new Date(), 'yyyy-MM-dd')
+      const last = localStorage.getItem(CELEBRATION_KEY)
+      if (last === today) return
+      const dailyMins = academicSessions
+        .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === today)
+        .reduce((sum, s) => sum + s.durationMinutes, 0)
+      const targetMet = dailyMins >= settings.dailyTargetMinutes
+      const reachedMilestone = STREAK_MILESTONES.includes(
+        streak as (typeof STREAK_MILESTONES)[number],
+      )
+      if (targetMet || reachedMilestone) {
+        localStorage.setItem(CELEBRATION_KEY, today)
+        setShowCelebration(true)
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streak, academicSessions, settings.dailyTargetMinutes])
+  // Auto-hide celebration after 2 seconds
+  useEffect(() => {
+    if (!showCelebration) return
+    const timer = setTimeout(() => setShowCelebration(false), 2000)
+    return () => clearTimeout(timer)
+  }, [showCelebration])
 
 
   const [calendarMonth, setCalendarMonth] = useState(new Date())
@@ -134,6 +165,25 @@ export default function Dashboard() {
       duration: logDuration, date: logDate, note: logNote, focusTag: logFocusTag,
     }))
   }, [logSubjectId, logProjectId, logTaskId, logDuration, logDate, logNote, logFocusTag])
+
+  // Close FAB on click outside or Escape
+  useEffect(() => {
+    if (!fabOpen) return
+    function onClick(e: MouseEvent) {
+      if (!(e.target as HTMLElement).closest('.fab-container')) {
+        setFabOpen(false)
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setFabOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onClick)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [fabOpen])
 
   async function handleLogTime() {
     const note = logNote.trim()
@@ -205,9 +255,9 @@ export default function Dashboard() {
     }
     tick()
     interval = window.setInterval(tick, active ? 1000 : 5000)
-    return () => { if (interval) clearInterval(interval) }
   }, [])
   const [editSubjectId, setEditSubjectId] = useState('')
+  const [showEditRowId, setShowEditRowId] = useState<string | null>(null)
 
   async function saveEditLog() {
     if (!editLog) return
@@ -250,7 +300,6 @@ export default function Dashboard() {
     })
   }
 
-  const settings = useMemo(() => loadSettings(), [])
   if (isLoading) return <PageSpinner />
   const todayMinutes = academicSessions
     .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
@@ -277,7 +326,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div data-tour="dashboard" className="space-y-6">
       {/* Auto-logged sessions banner */}
       {data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt).length > 0 && (
         <Card className="border-primary-200 bg-primary-50 dark:border-primary-800 dark:bg-primary-900/20">
@@ -337,7 +386,7 @@ export default function Dashboard() {
               onToggleSize={() => toggleWidgetSize('pomodoro')}
               onReorder={reorderWidgets}
             >
-              <div className="rounded-lg border-2 border-primary-500 p-4">
+              <div data-tour="timer" className="rounded-lg border-2 border-primary-500 p-4">
                 <PomodoroTimer />
               </div>
             </DashboardWidget>
@@ -464,11 +513,41 @@ export default function Dashboard() {
                   if (minutes >= targetMinutes * 0.75) return 'near'
                   return 'started'
                 }
+                const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) ?? streak
+                const progressPercent = Math.min(100, Math.round((streak / nextMilestone) * 100))
                 return (
                   <div className="space-y-3">
                     <div className="flex items-end justify-between">
                       <div className="flex items-end gap-2">
-                        <span className="text-4xl font-bold text-orange-500">{streak}</span>
+                        <div className="relative w-16 h-16">
+                          <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                            <circle
+                              className="text-slate-200 dark:text-slate-700"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                              fill="transparent"
+                              r="16"
+                              cx="18"
+                              cy="18"
+                            />
+                            <circle
+                              className="text-orange-500"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              fill="transparent"
+                              r="16"
+                              cx="18"
+                              cy="18"
+                              strokeDasharray="100"
+                              strokeDashoffset={100 - progressPercent}
+                              style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center text-2xl font-bold text-orange-500">
+                            {streak}
+                          </div>
+                        </div>
                         <span className="text-sm text-slate-500">day{streak !== 1 ? 's' : ''}</span>
                       </div>
                       <div className="text-right text-xs text-slate-500">
@@ -521,11 +600,29 @@ export default function Dashboard() {
                     </div>
                     <div className="text-xs text-slate-500">Streak milestones:</div>
                     <div className="flex flex-wrap gap-2">
-                      {STREAK_MILESTONES.map((m) => (
-                        <div key={m} className={cn('rounded-full px-3 py-1 text-xs font-semibold', longestStreak >= m ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400')}>
-                          {m}d
-                        </div>
-                      ))}
+                      {STREAK_MILESTONES.map((m) => {
+                        const reached = longestStreak >= m
+                        const approaching = m === nextMilestone
+                        return (
+                          <div key={m} className="group relative">
+                            <div
+                              className={cn(
+                                'rounded-full px-3 py-1 text-xs font-semibold transition-all',
+                                reached
+                                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                                  : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                                approaching && !reached && 'animate-[milestone-pulse_2s_ease-in-out_infinite]'
+                              )}
+                            >
+                              {reached && <span className="mr-1">🔥</span>}
+                              {m}d
+                            </div>
+                            <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800">
+                              {reached ? `${m} days — milestone reached!` : `Reach ${m} days`}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                     {goalPct >= 100 && <div className="text-sm font-medium text-green-600">Goal reached!</div>}
                     {goalPct < 100 && todayMinutes > 0 && <div className="text-sm text-slate-500">{formatMinutes(settings.dailyTargetMinutes - todayMinutes)} to go</div>}
@@ -700,6 +797,7 @@ export default function Dashboard() {
                               {g.items.map((session) => {
                                 const project = session.projectId ? data.projects.find((p) => p.id === session.projectId) : undefined
                                 return (
+                                  <>
                                   <li key={session.id} className="flex items-center justify-between py-2">
                                     <div className="flex min-w-0 items-center gap-2">
                                       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.subjectColor }} />
@@ -731,6 +829,7 @@ export default function Dashboard() {
                                                   setEditDuration(session.durationMinutes)
                                                   setEditDate(format(new Date(session.startAt), 'yyyy-MM-dd'))
                                                   setEditSubjectId(session.subjectId)
+                                                  setShowEditRowId(session.id)
                                                   setMenuSessionId(null)
                                                 }}
                                               >
@@ -752,6 +851,78 @@ export default function Dashboard() {
                                       </div>
                                     </div>
                                   </li>
+                                  {/* Inline edit row */}
+                                  {showEditRowId === session.id && (
+                                    <li className="bg-slate-50 dark:bg-slate-800 px-3 py-3 border-l-4 border-primary-500">
+                                      <div className="space-y-2">
+                                        <div className="flex flex-wrap gap-2">
+                                          <div>
+                                            <label className="label text-xs">Minutes</label>
+                                            <input
+                                              type="text"
+                                              inputMode="numeric"
+                                              pattern="[0-9]*"
+                                              className="input w-20"
+                                              value={editDuration === 1 ? '' : String(editDuration)}
+                                              onChange={(e) => {
+                                                const v = e.target.value
+                                                if (v === '') { setEditDuration(1); return }
+                                                const n = Number(v)
+                                                if (isNaN(n)) return
+                                                setEditDuration(Math.max(1, n))
+                                              }}
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="label text-xs">Date</label>
+                                            <input
+                                              type="date"
+                                              className="input"
+                                              max={todayStr}
+                                              value={editDate}
+                                              onChange={(e) => setEditDate(e.target.value)}
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="label text-xs">Subject</label>
+                                            <select
+                                              className="input"
+                                              value={editSubjectId}
+                                              onChange={(e) => setEditSubjectId(e.target.value)}
+                                            >
+                                              <option value="">— Select subject —</option>
+                                              {data.subjects.filter((s) => !s.deletedAt).map((s) => (
+                                                <option key={s.id} value={s.id}>{s.name}</option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                          <Button
+                                            variant="primary"
+                                            className="text-xs"
+                                            onClick={async () => {
+                                              await saveEditLog()
+                                              setShowEditRowId(null)
+                                            }}
+                                          >
+                                            Save
+                                          </Button>
+                                          <Button
+                                            variant="secondary"
+                                            className="text-xs"
+                                            onClick={() => {
+                                              setEditLog(null)
+                                              setShowEditRowId(null)
+                                            }}
+                                          >
+                                            Cancel
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </li>
+                                  )}
+                                  </>
                                 )
                               })}
                             </ul>
@@ -790,18 +961,41 @@ export default function Dashboard() {
         <ActivityConfirmationCard onDismiss={() => setShowActivityCard(false)} />
       )}
 
-      {/* Floating Log Time button */}
-      <div className="fixed bottom-6 right-6 z-40 group">
-        <div className="mb-2 rounded bg-slate-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800 pointer-events-none absolute bottom-full right-0 whitespace-nowrap">
-          Log Study Time
-        </div>
-        <Button
-          className="h-14 w-14 rounded-full p-0 text-2xl shadow-lg"
-          onClick={() => setLogModalOpen(true)}
-          aria-label="Log study time"
+      <div className="fixed bottom-6 right-6 z-40 fab-container">
+        {fabOpen && (
+          <div className="absolute bottom-16 right-0 mb-4 flex flex-col items-end gap-2">
+            {[
+              { label: 'Log study time', icon: '⏱', onClick: () => { setLogModalOpen(true); setFabOpen(false) } },
+              { label: 'Start quick Pomodoro', icon: '🍅', onClick: () => { navigate('/study'); setFabOpen(false) } },
+              { label: 'Add a new mark', icon: '📝', onClick: () => { navigate('/marks'); setFabOpen(false) } },
+              { label: 'Add a new task', icon: '📅', onClick: () => { navigate('/calendar'); setFabOpen(false) } },
+              { label: 'Add a new subject', icon: '+', onClick: () => { navigate('/subjects'); setFabOpen(false) } },
+            ].map((action, i) => (
+              <div key={i} className="group relative flex items-center">
+                <div className="absolute right-14 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800 pointer-events-none">
+                  {action.label}
+                </div>
+                <button
+                  onClick={action.onClick}
+                  className="h-10 w-10 rounded-full border border-slate-200 bg-white shadow-md transition-all duration-200 hover:scale-110 dark:border-slate-600 dark:bg-slate-700 flex items-center justify-center"
+                >
+                  {action.icon}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => setFabOpen(!fabOpen)}
+          className={cn(
+            "h-14 w-14 rounded-full bg-primary-600 text-white shadow-lg transition-all duration-200 text-2xl flex items-center justify-center",
+            !fabOpen && "animate-pulse",
+            fabOpen && "rotate-45"
+          )}
+          aria-label="Quick add"
         >
-          ⏱
-        </Button>
+          +
+        </button>
       </div>
 
       <Modal open={logModalOpen} onClose={() => setLogModalOpen(false)} title="Log Study Time">
@@ -917,6 +1111,30 @@ export default function Dashboard() {
           <Button variant="primary" className="w-full" onClick={saveEditLog}>Save</Button>
         </div>
       </Modal>
+      {/* Celebration confetti overlay */}
+      {showCelebration && (
+        <div className="pointer-events-none fixed inset-0 z-50">
+          {Array.from({ length: 25 }).map((_, i) => {
+            const colors = ['bg-orange-400', 'bg-yellow-400', 'bg-red-400', 'bg-pink-400', 'bg-green-400']
+            const left = Math.random() * 100
+            const delay = Math.random() * 0.5
+            const size = 4 + Math.random() * 6
+            return (
+              <div
+                key={i}
+                className={cn('absolute rounded-full', colors[i % colors.length])}
+                style={{
+                  left: `${left}%`,
+                  bottom: '50%',
+                  width: `${size}px`,
+                  height: `${size}px`,
+                  animation: `confetti-fall 2s ease-out ${delay}s forwards`,
+                }}
+              />
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

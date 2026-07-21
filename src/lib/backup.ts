@@ -97,9 +97,11 @@ export type ImportMode = 'merge' | 'replace'
 
 /** Apply a backup payload to the DB. merge = bulkPut (overwrite by id). replace = clear then bulkPut. */
 export async function importBackup(payload: BackupPayload, mode: ImportMode): Promise<{ counts: Record<string, number> }> {
-  // Restore settings if present in the backup
+  // Merge settings: preserve current settings keys missing in the backup;
+  // for keys present in both, the backup version wins.
   if (payload.settings) {
-    saveSettings(payload.settings)
+    const current = loadSettings()
+    saveSettings({ ...current, ...payload.settings })
   }
   // Replace mode: wipe the entire DB first
   if (mode === 'replace') await db.delete()

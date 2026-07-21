@@ -10,7 +10,7 @@ import { loadSettings, saveSettings } from '../../features/settings/SettingsPage
 import type { Settings } from '../../features/settings/SettingsPage'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
-import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor } from '../../lib/timer-persistence'
+import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor, splitSessionAtMidnight } from '../../lib/timer-persistence'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
 import { useAllGroupsPresence } from '../../lib/use-all-groups-presence'
 import { groupService } from '../../lib/group-service'
@@ -277,7 +277,7 @@ export function PomodoroTimer() {
       // when the user stops it.
       return
     }
-    const session = {
+    const baseSession = {
       id: pending.id,
       subjectId: pending.subjectId,
       projectId: pending.projectId,
@@ -285,19 +285,23 @@ export function PomodoroTimer() {
       startAt: pending.startAt,
       endAt: pending.endAt,
       durationMinutes: pending.durationMinutes,
-      durationSeconds: pending.durationSeconds,
+      durationSeconds: pending.durationSeconds ?? pending.durationMinutes * 60,
       note: pending.note,
       source: pending.source,
       createdAt: isoNow(),
       updatedAt: isoNow(),
     }
-    void db.sessions.put(session).then(async () => {
-      const subjectName = data.subjects.find((s) => s.id === pending.subjectId)?.name ?? 'Unknown Subject'
-      syncSession(session, subjectName)
-      await updateRoutineLogsForSession(session)
-      await updateStreakDayForSession(session)
-      await loadData()
-    })
+    // Split at midnight if needed (same as active session save path)
+    const splits = splitSessionAtMidnight(baseSession)
+    for (const s of splits) {
+      void db.sessions.put(s).then(async () => {
+        const subjectName = data.subjects.find((sub) => sub.id === s.subjectId)?.name ?? 'Unknown Subject'
+        syncSession(s, subjectName)
+        await updateRoutineLogsForSession(s)
+        await updateStreakDayForSession(s)
+        await loadData()
+      })
+    }
   }, [])
 
   // Simple timer tick — compute elapsed from wall clock + paused offset
@@ -310,11 +314,12 @@ export function PomodoroTimer() {
     const tick = () => {
       const elapsed = simplePausedOffset + Math.floor((Date.now() - simpleStartedAt) / 1000)
       setSimpleSeconds(elapsed)
-      // 12-hour safety guard — auto-pause if elapsed exceeds limit
+      // 12-hour safety guard — warn and auto-pause if elapsed exceeds limit
       if (elapsed >= SAFETY_LIMIT_SECONDS && !simpleSafetyFiredRef.current) {
         simpleSafetyFiredRef.current = true
+        const hours = Math.floor(elapsed / 3600)
+        setSafetyMessage(`Timer has been running for ${hours}h. Save it to avoid data loss?`)
         pauseSimple()
-        setSafetyMessage('Timer auto-paused after 12 hours. Take a break!')
       }
     }
     tick()
@@ -333,11 +338,12 @@ export function PomodoroTimer() {
       const elapsed = Math.floor((Date.now() - pomStartedAt) / 1000)
       const remaining = Math.max(0, duration - elapsed)
       setPomSeconds(remaining)
-      // 12-hour safety guard — auto-pause if elapsed exceeds limit
+      // 12-hour safety guard — warn and auto-pause if elapsed exceeds limit
       if (elapsed >= SAFETY_LIMIT_SECONDS && !pomSafetyFiredRef.current) {
         pomSafetyFiredRef.current = true
+        const hours = Math.floor(elapsed / 3600)
+        setSafetyMessage(`Timer has been running for ${hours}h. Save it to avoid data loss?`)
         pausePomodoro()
-        setSafetyMessage('Timer auto-paused after 12 hours. Take a break!')
       }
     }
     tick()
@@ -352,7 +358,6 @@ export function PomodoroTimer() {
     if (configRef.current.soundEnabled) playNotificationSound()
     const st = stateRef.current
     const cfg = configRef.current
-    const subjects = dataRef.current.subjects
     const projects = dataRef.current.projects
     const assignments = dataRef.current.assignments
 
@@ -366,7 +371,7 @@ export function PomodoroTimer() {
         const start = new Date(end.getTime() - cfg.focusMinutes * 60 * 1000)
         const startAt = start.toISOString()
         const durationMinutes = cfg.focusMinutes
-        const session = {
+        void saveSessionWithMidnightCheck({
           id: sessionIdFor(startAt, actualSubjId, durationMinutes),
           subjectId: actualSubjId,
           projectId: project?.id ?? null,
@@ -374,17 +379,11 @@ export function PomodoroTimer() {
           startAt,
           endAt: end.toISOString(),
           durationMinutes,
+          durationSeconds: durationMinutes * 60,
           note: task ? `Task: ${task.title}` : undefined,
-          source: 'pomodoro' as const,
+          source: 'pomodoro',
           createdAt: isoNow(),
           updatedAt: isoNow(),
-        }
-        void db.sessions.put(session).then(async () => {
-          const subjectName = subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
-          syncSession(session, subjectName)
-          await updateRoutineLogsForSession(session)
-          await updateStreakDayForSession(session)
-          await loadData()
         })
       }
       const newCycles = st.pomCycles + 1
@@ -619,6 +618,35 @@ export function PomodoroTimer() {
   }
 
   const { syncSession } = useSessionSync()
+  /**
+   * Save a session, splitting at local midnight if needed.
+   * Handles Dexie write, UI sync, routine log, streak update, and reload.
+   */
+  async function saveSessionWithMidnightCheck(session: {
+    id: string
+    subjectId: string
+    projectId: string | null
+    assignmentId: string | null
+    startAt: string
+    endAt: string
+    durationMinutes: number
+    durationSeconds: number
+    note: string | undefined
+    source: 'timer' | 'pomodoro' | 'quickLog'
+    createdAt: string
+    updatedAt: string
+  }) {
+    // Split if crosses midnight
+    const splits = splitSessionAtMidnight(session)
+    for (const s of splits) {
+      await db.sessions.put(s)
+      const subjectName = data.subjects.find((sub) => sub.id === s.subjectId)?.name ?? 'Unknown Subject'
+      syncSession(s, subjectName)
+      await updateRoutineLogsForSession(s)
+      await updateStreakDayForSession(s)
+    }
+    await loadData()
+  }
 
   async function stopSimple() {
     setSimpleStartedAt(null)
@@ -634,7 +662,8 @@ export function PomodoroTimer() {
       const startAt = start.toISOString()
       const durationSeconds = Math.max(10, Math.round(delta))
       const durationMinutes = Math.max(1, Math.round(delta / 60))
-      const session = {
+
+      await saveSessionWithMidnightCheck({
         id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
         subjectId: actualSubjectId,
         projectId: project?.id ?? null,
@@ -644,16 +673,10 @@ export function PomodoroTimer() {
         durationMinutes,
         durationSeconds,
         note: task ? `Task: ${task.title}` : undefined,
-        source: 'timer' as const,
+        source: 'timer',
         createdAt: isoNow(),
         updatedAt: isoNow(),
-      }
-      await db.sessions.put(session)
-      const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
-      syncSession(session, subjectName)
-      await updateRoutineLogsForSession(session)
-      await updateStreakDayForSession(session)
-      await loadData()
+      })
     }
     lastSavedCumulativeRef.current = total
     simpleSafetyFiredRef.current = false
@@ -680,7 +703,7 @@ export function PomodoroTimer() {
         const startAt = start.toISOString()
         const durationSeconds = Math.max(10, Math.round(delta))
         const durationMinutes = Math.max(1, Math.round(delta / 60))
-        const session = {
+        await saveSessionWithMidnightCheck({
           id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
           subjectId: actualSubjectId,
           projectId: project?.id ?? null,
@@ -690,16 +713,10 @@ export function PomodoroTimer() {
           durationMinutes,
           durationSeconds,
           note: task ? `Task: ${task.title}` : undefined,
-          source: 'timer' as const,
+          source: 'timer',
           createdAt: isoNow(),
           updatedAt: isoNow(),
-        }
-        await db.sessions.put(session)
-        const subjectName = data.subjects.find((s) => s.id === actualSubjectId)?.name ?? 'Unknown Subject'
-        syncSession(session, subjectName)
-        await updateRoutineLogsForSession(session)
-        await updateStreakDayForSession(session)
-        await loadData()
+        })
       }
       lastSavedCumulativeRef.current = elapsed
     } else {
@@ -716,7 +733,7 @@ export function PomodoroTimer() {
           const start = new Date(startMs)
           const end = new Date()
           const startAt = start.toISOString()
-          const session = {
+          await saveSessionWithMidnightCheck({
             id: sessionIdFor(startAt, actualSubjId, partialMinutes),
             subjectId: actualSubjId,
             projectId: project?.id ?? null,
@@ -726,16 +743,10 @@ export function PomodoroTimer() {
             durationMinutes: partialMinutes,
             durationSeconds: partialSeconds,
             note: task ? `Task: ${task.title}` : undefined,
-            source: 'pomodoro' as const,
+            source: 'pomodoro',
             createdAt: isoNow(),
             updatedAt: isoNow(),
-          }
-          await db.sessions.put(session)
-          const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
-          syncSession(session, subjectName)
-          await updateRoutineLogsForSession(session)
-          await updateStreakDayForSession(session)
-          await loadData()
+          })
         }
       }
     }
@@ -831,7 +842,7 @@ export function PomodoroTimer() {
         const start = new Date(startMs)
         const end = new Date()
         const startAt = start.toISOString()
-        const session = {
+        await saveSessionWithMidnightCheck({
           id: sessionIdFor(startAt, actualSubjId, partialMinutes),
           subjectId: actualSubjId,
           projectId: project?.id ?? null,
@@ -841,16 +852,10 @@ export function PomodoroTimer() {
           durationMinutes: partialMinutes,
           durationSeconds: partialSeconds,
           note: task ? `Task: ${task.title}` : undefined,
-          source: 'pomodoro' as const,
+          source: 'pomodoro',
           createdAt: isoNow(),
           updatedAt: isoNow(),
-        }
-        await db.sessions.put(session)
-        const subjectName = data.subjects.find((s) => s.id === actualSubjId)?.name ?? 'Unknown Subject'
-        syncSession(session, subjectName)
-        await updateRoutineLogsForSession(session)
-        await updateStreakDayForSession(session)
-        await loadData()
+        })
       }
     }
     setPomStartedAt(null)
@@ -1014,18 +1019,28 @@ export function PomodoroTimer() {
         </div>
       )}
       {/* Break indicator */}
-      {mode === 'pomodoro' && settings.pomodoroEnabled && (pomPhase === 'shortBreak' || pomPhase === 'longBreak') && (() => {
-        const subjectName = data.subjects.find((s) => s.id === subjectId)?.name
-        return (
-          <div className="mb-3 text-center text-sm text-slate-600 dark:text-slate-300">
-            {pomPhase === 'shortBreak' ? 'Short' : 'Long'} break{subjectName ? ` from ${subjectName}` : ''}
-          </div>
-        )
-      })()}
-      {/* Safety message — 12-hour runaway timer guard */}
+      {mode === 'pomodoro' && settings.pomodoroEnabled && (pomPhase === 'shortBreak' || pomPhase === 'longBreak') && (
+        <div className="mb-3 text-center text-sm text-slate-600 dark:text-slate-300">
+          {pomPhase === 'shortBreak' ? 'Short' : 'Long'} break{data.subjects.find((s) => s.id === subjectId)?.name ? ` from ${data.subjects.find((s) => s.id === subjectId)?.name}` : ''}
+        </div>
+      )}
+      {/* Safety message — 12-hour runaway timer warning */}
       {safetyMessage && (
-        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-center text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-          {safetyMessage}
+        <div className="mb-3 rounded-md border border-red-400 bg-red-50 px-3 py-2 text-center text-sm text-red-800 dark:border-red-700 dark:bg-red-900/30 dark:text-red-300">
+          <p>{safetyMessage}</p>
+          <Button
+            variant="danger"
+            className="mt-2"
+            onClick={() => {
+              if (mode === 'simple') {
+                void stopSimple()
+              } else {
+                void resetPomodoro()
+              }
+            }}
+          >
+            Save Now
+          </Button>
         </div>
       )}
 

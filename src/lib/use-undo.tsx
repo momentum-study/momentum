@@ -41,18 +41,28 @@ export function UndoProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toastTimer = useRef<any>(null)
 
+  const isPushing = useRef(false)
+
   const push = useCallback((action: Omit<UndoAction, 'timestamp'>) => {
-    // Pushing a new action clears the redo stack (new branch)
-    redoStack.current = []
-    const full: UndoAction = { ...action, timestamp: Date.now() }
-    undoStack.current.push(full)
-    if (undoStack.current.length > MAX_DEPTH) {
-      undoStack.current.shift()
+    // Guard against concurrent pushes — while undo/redo is executing,
+    // a new push would corrupt the stack ordering.
+    if (isPushing.current) return
+    isPushing.current = true
+    try {
+      // Pushing a new action clears the redo stack (new branch)
+      redoStack.current = []
+      const full: UndoAction = { ...action, timestamp: Date.now() }
+      undoStack.current.push(full)
+      if (undoStack.current.length > MAX_DEPTH) {
+        undoStack.current.shift()
+      }
+      setToast(full)
+      setVersion((v) => v + 1)
+      if (toastTimer.current) window.clearTimeout(toastTimer.current)
+      toastTimer.current = window.setTimeout(() => setToast(null), 6000)
+    } finally {
+      isPushing.current = false
     }
-    setToast(full)
-    setVersion((v) => v + 1)
-    if (toastTimer.current) window.clearTimeout(toastTimer.current)
-    toastTimer.current = window.setTimeout(() => setToast(null), 6000)
   }, [])
 
   const dismiss = useCallback(() => {

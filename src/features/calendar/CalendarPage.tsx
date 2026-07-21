@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, gradeColor, isoNow, pctToGrade, sessionLocalDate, softDelete } from '../../lib/utils'
+import { filterActive } from '../../lib/filterActive'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
@@ -770,7 +771,7 @@ export default function CalendarPage() {
               onChange={(e) => setForm((f) => ({ ...f, subjectId: e.target.value }))}
             >
               <option value="">Select subject</option>
-              {data.subjects.map((s) => (
+              {filterActive(data.subjects).map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>

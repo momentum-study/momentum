@@ -11,6 +11,7 @@ import { Button } from '../ui/Button'
 import { SyncBanner } from '../ui/SyncBanner'
 import { FloatingTimerBanner } from '../ui/FloatingTimerBanner'
 import { OnboardingTour } from '../ui/OnboardingTour'
+import { CommandPalette, useCommandPalette } from '../ui/CommandPalette'
 import { useFocusMode } from '../../lib/use-focus-mode'
 
   const NAV_ITEMS = [
@@ -132,6 +133,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
     return false
   })
   const [showHelp, setShowHelp] = useState(false)
+  const { open, setOpen, toggle } = useCommandPalette()
+  useEffect(() => {
+    function onCmdPalette() { toggle() }
+    window.addEventListener('momentum:command-palette', onCmdPalette)
+    return () => window.removeEventListener('momentum:command-palette', onCmdPalette)
+  }, [toggle])
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -506,6 +513,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         )}
       </Modal>
+      <CommandPalette open={open} onClose={() => setOpen(false)} />
     </div>
   )
 }

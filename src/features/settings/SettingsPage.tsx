@@ -409,6 +409,16 @@ export default function SettingsPage() {
               <Toggle value={settings.soundEnabled} onChange={(v) => update({ soundEnabled: v })} />
             </SettingsField>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Help</CardTitle>
+            </CardHeader>
+            <SettingsField label="Onboarding Tour">
+              <Button variant="secondary" size="sm" onClick={() => {
+                window.dispatchEvent(new CustomEvent('momentum:replay-tour'))
+              }}>Replay Tour</Button>
+            </SettingsField>
+          </Card>
 
           <Card>
             <CardHeader>

@@ -207,7 +207,7 @@ export default function Dashboard() {
       const ds = format(d, 'yyyy-MM-dd')
       if (daySet.has(ds)) {
         count++
-        missed = 0
+        // missed is NOT reset on hit days — only one gap is forgiven across the entire chain
         d = subDays(d, 1)
       } else {
         missed++
@@ -217,21 +217,46 @@ export default function Dashboard() {
     }
     return count
   }, [academicSessions])
-  // Longest streak: compute from sessions, persist to localStorage
+  // Longest streak: compute from sessions using the same one-gap-per-chain rule as current streak.
+  // Persisted to localStorage so the best ever value survives data cleanup.
   const longestStreak = useMemo(() => {
-    if (academicSessions.length === 0) return 0
     const daySet = new Set<string>()
     for (const s of academicSessions) {
       daySet.add(toLocalDateString(s.startAt))
     }
     const sortedDays = Array.from(daySet).sort()
+    if (sortedDays.length <= 1) return 0
     let max = 0
     let cur = 1
+    let chainMissed = 0
     for (let i = 1; i < sortedDays.length; i++) {
       const diff = differenceInCalendarDays(new Date(sortedDays[i]), new Date(sortedDays[i - 1]))
-      if (diff === 1) { cur++; if (cur > max) max = cur } else { cur = 1 }
+      if (diff === 1) {
+        cur++
+        if (cur > max) max = cur
+        // Consecutive runs reset the chain's missed counter — the gap was already consumed
+        chainMissed = 0
+      } else if (diff === 2) {
+        // Exactly one day gap — forgive it once per chain
+        chainMissed++
+        if (chainMissed > 1) {
+          // Second gap in this chain → break
+          if (cur > max) max = cur
+          cur = 1
+          chainMissed = 0
+        } else {
+          cur++
+          if (cur > max) max = cur
+        }
+      } else {
+        // Gap > 1 day → break
+        if (cur > max) max = cur
+        cur = 1
+        chainMissed = 0
+      }
     }
-    // Also consider any previously stored best streak
+    if (cur > max) max = cur
+    // Consider any previously stored best streak from localStorage
     try {
       const stored = Number(localStorage.getItem(BEST_STREAK_KEY))
       if (stored > max) max = stored
@@ -728,13 +753,14 @@ export default function Dashboard() {
                   if (minutes >= targetMinutes * 0.75) return 'near'
                   return 'started'
                 }
+                const atRisk = streak > 0 && todayMinutes === 0
                 const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) ?? streak
                 const progressPercent = Math.min(100, Math.round((streak / nextMilestone) * 100))
                 return (
                   <div className="space-y-3">
                     <div className="flex items-end justify-between">
                       <div className="flex items-end gap-2">
-                        <div className="relative w-16 h-16">
+                        <div className={cn('relative w-16 h-16 rounded-full', atRisk && 'ring-2 ring-amber-400 ring-offset-2 ring-offset-white dark:ring-offset-slate-800 animate-[milestone-pulse_2s_ease-in-out_infinite]')}>
                           <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                             <circle
                               className="text-slate-200 dark:text-slate-700"
@@ -759,8 +785,9 @@ export default function Dashboard() {
                               style={{ transition: 'stroke-dashoffset 0.5s ease' }}
                             />
                           </svg>
-                          <div className="absolute inset-0 flex items-center justify-center text-2xl font-bold text-orange-500">
-                            {streak}
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <div className="text-2xl font-bold text-orange-500 leading-none">{streak}</div>
+                            {atRisk && <span className="text-[8px] text-amber-500/70 leading-none mt-0.5">at risk</span>}
                           </div>
                         </div>
                         <span className="text-sm text-slate-500">day{streak !== 1 ? 's' : ''}</span>
@@ -770,6 +797,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     {streak === 0 && <p className="text-sm text-slate-500">Log a session today to start your streak!</p>}
+                    {atRisk && <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Log today to keep your streak!</p>}
                     <div>
                       <div className="mb-1 grid grid-cols-7 gap-px text-[10px] font-medium text-slate-400">
                         {dayLabels.map((l, i) => (

@@ -31,6 +31,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'redo', label: 'Redo', keys: 'Cmd+Shift+Z', category: 'global', description: 'Redo last undone action' },
   { id: 'help', label: 'Keyboard Shortcuts', keys: '?', category: 'global', description: 'Open keyboard shortcut help overlay', suppressInInput: true },
   { id: 'help-alt', label: 'Keyboard Shortcuts', keys: 'Cmd+/', category: 'global', description: 'Open keyboard shortcut help overlay' },
+  { id: 'replay-tour', label: 'Replay onboarding tour', keys: 'Cmd+Shift+I', category: 'global', description: 'Replay the onboarding tour' },
   { id: 'focus-mode', label: 'Focus Mode', keys: 'Cmd+Shift+F', category: 'global', description: 'Toggle focus mode (hide sidebar and chrome)' },
   { id: 'toggle-sidebar', label: 'Toggle Sidebar', keys: 'Ctrl+Shift+L', category: 'global', description: 'Show or hide the sidebar' },
   { id: 'escape', label: 'Close / Dismiss', keys: 'Esc', category: 'global', description: 'Close any open modal or command palette', suppressInInput: false },

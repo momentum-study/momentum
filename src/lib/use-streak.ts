@@ -25,7 +25,7 @@ export function useStreak(sessions: Session[]) {
       const ds = format(d, 'yyyy-MM-dd');
       if (daySet.has(ds)) {
         count++;
-        missed = 0;
+        // missed is NOT reset — one gap per chain
         d = subDays(d, 1);
       } else {
         missed++;
@@ -36,16 +36,17 @@ export function useStreak(sessions: Session[]) {
     return count;
   }, [sessions]);
 
-  // Longest streak ever in the dataset
+  // Longest streak ever in the dataset — same one-gap-per-chain rule
   const longestStreak = useMemo(() => {
-    if (sessions.length === 0) return 0;
     const daySet = new Set<string>();
     for (const s of sessions) {
       daySet.add(toLocalDateString(s.startAt));
     }
     const sortedDays = Array.from(daySet).sort();
+    if (sortedDays.length <= 1) return 0;
     let max = 0;
     let cur = 1;
+    let chainMissed = 0;
     for (let i = 1; i < sortedDays.length; i++) {
       const diff = differenceInCalendarDays(
         new Date(sortedDays[i]),
@@ -54,10 +55,24 @@ export function useStreak(sessions: Session[]) {
       if (diff === 1) {
         cur++;
         if (cur > max) max = cur;
+        chainMissed = 0;
+      } else if (diff === 2) {
+        chainMissed++;
+        if (chainMissed > 1) {
+          if (cur > max) max = cur;
+          cur = 1;
+          chainMissed = 0;
+        } else {
+          cur++;
+          if (cur > max) max = cur;
+        }
       } else {
+        if (cur > max) max = cur;
         cur = 1;
+        chainMissed = 0;
       }
     }
+    if (cur > max) max = cur;
     return max;
   }, [sessions]);
 

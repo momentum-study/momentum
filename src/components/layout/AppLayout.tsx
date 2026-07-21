@@ -201,6 +201,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
         case 'escape':
           window.dispatchEvent(new CustomEvent('momentum:escape'))
           break
+        case 'replay-tour':
+          window.dispatchEvent(new CustomEvent('momentum:replay-tour'))
+          break
       }
     }
 

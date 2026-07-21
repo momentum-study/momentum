@@ -349,7 +349,7 @@ export default function ProjectsPage() {
             </div>
             <div className="flex-1">
               <label className="label">Goal Minutes</label>
-              <input type="text" inputMode="numeric" pattern="[0-9]*" value={formData.goalMinutes === 1 ? '' : String(formData.goalMinutes)} onChange={(e) => { const v = e.target.value; if (v === '') { setFormData((prev) => ({ ...prev, goalMinutes: 1 })); return }; const n = Number(v); if (isNaN(n)) return; setFormData((prev) => ({ ...prev, goalMinutes: Math.max(1, n) })) }} className="input" />
+              <input type="text" inputMode="numeric" pattern="[0-9]*" value={formData.goalMinutes === 0 ? '' : String(formData.goalMinutes)} onChange={(e) => { const v = e.target.value; if (v === '') { setFormData((prev) => ({ ...prev, goalMinutes: 0 })); return }; const n = Number(v); if (isNaN(n)) return; setFormData((prev) => ({ ...prev, goalMinutes: Math.max(1, n) })) }} className="input" />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">

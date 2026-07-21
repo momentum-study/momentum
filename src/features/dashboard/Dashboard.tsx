@@ -143,7 +143,7 @@ function SessionRow({
             <div className="flex flex-wrap gap-2">
               <div>
                 <label className="label text-xs">Minutes</label>
-                <input type="text" inputMode="numeric" pattern="[0-9]*" className="input w-20" value={editDuration === 1 ? '' : String(editDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setEditDuration(1); return }; const n = Number(v); if (isNaN(n)) return; setEditDuration(Math.max(1, n)) }} />
+                <input type="text" inputMode="numeric" pattern="[0-9]*" className="input w-20" value={editDuration === 0 ? '' : String(editDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setEditDuration(0); return }; const n = Number(v); if (isNaN(n)) return; setEditDuration(Math.max(1, n)) }} />
               </div>
               <div>
                 <label className="label text-xs">Date</label>
@@ -754,8 +754,8 @@ export default function Dashboard() {
                               r="16"
                               cx="18"
                               cy="18"
-                              strokeDasharray="100"
-                              strokeDashoffset={100 - progressPercent}
+                              strokeDasharray="100.53"
+                              strokeDashoffset={100.53 - (100.53 * progressPercent) / 100}
                               style={{ transition: 'stroke-dashoffset 0.5s ease' }}
                             />
                           </svg>
@@ -1248,7 +1248,7 @@ export default function Dashboard() {
         <div className="space-y-3">
           <div>
             <label className="label">Minutes</label>
-            <input type="text" inputMode="numeric" pattern="[0-9]*" className="input" value={editDuration === 1 ? '' : String(editDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setEditDuration(1); return }; const n = Number(v); if (isNaN(n)) return; setEditDuration(Math.max(1, n)) }} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" className="input" value={editDuration === 0 ? '' : String(editDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setEditDuration(0); return }; const n = Number(v); if (isNaN(n)) return; setEditDuration(Math.max(1, n)) }} />
           </div>
           <div>
             <label className="label">Date</label>

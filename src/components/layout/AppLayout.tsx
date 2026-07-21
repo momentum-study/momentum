@@ -18,28 +18,26 @@ import { useFocusMode } from '../../lib/use-focus-mode'
     { to: '/', label: 'Dashboard', icon: '🏠' },
     { to: '/subjects', label: 'Focus Areas', icon: '📚' },
     { to: '/projects', label: 'Projects', icon: '🎯' },
+    { to: '/calendar', label: 'Tasks', icon: '📅' },
+    { to: '/study', label: 'Study', icon: '🧠' },
+    { to: '/reports', label: 'Reports', icon: '📈' },
+    { to: '/habits', label: 'Habits', icon: '🔥' },
     { to: '/routines', label: 'Routines', icon: '📋' },
     { to: '/activities', label: 'Activities', icon: '🎭' },
-    { to: '/calendar', label: 'Tasks', icon: '📅' },
     { to: '/marks', label: 'Marks', icon: '📝' },
-    { to: '/habits', label: 'Habits', icon: '🔥' },
-    { to: '/study', label: 'Study', icon: '🧠' },
     { to: '/groups', label: 'Groups', icon: '👥' },
     { to: '/categories', label: 'Categories', icon: '🗂️' },
-    { to: '/reports', label: 'Reports', icon: '📈' },
     { to: '/reviews', label: 'AI Review', icon: '🤖' },
     { to: '/settings', label: 'Settings', icon: '⚙️' },
   ]
   const PREFS_KEY = 'momentum-nav-prefs'
   const PREFS_VERSION_KEY = 'momentum-nav-prefs-version'
-  const CURRENT_PREFS_VERSION = 3
-
+  const CURRENT_PREFS_VERSION = 4
 interface NavPrefs {
   order: string[]
   hidden: string[]
 }
-
-const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/routines', '/activities', '/marks', '/study', '/groups', '/categories', '/reports', '/reviews'] }
+const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/activities', '/marks', '/groups', '/categories', '/reviews'] }
 
 function loadPrefs(): NavPrefs {
   if (typeof localStorage === 'undefined') return { ...DEFAULT_PREFS }

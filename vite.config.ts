@@ -11,7 +11,7 @@ export default defineConfig(({ command }) => ({
     VitePWA({
       registerType: 'prompt',
       workbox: {
-        navigateFallback: '/momentum/index.html',
+        navigateFallback: 'index.html',
       },
       includeAssets: ['favicon.svg'],
       manifest: {
@@ -21,8 +21,8 @@ export default defineConfig(({ command }) => ({
         theme_color: '#ffffff',
         background_color: '#ffffff',
         icons: [
-          { src: '/momentum/favicon.svg', sizes: 'any', type: 'image/svg+xml' },
-          { src: '/momentum/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml' },
+          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
         ],
       },
     }),

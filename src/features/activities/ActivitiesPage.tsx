@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { isoNow, getSubjectPathLabel, getSubjectPickerOptions } from '../../lib/utils'
+import { cn, isoNow, getSubjectPathLabel, getSubjectPickerOptions } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -350,6 +350,7 @@ export default function ActivitiesPage() {
               <thead>
                 <tr className="border-b text-xs text-slate-500">
                   <th className="pb-2 pr-3 font-medium">Activity</th>
+                  <th className="pb-2 px-2 font-medium text-center">Today</th>
                   {days.map((d) => (
                     <th key={d} className="pb-2 px-2 font-medium text-center">
                       {WEEKDAYS[d]}
@@ -361,6 +362,10 @@ export default function ActivitiesPage() {
               <tbody>
                 {filteredActivities.map((activity) => {
                   const subject = data.subjects.find((s) => s.id === activity.subjectId)
+                  const todayLog = data.activityLogs.find(log => log.activityId === activity.id && log.date === todayStr)
+                  const status = todayLog?.status ?? 'pending'
+                  const statusLabel = status === 'completed' ? 'Completed' : status === 'skipped' ? 'Skipped' : 'Pending'
+                  const statusColor = status === 'completed' ? 'text-green-600' : status === 'skipped' ? 'text-amber-600' : 'text-slate-500'
                   return (
                     <tr key={activity.id} className="border-b last:border-b-0">
                       <td className="py-2 pr-3">
@@ -392,6 +397,11 @@ export default function ActivitiesPage() {
                             </div>
                           </div>
                         </div>
+                      </td>
+                      <td className="py-1 px-2 text-center align-middle">
+                        <span className={cn('text-xs font-medium', statusColor)}>
+                          {statusLabel}
+                        </span>
                       </td>
                       {days.map((d) => {
                         const draft = gridDrafts[activity.id]?.[d]

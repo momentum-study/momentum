@@ -137,11 +137,12 @@ export default function Dashboard() {
 
   async function handleLogTime() {
     const note = logNote.trim()
-    const now = new Date()
+    // Use noon local time on the selected date so the ISO instant always
+    // round-trips back to the same calendar date regardless of timezone
+    // (midnight shifts a day back in UTC, current-time shifts unpredictably).
     const [y, m, d] = logDate.split('-').map(Number)
-    now.setFullYear(y, m - 1, d)
-    const startAt = now.toISOString()
-    const endAt = new Date(now.getTime() + logDuration * 60_000).toISOString()
+    const startAt = new Date(y, m - 1, d, 12, 0, 0, 0).toISOString()
+    const endAt = new Date(y, m - 1, d, 12, 0, logDuration * 60, 0).toISOString()
 
     if (!logSubjectId && !logProjectId) return
     const project = logProjectId ? data.projects.find((p) => p.id === logProjectId) : undefined
@@ -190,15 +191,21 @@ export default function Dashboard() {
   const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
   const [liveTimerSubjectId, setLiveTimerSubjectId] = useState<string | null>(null)
   useEffect(() => {
-    // Always poll every second — if no timer is active, just show 0
+    let interval: number | null = null
+    let active = isTimerActive()
     const tick = () => {
-      const active = isTimerActive()
-      setLiveTimerSeconds(active ? getLiveTimerSeconds() : 0)
-      setLiveTimerSubjectId(active ? getLiveTimerSubjectId() : null)
+      const nowActive = isTimerActive()
+      setLiveTimerSeconds(nowActive ? getLiveTimerSeconds() : 0)
+      setLiveTimerSubjectId(nowActive ? getLiveTimerSubjectId() : null)
+      if (nowActive !== active) {
+        active = nowActive
+        if (interval) clearInterval(interval)
+        interval = window.setInterval(tick, active ? 1000 : 5000)
+      }
     }
     tick()
-    const interval = window.setInterval(tick, 1000)
-    return () => clearInterval(interval)
+    interval = window.setInterval(tick, active ? 1000 : 5000)
+    return () => { if (interval) clearInterval(interval) }
   }, [])
   const [editSubjectId, setEditSubjectId] = useState('')
 
@@ -513,33 +520,20 @@ export default function Dashboard() {
                   <span>Target met</span>
                   <div className="h-3 w-3 rounded-sm border border-green-600 bg-green-700 dark:border-green-400 dark:bg-green-500" />
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
-                  <span>Milestones:</span>
+              </div>
+            </Card>
+              <Card>
+                <div className="text-xs text-slate-500 mb-2">Streak milestones:</div>
+                <div className="flex flex-wrap gap-2">
                   {STREAK_MILESTONES.map((m) => (
-                    <span
-                      key={m}
-                      className={cn(
-                        'rounded-full px-2 py-0.5 font-medium',
-                        longestStreak >= m
-                          ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                      )}
-                    >
+                    <div key={m} className={cn('rounded-full px-3 py-1 text-xs font-semibold', longestStreak >= m ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400')}>
                       {m}d
-                    </span>
+                    </div>
                   ))}
                 </div>
-              </div>
-            </Card>
-            <Card>
-              <div className="flex items-end gap-2">
-                <span className="text-4xl font-bold text-primary-600">{goalPct}%</span>
-                <span className="text-sm text-slate-500">of {settings.dailyTargetMinutes}m</span>
-              </div>
-              <div className="mt-3 h-3 w-full rounded-full bg-slate-200"><div className={cn('h-3 rounded-full transition-all', goalPct >= 100 ? 'bg-green-500' : 'bg-primary-500')} style={{ width: `${goalPct}%` }} /></div>
-              {goalPct >= 100 && <p className="mt-2 text-sm font-medium text-green-600">Goal reached!</p>}
-              {goalPct < 100 && todayMinutes > 0 && <p className="mt-2 text-sm text-slate-500">{formatMinutes(settings.dailyTargetMinutes - todayMinutes)} to go</p>}
-            </Card>
+                {goalPct >= 100 && <div className="mt-3 text-sm font-medium text-green-600">Goal reached!</div>}
+                {goalPct < 100 && todayMinutes > 0 && <div className="mt-3 text-sm text-slate-500">{formatMinutes(settings.dailyTargetMinutes - todayMinutes)} to go</div>}
+              </Card>
           </div>
         </Collapsible>
         )

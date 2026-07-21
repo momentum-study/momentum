@@ -123,30 +123,51 @@ export default function SubjectsPage() {
       const subjId = deleteSubject.id
       const deletedAt = now
       const updatedAt = now
-      // Snapshot the subject before deletion for undo
       const originalSubject = deleteSubject
-      // Soft-delete the subject and cascade to its projects, sessions, and assignments
-      // so consumers that filter by !deletedAt don't see dangling references.
+
+      // Collect all descendant child subjects recursively
+      const allChildIds: string[] = []
+      function collectChildren(parentId: string) {
+        for (const s of data.subjects) {
+          if (!s.deletedAt && s.parentSubjectId === parentId) {
+            allChildIds.push(s.id)
+            collectChildren(s.id)
+          }
+        }
+      }
+      collectChildren(subjId)
+
+      // Soft-delete the subject and all children
       await db.subjects.update(subjId, { deletedAt, updatedAt })
-      const prevProjects = await db.projects.where('subjectId').equals(subjId).toArray()
+      for (const childId of allChildIds) {
+        await db.subjects.update(childId, { deletedAt, updatedAt })
+      }
+      // Cascade to projects, sessions, and assignments for subject + all children
+      const allSubjectIds = [subjId, ...allChildIds]
+      const prevProjects = await db.projects.where('subjectId').anyOf(allSubjectIds).toArray()
       for (const p of prevProjects) {
         await db.projects.update(p.id, { deletedAt, updatedAt })
       }
-      const prevSessions = await db.sessions.where('subjectId').equals(subjId).toArray()
+      const prevSessions = await db.sessions.where('subjectId').anyOf(allSubjectIds).toArray()
       for (const s of prevSessions) {
         await db.sessions.update(s.id, { deletedAt, updatedAt })
       }
-      const prevAssignments = await db.assignments.where('subjectId').equals(subjId).toArray()
+      const prevAssignments = await db.assignments.where('subjectId').anyOf(allSubjectIds).toArray()
       for (const a of prevAssignments) {
         await db.assignments.update(a.id, { deletedAt, updatedAt })
       }
       await loadData()
       setDeleteSubject(null)
+      const totalItems = allChildIds.length + prevProjects.length + prevSessions.length + prevAssignments.length
       pushUndo({
         description: originalSubject
-          ? `Deleted focus area "${originalSubject.name}" and ${prevProjects.length + prevSessions.length + prevAssignments.length} related items`
+          ? `Deleted focus area "${originalSubject.name}" and ${totalItems} related items`
           : `Deleted focus area`,
         undo: async () => {
+          // Restore children first, then parent
+          for (const childId of allChildIds) {
+            await db.subjects.update(childId, { deletedAt: null, updatedAt: isoNow() })
+          }
           await db.subjects.update(subjId, { deletedAt: null, updatedAt: isoNow() })
           for (const p of prevProjects) await db.projects.update(p.id, { deletedAt: null, updatedAt: isoNow() })
           for (const s of prevSessions) await db.sessions.update(s.id, { deletedAt: null, updatedAt: isoNow() })
@@ -156,6 +177,9 @@ export default function SubjectsPage() {
         redo: async () => {
           const redoNow = isoNow()
           await db.subjects.update(subjId, { deletedAt: redoNow, updatedAt: redoNow })
+          for (const childId of allChildIds) {
+            await db.subjects.update(childId, { deletedAt: redoNow, updatedAt: redoNow })
+          }
           for (const p of prevProjects) await db.projects.update(p.id, { deletedAt: redoNow, updatedAt: redoNow })
           for (const s of prevSessions) await db.sessions.update(s.id, { deletedAt: redoNow, updatedAt: redoNow })
           for (const a of prevAssignments) await db.assignments.update(a.id, { deletedAt: redoNow, updatedAt: redoNow })

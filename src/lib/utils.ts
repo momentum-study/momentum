@@ -84,13 +84,22 @@ export function getSessionScope(
 }
 
 
-/** Returns the local date string (YYYY-MM-DD) for a given ISO timestamp.
- *  Returns '' for invalid/empty input so callers can filter safely. */
-export function sessionLocalDate(isoDate: string | null | undefined): string {
+/** Normalize an ISO timestamp to a local date string YYYY-MM-DD.
+ *  Uses the browser's local timezone. Returns '' for invalid inputs. */
+export function toLocalDateString(isoDate: string | null | undefined): string {
   if (!isoDate) return ''
-  const d = new Date(isoDate)
-  if (isNaN(d.getTime())) return ''
-  return format(d, 'yyyy-MM-dd')
+  try {
+    const d = new Date(isoDate)
+    if (isNaN(d.getTime())) return ''
+    return format(d, 'yyyy-MM-dd')
+  } catch {
+    return ''
+  }
+}
+
+/** Returns the local date string (YYYY-MM-DD) for a given ISO timestamp. */
+export function sessionLocalDate(isoDate: string | null | undefined): string {
+  return toLocalDateString(isoDate)
 }
 
 export function isTopLevelSubject(subject: Subject): boolean {

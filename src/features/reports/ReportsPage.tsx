@@ -3,7 +3,7 @@ import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
-import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor, sessionLocalDate } from '../../lib/utils'
+import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor, sessionLocalDate, toLocalDateString } from '../../lib/utils'
 import type { Session, DayOfWeek } from '../../domain/types'
 import { Link } from 'react-router-dom'
 import { loadSettings } from '../settings/SettingsPage'
@@ -45,7 +45,7 @@ function filterSessionsByPeriod(sessions: Session[], period: Period): Session[] 
 function minutesByDate(sessions: Session[]): Map<string, number> {
   const m = new Map<string, number>()
   for (const s of sessions) {
-    const key = format(new Date(s.startAt), 'yyyy-MM-dd')
+    const key = toLocalDateString(s.startAt)
     m.set(key, (m.get(key) ?? 0) + s.durationMinutes)
   }
   return m
@@ -87,14 +87,14 @@ export default function ReportsPage() {
     const sessionCount = sessions.length
     const longestSession = sessions.reduce((max, s) => Math.max(max, s.durationMinutes), 0)
     const avgSessionLength = sessionCount > 0 ? totalMinutes / sessionCount : 0
-    const daySet = new Set(sessions.map((s) => format(new Date(s.startAt), 'yyyy-MM-dd')))
+    const daySet = new Set(sessions.map((s) => toLocalDateString(s.startAt)))
     const avgPerDay = daySet.size > 0 ? totalMinutes / daySet.size : 0
 
     // Previous period
     const prevTotal = prevSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
     const prevCount = prevSessions.length
     const prevAvgLen = prevCount > 0 ? prevTotal / prevCount : 0
-    const prevDaySet = new Set(prevSessions.map((s) => format(new Date(s.startAt), 'yyyy-MM-dd')))
+    const prevDaySet = new Set(prevSessions.map((s) => toLocalDateString(s.startAt)))
     const prevAvgPerDay = prevDaySet.size > 0 ? prevTotal / prevDaySet.size : 0
     return { totalMinutes, sessionCount, avgSessionLength, avgPerDay, longestSession, prevTotal, prevCount, prevAvgLen, prevAvgPerDay }
   }, [sessions, prevSessions])

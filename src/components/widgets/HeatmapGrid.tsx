@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { format, subDays } from 'date-fns'
-import { cn } from '../../lib/utils'
+import { cn, toLocalDateString } from '../../lib/utils'
 import type { Session } from '../../domain/types'
 
 interface HeatmapGridProps {
@@ -23,7 +23,7 @@ export function HeatmapGrid({ sessions, startDate, days }: HeatmapGridProps) {
     const map: Record<string, number> = {}
     for (const s of sessions) {
       if (s.deletedAt) continue
-      const day = format(new Date(s.startAt), 'yyyy-MM-dd')
+      const day = toLocalDateString(s.startAt)
       map[day] = (map[day] ?? 0) + s.durationMinutes
     }
     return map

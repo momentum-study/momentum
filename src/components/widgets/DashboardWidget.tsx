@@ -1,4 +1,5 @@
-import React, { ReactNode, useRef, useState } from 'react'
+import React, { ReactNode, Suspense, useRef, useState } from 'react'
+import { getWidget } from '../../lib/widget-registry'
 import { cn } from '../../lib/utils'
 
 interface DashboardWidgetProps {
@@ -104,5 +105,16 @@ export function DashboardWidget({
       </div>
       {isOpen && <div className="p-3">{children}</div>}
     </div>
+  )
+}
+
+export function DashboardRegistryWidget({ id }: { id: string }) {
+  const def = getWidget(id)
+  if (!def) return null
+  const Component = def.component
+  return (
+    <Suspense fallback={<div className="p-4 text-center text-sm text-slate-500">Loading…</div>}>
+      <Component />
+    </Suspense>
   )
 }

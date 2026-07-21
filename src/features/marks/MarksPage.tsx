@@ -65,6 +65,7 @@ export default function MarksPage() {
   const [filterName, setFilterName] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [visibleCount, setVisibleCount] = useState(20)
   const marks = data.marks.filter((m) => !m.deletedAt)
   const subjects = filterActive(data.subjects)
   const categories = filterActive(data.categories)
@@ -104,6 +105,7 @@ export default function MarksPage() {
     })
     return result
   }, [marks, filterSubject, filterName, sortKey, sortOrder, subjectName])
+  const visibleMarks = filteredMarks.slice(0, visibleCount)
 
   // Early return AFTER all hooks
   if (isLoading) return <PageSpinner />
@@ -202,7 +204,7 @@ export default function MarksPage() {
         />
       ) : filteredMarks.length === 0 ? (
         <EmptyState title="No matches" description="Try adjusting your filters." />
-      ) : (
+      ) : (<>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -221,7 +223,7 @@ export default function MarksPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredMarks.map((m) => {
+              {visibleMarks.map((m) => {
                 const pct = weightedPct(m)
                 const grade = getGrade(m)
                 const pctColor = pct >= 80 ? 'text-green-600 dark:text-green-400' : pct >= 50 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
@@ -262,7 +264,14 @@ export default function MarksPage() {
             </tbody>
           </table>
         </div>
-      )}
+        {filteredMarks.length > visibleCount && (
+          <div className="flex justify-center pt-2">
+            <Button variant="secondary" size="sm" onClick={() => setVisibleCount((n) => n + 20)}>
+              Load more
+            </Button>
+          </div>
+        )}
+      </>)}
 
       {/* Delete confirmation */}
       {deleting && (

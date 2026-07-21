@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { isoNow, getSubjectPathLabel } from '../../lib/utils'
+import { isoNow, getSubjectPathLabel, toLocalDateString } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { v4 as uuid } from 'uuid'
 import type { Activity, ActivityLog, DayOfWeek, Session } from '../../domain/types'
@@ -32,7 +32,7 @@ export function ActivityConfirmationCard({ onDismiss }: ActivityConfirmationCard
     // Collect subjectIds that have a session today (auto-complete case).
     const sessionSubjectIds = new Set<string>()
     for (const s of sessions) {
-      if (!s.deletedAt && format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr) {
+      if (!s.deletedAt && toLocalDateString(s.startAt) === todayStr) {
         sessionSubjectIds.add(s.subjectId)
       }
     }

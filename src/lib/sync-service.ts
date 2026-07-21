@@ -7,6 +7,7 @@ import {
   collection,
   doc,
   setDoc,
+  getDoc,
   getDocs,
   query,
   where,
@@ -158,7 +159,9 @@ export const syncService = {
     if (!isFirebaseConfigured || !db) return
     withQueueLock(() => {
       const queue = loadQueue()
-      queue.push({ type: 'upsert', session, ts: Date.now() })
+      // Increment version for optimistic concurrency control
+      const version = Date.now() // Simple monotonically increasing version
+      queue.push({ type: 'upsert', session: { ...session, version }, ts: version })
       saveQueue(queue)
     })
   },
@@ -209,6 +212,13 @@ export const syncService = {
           }
           if (op.type === 'upsert') {
             const ref = doc(firestore, 'sessions', op.session.id)
+            // Check remote version before writing
+            const remoteDoc = await getDoc(ref)
+            const remoteData = remoteDoc.data() as SyncedSession | undefined
+            if (remoteData && remoteData.version && op.session.version && remoteData.version >= op.session.version) {
+              console.warn(`[sync] Skipping write for session ${op.session.id}: remote version ${remoteData.version} >= local version ${op.session.version}`)
+              continue
+            }
             batch.set(ref, op.session, { merge: true })
           } else {
             const ref = doc(firestore, 'sessions', op.session.id)

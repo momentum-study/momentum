@@ -8,6 +8,8 @@ import { useData } from '../../app/providers'
 import { useAuth } from '../../app/auth-provider'
 import { downloadBackup, readBackupFile, importBackup, ImportMode } from '../../lib/backup'
 import { pushSettings } from '../../lib/settings-sync'
+import { useCompactMode } from '../../lib/use-compact-mode'
+import { useHighContrast } from '../../lib/use-high-contrast'
 
 const STORAGE_KEY = 'momentum-settings'
 
@@ -316,6 +318,8 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<string>('General')
   const [resetModalOpen, setResetModalOpen] = useState(false)
   const [resetInput, setResetInput] = useState('')
+  const { enabled: compactEnabled, toggle: toggleCompact } = useCompactMode()
+  const { enabled: hcEnabled, toggle: toggleHC } = useHighContrast()
 
   // Debounced auto-save + cloud push (500ms)
   useEffect(() => {
@@ -379,6 +383,12 @@ export default function SettingsPage() {
             </CardHeader>
             <SettingsField label="Dark Mode">
               <Toggle value={settings.darkMode} onChange={(v) => update({ darkMode: v })} />
+            </SettingsField>
+            <SettingsField label="Compact Mode">
+              <Toggle value={compactEnabled} onChange={() => toggleCompact()} />
+            </SettingsField>
+            <SettingsField label="High Contrast">
+              <Toggle value={hcEnabled} onChange={() => toggleHC()} />
             </SettingsField>
           </Card>
 

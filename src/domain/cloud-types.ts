@@ -40,6 +40,9 @@ export interface SyncedSession {
   startAt: string
   endAt?: string
   createdAt: string
+  /** Monotonically increasing version for optimistic concurrency control.
+   *  Incremented on each upsert; flush skips writes if remote version >= this. */
+  version?: number
 }
 
 // Aggregated stats for a group member, computed from synced sessions.

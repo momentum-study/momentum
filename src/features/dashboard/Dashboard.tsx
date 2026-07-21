@@ -12,7 +12,9 @@ import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { Modal } from '../../components/ui/Modal'
-import { cn, formatMinutes, getSessionScope, isoNow } from '../../lib/utils'
+import { HoverCard } from '../../components/ui/HoverCard'
+import { useSwipe } from '../../lib/use-swipe'
+import { cn, formatMinutes, getSessionScope, isoNow, toLocalDateString } from '../../lib/utils'
 import { loadSettings } from '../settings/SettingsPage'
 import { db } from '../../db/app-db'
 import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakDayForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
@@ -26,6 +28,148 @@ import { DashboardWidget } from '../../components/widgets/DashboardWidget'
 const STREAK_MILESTONES = [7, 14, 21, 30, 66, 100] as const
 const BEST_STREAK_KEY = 'momentum-best-streak'
 const CELEBRATION_KEY = 'momentum-last-celebration'
+function copySessionInfo(session: Session & { subjectName: string }) {
+  const time = format(new Date(session.startAt), 'h:mm a')
+  const src = session.source === 'timer' ? 'timer' : session.source === 'pomodoro' ? 'pomodoro' : session.source === 'quickLog' ? 'quick log' : session.source === 'autoRoutine' ? 'routine' : 'manual'
+  navigator.clipboard.writeText(`${session.subjectName} · ${formatMinutes(session.durationMinutes)} · ${time} · ${src}`).catch(() => {})
+}
+
+function SessionRow({
+  session, project, subjects, menuSessionId, setMenuSessionId,
+  setEditLog, setEditDuration, setEditDate, setEditSubjectId,
+  showEditRowId, setShowEditRowId, deleteSession,
+  editDuration, editDate, editSubjectId, saveEditLog, todayStr,
+  selected, onToggleSelect,
+}: {
+  session: Session & { subjectName: string; subjectColor: string }
+  project: { name: string } | undefined
+  subjects: { id: string; name: string; deletedAt?: string | null }[]
+  menuSessionId: string | null
+  setMenuSessionId: (id: string | null) => void
+  setEditLog: (s: Session | null) => void
+  setEditDuration: (n: number) => void
+  setEditDate: (s: string) => void
+  setEditSubjectId: (s: string) => void
+  showEditRowId: string | null
+  setShowEditRowId: (id: string | null) => void
+  deleteSession: (id: string) => void
+  editDuration: number
+  editDate: string
+  editSubjectId: string
+  saveEditLog: () => Promise<void>
+  todayStr: string
+  selected: boolean
+  onToggleSelect: (id: string) => void
+}) {
+  const swipe = useSwipe({
+    onSwipeLeft: () => deleteSession(session.id),
+    onSwipeRight: () => {
+      setEditLog(session)
+      setEditDuration(session.durationMinutes)
+      setEditDate(toLocalDateString(session.startAt))
+      setEditSubjectId(session.subjectId)
+      setShowEditRowId(session.id)
+    },
+  })
+  const srcLabel = session.source === 'timer' ? 'timer' : session.source === 'pomodoro' ? 'pomodoro' : session.source === 'quickLog' ? 'quick log' : session.source === 'autoRoutine' ? 'routine' : 'manual'
+  return (
+    <>
+      <li
+        key={session.id}
+        className="flex items-center justify-between py-2"
+        onDoubleClick={() => {
+          setEditLog(session)
+          setEditDuration(session.durationMinutes)
+          setEditDate(toLocalDateString(session.startAt))
+          setEditSubjectId(session.subjectId)
+          setShowEditRowId(session.id)
+        }}
+        {...swipe}
+      >
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(session.id)}
+          className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-primary-600 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700"
+          aria-label={`Select session ${session.subjectName}`}
+        />
+        <HoverCard
+          content={
+            <div className="space-y-1 text-sm">
+              <div className="font-medium">{session.subjectName}</div>
+              {project && <div className="text-slate-500">{project.name}</div>}
+              <div className="text-slate-500">{format(new Date(session.startAt), 'h:mm a')} · {formatMinutes(session.durationMinutes)}</div>
+              <div className="text-slate-500">Source: {srcLabel}</div>
+              {session.note && <div className="text-slate-400 italic">{session.note}</div>}
+            </div>
+          }
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.subjectColor }} />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{session.subjectName}{project && <span className="text-slate-500"> · {project.name}</span>}</div>
+              <div className="text-xs text-slate-500">{format(new Date(session.startAt), 'h:mm a')}{session.source === 'timer' ? ' ⏱' : session.source === 'pomodoro' ? ' 🍅' : ' ✏️'}</div>
+            </div>
+          </div>
+        </HoverCard>
+        <div className="flex items-center gap-2">
+          <div className="text-sm text-slate-600">{formatMinutes(session.durationMinutes)}</div>
+          <div className="relative">
+            <button type="button" aria-label="More actions" onClick={() => setMenuSessionId(menuSessionId === session.id ? null : session.id)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700">
+              <span className="block text-lg leading-none">⋯</span>
+            </button>
+            {menuSessionId === session.id && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setMenuSessionId(null)} />
+                <div className="absolute right-0 z-30 mt-1 w-36 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                  <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { setEditLog(session); setEditDuration(session.durationMinutes); setEditDate(toLocalDateString(session.startAt)); setEditSubjectId(session.subjectId); setShowEditRowId(session.id); setMenuSessionId(null) }}>
+                    Edit time
+                  </button>
+                  <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { copySessionInfo(session); setMenuSessionId(null) }}>
+                    Copy
+                  </button>
+                  <button type="button" className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { deleteSession(session.id); setMenuSessionId(null) }}>
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </li>
+      {showEditRowId === session.id && (
+        <li className="bg-slate-50 dark:bg-slate-800 px-3 py-3 border-l-4 border-primary-500">
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <div>
+                <label className="label text-xs">Minutes</label>
+                <input type="text" inputMode="numeric" pattern="[0-9]*" className="input w-20" value={editDuration === 1 ? '' : String(editDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setEditDuration(1); return }; const n = Number(v); if (isNaN(n)) return; setEditDuration(Math.max(1, n)) }} />
+              </div>
+              <div>
+                <label className="label text-xs">Date</label>
+                <input type="date" className="input" max={todayStr} value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="label text-xs">Subject</label>
+                <select className="input" value={editSubjectId} onChange={(e) => setEditSubjectId(e.target.value)}>
+                  <option value="">— Select subject —</option>
+                  {subjects.filter((s) => !s.deletedAt).map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="primary" className="text-xs" onClick={async () => { await saveEditLog(); setShowEditRowId(null) }}>Save</Button>
+              <Button variant="secondary" className="text-xs" onClick={() => { setEditLog(null); setShowEditRowId(null) }}>Cancel</Button>
+            </div>
+          </div>
+        </li>
+      )}
+    </>
+  )
+}
+
 export default function Dashboard() {
   const { data, isLoading, loadData } = useData()
   const { syncSession, syncSessionDelete } = useSessionSync()
@@ -33,12 +177,15 @@ export default function Dashboard() {
   const { visibleWidgets, setVisibleWidgets, widgetConfigs, reorderWidgets, toggleWidgetSize } = useDashboardWidgets()
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [logModalOpen, setLogModalOpen] = useState(false)
-  const [showAllRecent, setShowAllRecent] = useState(false)
+  const [recentLimit, setRecentLimit] = useState(10)
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
   const [showActivityCard, setShowActivityCard] = useState(true)
   const [showCelebration, setShowCelebration] = useState(false)
   const navigate = useNavigate()
   const [fabOpen, setFabOpen] = useState(false)
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set())
+  const [batchSubjectModalOpen, setBatchSubjectModalOpen] = useState(false)
+  const [batchSubjectId, setBatchSubjectId] = useState('')
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
   // Exclude soft-deleted sessions from streak / stats calculations.
@@ -51,7 +198,7 @@ export default function Dashboard() {
   const streak = useMemo(() => {
     const daySet = new Set<string>()
     for (const s of academicSessions) {
-      daySet.add(format(new Date(s.startAt), 'yyyy-MM-dd'))
+      daySet.add(toLocalDateString(s.startAt))
     }
     let count = 0
     let missed = 0
@@ -75,7 +222,7 @@ export default function Dashboard() {
     if (academicSessions.length === 0) return 0
     const daySet = new Set<string>()
     for (const s of academicSessions) {
-      daySet.add(format(new Date(s.startAt), 'yyyy-MM-dd'))
+      daySet.add(toLocalDateString(s.startAt))
     }
     const sortedDays = Array.from(daySet).sort()
     let max = 0
@@ -104,7 +251,7 @@ export default function Dashboard() {
       const last = localStorage.getItem(CELEBRATION_KEY)
       if (last === today) return
       const dailyMins = academicSessions
-        .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === today)
+        .filter((s) => toLocalDateString(s.startAt) === today)
         .reduce((sum, s) => sum + s.durationMinutes, 0)
       const targetMet = dailyMins >= settings.dailyTargetMinutes
       const reachedMilestone = STREAK_MILESTONES.includes(
@@ -129,7 +276,7 @@ export default function Dashboard() {
   const minutesByDay = useMemo(() => {
     const map: Record<string, number> = {}
     for (const s of academicSessions) {
-      const day = format(new Date(s.startAt), 'yyyy-MM-dd')
+      const day = toLocalDateString(s.startAt)
       map[day] = (map[day] ?? 0) + s.durationMinutes
     }
     return map
@@ -300,9 +447,35 @@ export default function Dashboard() {
     })
   }
 
+  async function deleteSelectedSessions() {
+    for (const id of selectedSessionIds) {
+      const session = data.sessions.find(s => s.id === id)
+      if (session) {
+        await db.sessions.delete(id)
+        syncSessionDelete(id)
+        await revertRoutineLogsForSession(session)
+        await revertStreakDayForSession(session)
+      }
+    }
+    setSelectedSessionIds(new Set())
+    await loadData()
+  }
+
+  async function batchChangeSubject() {
+    if (!batchSubjectId) return
+    for (const id of selectedSessionIds) {
+      await db.sessions.update(id, { subjectId: batchSubjectId, updatedAt: isoNow() })
+    }
+    setSelectedSessionIds(new Set())
+    setBatchSubjectModalOpen(false)
+    setBatchSubjectId('')
+    await loadData()
+  }
+
+
   if (isLoading) return <PageSpinner />
   const todayMinutes = academicSessions
-    .filter((s) => format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr)
+    .filter((s) => toLocalDateString(s.startAt) === todayStr)
     .reduce((sum, s) => sum + s.durationMinutes, 0)
   const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
   const goalPct = Math.min(100, Math.round((todayMinutes / settings.dailyTargetMinutes) * 100))
@@ -314,7 +487,7 @@ export default function Dashboard() {
       subjectName: data.subjects.find((sub) => sub.id === s.subjectId)?.name ?? 'Unknown',
       subjectColor: data.subjects.find((sub) => sub.id === s.subjectId)?.color ?? '#94a3b8',
     }))
-  const recentSessions = showAllRecent ? allRecent : allRecent.slice(0, 5)
+  const recentSessions = allRecent.slice(0, recentLimit)
 
   const isWidgetVisible = (id: string) => visibleWidgets.includes(id)
   const toggleWidget = (id: string) => {
@@ -327,29 +500,71 @@ export default function Dashboard() {
 
   return (
     <div data-tour="dashboard" className="space-y-6">
-      {/* Auto-logged sessions banner */}
-      {data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt).length > 0 && (
-        <Card className="border-primary-200 bg-primary-50 dark:border-primary-800 dark:bg-primary-900/20">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-medium text-primary-900 dark:text-primary-100">
-              {data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt).length} auto-logged sessions ready to confirm
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="secondary" onClick={async () => {
-                for (const s of data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt)) {
-                  await db.sessions.delete(s.id)
-                }
-                await loadData()
-              }}>Skip All</Button>
-              <Button size="sm" variant="primary" onClick={async () => {
-                for (const s of data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt)) {
-                  await db.sessions.update(s.id, { deletedAt: null, updatedAt: isoNow() })
-                }
-                await loadData()
-              }}>Confirm All</Button>
-            </div>
-          </div>
-        </Card>
+      {/* Auto-logged sessions widget */}
+      {isWidgetVisible('auto-log') && (
+        <div>
+          <DashboardWidget
+            id="auto-log"
+            label="Pending Auto-Logs"
+            size={widgetConfigs['auto-log']?.size || 'small'}
+            onRemove={() => toggleWidget('auto-log')}
+            onToggleSize={() => toggleWidgetSize('auto-log')}
+            onReorder={reorderWidgets}
+          >
+            {(() => {
+              const pendingSessions = data.sessions.filter(s => s.source === 'autoRoutine' && s.deletedAt)
+              if (pendingSessions.length === 0) {
+                return <p className="text-sm text-slate-500 p-4">No pending auto-logged sessions</p>
+              }
+              return (
+                <div className="space-y-3 p-2">
+                  {pendingSessions.map(session => {
+                    const subject = data.subjects.find(s => s.id === session.subjectId)
+                    const project = session.projectId ? data.projects.find(p => p.id === session.projectId) : undefined
+                    return (
+                      <div key={session.id} className="flex items-center justify-between p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800">
+                        <div className="flex min-w-0 items-center gap-2">
+                          {subject && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: subject.color }} />}
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                              {subject?.name ?? 'Unknown Subject'}
+                              {project && <span className="text-slate-500"> · {project.name}</span>}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {format(new Date(session.startAt), 'h:mm a')} • {formatMinutes(session.durationMinutes)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={async () => {
+                              await db.sessions.delete(session.id)
+                              await loadData()
+                            }}
+                          >
+                            Skip
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={async () => {
+                              await db.sessions.update(session.id, { deletedAt: null, updatedAt: isoNow() })
+                              await loadData()
+                            }}
+                          >
+                            Confirm
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </DashboardWidget>
+        </div>
       )}
       {/* Dashboard grid with widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 auto-rows-min">
@@ -561,7 +776,8 @@ export default function Dashboard() {
                           <div key={i} className="text-center">{l}</div>
                         ))}
                       </div>
-                      <div className="grid grid-cols-7 gap-px rounded-sm border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 p-px">
+                      <div className="relative">
+                       <div className="grid grid-cols-7 gap-px rounded-sm border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 p-px">
                         {Array.from({ length: firstDow }).map((_, i) => <div key={`pad-${i}`} />)}
                         {heatDays.map(({ date, ds, minutes }) => {
                           const isToday = ds === todayStr
@@ -586,6 +802,10 @@ export default function Dashboard() {
                             </div>
                           )
                         })}
+                      </div>
+                      <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px border-l-2 border-red-500 border-dashed" aria-hidden="true">
+                        <span className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold text-red-500">Goal</span>
+                      </div>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
@@ -761,7 +981,7 @@ export default function Dashboard() {
                 const todayKey = format(new Date(), 'yyyy-MM-dd')
                 const yesterdayKey = format(subDays(new Date(), 1), 'yyyy-MM-dd')
                 for (const s of recentSessions) {
-                  const ds = format(new Date(s.startAt), 'yyyy-MM-dd')
+                  const ds = toLocalDateString(s.startAt)
                   let label: string
                   if (ds === todayKey) label = 'Today'
                   else if (ds === yesterdayKey) label = 'Yesterday'
@@ -779,15 +999,54 @@ export default function Dashboard() {
                       <p className="text-sm text-slate-500">No sessions yet. Start studying!</p>
                     ) : (
                       <div className="space-y-3">
-                        {allRecent.length > 5 && (
+                        {selectedSessionIds.size > 0 && (
+                          <div className="flex items-center justify-between gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 dark:border-primary-700 dark:bg-primary-900/30">
+                            <span className="text-sm font-medium text-primary-900 dark:text-primary-100">
+                              {selectedSessionIds.size} selected
+                            </span>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setSelectedSessionIds(new Set())}
+                              >
+                                Clear
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setBatchSubjectModalOpen(true)}
+                              >
+                                Change Subject
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                onClick={async () => {
+                                  if (confirm(`Delete ${selectedSessionIds.size} session(s)?`)) {
+                                    await deleteSelectedSessions()
+                                  }
+                                }}
+                              >
+                                Delete Selected
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        {allRecent.length > recentLimit && (
                           <div className="flex justify-end">
                             <button
                               type="button"
                               className="text-xs font-medium text-primary-600 hover:underline"
-                              onClick={() => setShowAllRecent((v) => !v)}
+                              onClick={() => setRecentLimit((n) => n + 10)}
                             >
-                              {showAllRecent ? 'Show less' : `Show all (${allRecent.length})`}
+                              Load more
                             </button>
+                          </div>
+                        )}
+                        {academicSessions.length > 50 && (
+                          <div className="text-right text-xs text-slate-500">
+                            Showing {recentSessions.length} of {academicSessions.length}
                           </div>
                         )}
                         {groups.map((g) => (
@@ -797,132 +1056,28 @@ export default function Dashboard() {
                               {g.items.map((session) => {
                                 const project = session.projectId ? data.projects.find((p) => p.id === session.projectId) : undefined
                                 return (
-                                  <>
-                                  <li key={session.id} className="flex items-center justify-between py-2">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.subjectColor }} />
-                                      <div className="min-w-0">
-                                        <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{session.subjectName}{project && <span className="text-slate-500"> · {project.name}</span>}</div>
-                                        <div className="text-xs text-slate-500">{format(new Date(session.startAt), 'h:mm a')}{session.source === 'timer' ? ' ⏱' : session.source === 'pomodoro' ? ' 🍅' : ' ✏️'}</div>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <div className="text-sm text-slate-600">{formatMinutes(session.durationMinutes)}</div>
-                                      <div className="relative">
-                                        <button
-                                          type="button"
-                                          aria-label="More actions"
-                                          onClick={() => setMenuSessionId(menuSessionId === session.id ? null : session.id)}
-                                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
-                                        >
-                                          <span className="block text-lg leading-none">⋯</span>
-                                        </button>
-                                        {menuSessionId === session.id && (
-                                          <>
-                                            <div className="fixed inset-0 z-20" onClick={() => setMenuSessionId(null)} />
-                                            <div className="absolute right-0 z-30 mt-1 w-36 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                                              <button
-                                                type="button"
-                                                className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                                                onClick={() => {
-                                                  setEditLog(session)
-                                                  setEditDuration(session.durationMinutes)
-                                                  setEditDate(format(new Date(session.startAt), 'yyyy-MM-dd'))
-                                                  setEditSubjectId(session.subjectId)
-                                                  setShowEditRowId(session.id)
-                                                  setMenuSessionId(null)
-                                                }}
-                                              >
-                                                Edit time
-                                              </button>
-                                              <button
-                                                type="button"
-                                                className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                                onClick={() => {
-                                                  deleteSession(session.id)
-                                                  setMenuSessionId(null)
-                                                }}
-                                              >
-                                                Delete
-                                              </button>
-                                            </div>
-                                          </>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </li>
-                                  {/* Inline edit row */}
-                                  {showEditRowId === session.id && (
-                                    <li className="bg-slate-50 dark:bg-slate-800 px-3 py-3 border-l-4 border-primary-500">
-                                      <div className="space-y-2">
-                                        <div className="flex flex-wrap gap-2">
-                                          <div>
-                                            <label className="label text-xs">Minutes</label>
-                                            <input
-                                              type="text"
-                                              inputMode="numeric"
-                                              pattern="[0-9]*"
-                                              className="input w-20"
-                                              value={editDuration === 1 ? '' : String(editDuration)}
-                                              onChange={(e) => {
-                                                const v = e.target.value
-                                                if (v === '') { setEditDuration(1); return }
-                                                const n = Number(v)
-                                                if (isNaN(n)) return
-                                                setEditDuration(Math.max(1, n))
-                                              }}
-                                            />
-                                          </div>
-                                          <div>
-                                            <label className="label text-xs">Date</label>
-                                            <input
-                                              type="date"
-                                              className="input"
-                                              max={todayStr}
-                                              value={editDate}
-                                              onChange={(e) => setEditDate(e.target.value)}
-                                            />
-                                          </div>
-                                          <div>
-                                            <label className="label text-xs">Subject</label>
-                                            <select
-                                              className="input"
-                                              value={editSubjectId}
-                                              onChange={(e) => setEditSubjectId(e.target.value)}
-                                            >
-                                              <option value="">— Select subject —</option>
-                                              {data.subjects.filter((s) => !s.deletedAt).map((s) => (
-                                                <option key={s.id} value={s.id}>{s.name}</option>
-                                              ))}
-                                            </select>
-                                          </div>
-                                        </div>
-                                        <div className="flex gap-2">
-                                          <Button
-                                            variant="primary"
-                                            className="text-xs"
-                                            onClick={async () => {
-                                              await saveEditLog()
-                                              setShowEditRowId(null)
-                                            }}
-                                          >
-                                            Save
-                                          </Button>
-                                          <Button
-                                            variant="secondary"
-                                            className="text-xs"
-                                            onClick={() => {
-                                              setEditLog(null)
-                                              setShowEditRowId(null)
-                                            }}
-                                          >
-                                            Cancel
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    </li>
-                                  )}
-                                  </>
+                                  <SessionRow
+                                    key={session.id}
+                                    session={session}
+                                    project={project}
+                                    subjects={data.subjects}
+                                    menuSessionId={menuSessionId}
+                                    setMenuSessionId={setMenuSessionId}
+                                    setEditLog={setEditLog}
+                                    setEditDuration={setEditDuration}
+                                    setEditDate={setEditDate}
+                                    setEditSubjectId={setEditSubjectId}
+                                    showEditRowId={showEditRowId}
+                                    setShowEditRowId={setShowEditRowId}
+                                    deleteSession={deleteSession}
+                                    editDuration={editDuration}
+                                    editDate={editDate}
+                                    editSubjectId={editSubjectId}
+                                    saveEditLog={saveEditLog}
+                                    todayStr={todayStr}
+                                    selected={selectedSessionIds.has(session.id)}
+                                    onToggleSelect={(id) => setSelectedSessionIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })}
+                                  />
                                 )
                               })}
                             </ul>
@@ -1109,6 +1264,27 @@ export default function Dashboard() {
             </select>
           </div>
           <Button variant="primary" className="w-full" onClick={saveEditLog}>Save</Button>
+        </div>
+      </Modal>
+      {/* Batch Change Subject Modal */}
+      <Modal open={batchSubjectModalOpen} onClose={() => { setBatchSubjectModalOpen(false); setBatchSubjectId('') }} title="Change Subject for Selected Sessions">
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            This will change the subject for {selectedSessionIds.size} selected session(s).
+          </p>
+          <div>
+            <label className="label">New Subject</label>
+            <select className="input" value={batchSubjectId} onChange={(e) => setBatchSubjectId(e.target.value)}>
+              <option value="">— Select subject —</option>
+              {data.subjects.filter((s) => !s.deletedAt).map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => { setBatchSubjectModalOpen(false); setBatchSubjectId('') }}>Cancel</Button>
+            <Button variant="primary" disabled={!batchSubjectId} onClick={batchChangeSubject}>Apply</Button>
+          </div>
         </div>
       </Modal>
       {/* Celebration confetti overlay */}

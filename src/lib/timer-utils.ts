@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { toLocalDateString } from './utils'
 // Shared timer utilities — used by Dashboard and PomodoroTimer for live "today total".
 // Reads timer state from localStorage so any component can compute the live running total
 // without needing direct access to the timer's internal state.
@@ -130,7 +131,7 @@ export function getTotalTodayMinutes(
     if (!subject) continue
     const category = categories.find(c => c.id === subject.categoryId)
     if (category?.scope !== 'academic') continue
-    if (format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr) {
+    if (toLocalDateString(s.startAt) === todayStr) {
       total += s.durationSeconds != null ? s.durationSeconds / 60 : s.durationMinutes
     }
   }

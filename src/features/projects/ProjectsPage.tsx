@@ -4,7 +4,7 @@ import { differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, formatMinutes, isoNow, getSubjectPickerOptions, getSubjectPathLabel } from '../../lib/utils'
+import { cn, formatMinutes, isoNow, getSubjectPickerOptions, getSubjectPathLabel, toLocalDateString } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -208,7 +208,7 @@ export default function ProjectsPage() {
             weekStartDate.setDate(weekStartDate.getDate() - weekStartDate.getDay())
             weekStartDate.setHours(0, 0, 0, 0)
             const effectiveMinutes = project.dailyTargetMinutes
-              ? data.sessions.filter((s) => s.projectId === project.id && format(new Date(s.startAt), 'yyyy-MM-dd') === todayStr).reduce((sum, s) => sum + s.durationMinutes, 0)
+              ? data.sessions.filter((s) => s.projectId === project.id && toLocalDateString(s.startAt) === todayStr).reduce((sum, s) => sum + s.durationMinutes, 0)
               : project.weeklyTargetMinutes
                 ? data.sessions.filter((s) => s.projectId === project.id && new Date(s.startAt) >= weekStartDate).reduce((sum, s) => sum + s.durationMinutes, 0)
                 : totalMinutes

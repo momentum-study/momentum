@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { format, subDays, differenceInCalendarDays } from 'date-fns';
+import { toLocalDateString } from './utils';
 import type { Session } from '../domain/types';
 
 const BEST_STREAK_KEY = 'momentum-best-streak';
@@ -15,7 +16,7 @@ export function useStreak(sessions: Session[]) {
   const streak = useMemo(() => {
     const daySet = new Set<string>();
     for (const s of sessions) {
-      daySet.add(format(new Date(s.startAt), 'yyyy-MM-dd'));
+      daySet.add(toLocalDateString(s.startAt));
     }
     let count = 0;
     let missed = 0;
@@ -40,7 +41,7 @@ export function useStreak(sessions: Session[]) {
     if (sessions.length === 0) return 0;
     const daySet = new Set<string>();
     for (const s of sessions) {
-      daySet.add(format(new Date(s.startAt), 'yyyy-MM-dd'));
+      daySet.add(toLocalDateString(s.startAt));
     }
     const sortedDays = Array.from(daySet).sort();
     let max = 0;

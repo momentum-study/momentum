@@ -6,17 +6,18 @@ import { db } from '../../db/app-db'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { ColorPicker } from '../../components/ui/ColorPicker'
 import { cn, isoNow } from '../../lib/utils'
 import { v4 as uuid } from 'uuid'
-import type { Routine, RoutineLog, Activity, ActivityLog, DayOfWeek, Session } from '../../domain/types'
 import { useSessionSync } from '../../lib/use-session-sync'
+import type { Routine, RoutineLog, Activity, ActivityLog, DayOfWeek, Session, Project } from '../../domain/types'
+import { updateStreakDayForSession, updateRoutineLogsForSession } from '../../lib/routine-tracker'
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as const
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 const DEFAULT_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444']
 
-function todayKey() { return format(new Date(), 'yyyy-MM-dd') }
-function todayDow() { return new Date().getDay() as DayOfWeek }
+
 
 function timeUntil(timeStr: string): string {
   const [h, m] = timeStr.split(':').map(Number)
@@ -34,6 +35,18 @@ function timeUntil(timeStr: string): string {
   return `Ended ${Math.abs(Math.floor(diffMin / 60))}h ${Math.abs(diffMin) % 60}m ago`
 }
 
+function formatTime12h(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const hh = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${hh}:${String(m).padStart(2, '0')} ${period}`
+}
+
+function dayPatternLabel(dayMinutes: Partial<Record<DayOfWeek, number>>): string {
+  const active = Object.entries(dayMinutes).filter(([, m]) => (m ?? 0) > 0).map(([d]) => WEEKDAYS[Number(d)])
+  return active.join(' ')
+}
+
 export function SchedulePage() {
   const { data, loadData } = useData()
   const { push } = useUndo()
@@ -41,29 +54,25 @@ export function SchedulePage() {
 
   const [tab, setTab] = useState<'today' | 'plan'>('today')
   const [routineEditing, setRoutineEditing] = useState<Routine | null>(null)
-  const [cellEditing, setCellEditing] = useState<{ routineId: string; dow: DayOfWeek; minutes: string } | null>(null)
+  const [activityEditing, setActivityEditing] = useState<Activity | null>(null)
+  const [cellEditing, setCellEditing] = useState<{ itemId: string; dow: DayOfWeek; minutes: string; isActivity: boolean } | null>(null)
   const [logCustomFor, setLogCustomFor] = useState<string | null>(null)
   const [customMinutes, setCustomMinutes] = useState('')
   const [addRoutineOpen, setAddRoutineOpen] = useState(false)
   const [addActivityOpen, setAddActivityOpen] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const subjects = useMemo(() => data.subjects.filter(s => !s.deletedAt).sort((a, b) => a.name.localeCompare(b.name)), [data.subjects])
   const subjectsMap = useMemo(() => new Map(subjects.map(s => [s.id, s])), [subjects])
+  const projects = useMemo(() => data.projects.filter(p => !p.deletedAt).sort((a, b) => a.name.localeCompare(b.name)), [data.projects])
   const routines = useMemo(() => data.routines.filter(r => !r.deletedAt).sort((a, b) => a.name.localeCompare(b.name)), [data.routines])
   const activities = useMemo(() => data.activities.filter(a => !a.deletedAt).sort((a, b) => a.name.localeCompare(b.name)), [data.activities])
-  const routineLogs = useMemo(() => data.routineLogs, [data.routineLogs])
-  const activityLogs = useMemo(() => data.activityLogs, [data.activityLogs])
 
-  const todayStr = todayKey()
-  const dow = todayDow()
-
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  const dow = new Date().getDay() as DayOfWeek
   const todaysRoutines = useMemo(
-    () => routines.filter(r => (r.dayMinutes[dow] ?? 0) > 0).sort((a, b) => {
-      const aSubject = subjectsMap.get(a.subjectId)?.name ?? ''
-      const bSubject = subjectsMap.get(b.subjectId)?.name ?? ''
-      return aSubject.localeCompare(bSubject)
-    }),
-    [routines, subjectsMap, dow]
+    () => routines.filter(r => (r.dayMinutes[dow] ?? 0) > 0).sort((a, b) => a.name.localeCompare(b.name)),
+    [routines, dow]
   )
 
   const todaysActivities = useMemo(
@@ -76,11 +85,11 @@ export function SchedulePage() {
   )
 
   function getRoutineLogForToday(routineId: string) {
-    return routineLogs.find(l => l.routineId === routineId && l.date === todayStr)
+    return data.routineLogs.find(l => l.routineId === routineId && l.date === todayStr)
   }
 
   function getActivityLogForToday(activityId: string) {
-    return activityLogs.find(l => l.activityId === activityId && l.date === todayStr)
+    return data.activityLogs.find(l => l.activityId === activityId && l.date === todayStr)
   }
 
   async function buildSession(routine: Routine, mins: number): Promise<Session> {
@@ -100,13 +109,19 @@ export function SchedulePage() {
     }
   }
 
+  async function persistSession(session: Session) {
+    await db.sessions.add(session)
+    const subjectName = subjectsMap.get(session.subjectId)?.name ?? 'Unknown'
+    syncSession(session, subjectName)
+    await updateRoutineLogsForSession(session)
+    await updateStreakDayForSession(session)
+  }
+
   async function markDone(routine: Routine) {
     const mins = routine.dayMinutes[dow] ?? 0
     if (mins <= 0) return
     const session = await buildSession(routine, mins)
-    await db.sessions.add(session)
-    const subjectName = subjectsMap.get(routine.subjectId)?.name ?? 'Unknown'
-    syncSession(session, subjectName)
+    await persistSession(session)
     const existingLog = getRoutineLogForToday(routine.id)
     const logId = existingLog?.id ?? uuid()
     const log: RoutineLog = {
@@ -137,18 +152,15 @@ export function SchedulePage() {
   async function logCustom(routine: Routine, mins: number) {
     if (mins <= 0) return
     const session = await buildSession(routine, mins)
-    await db.sessions.add(session)
-    const subjectName = subjectsMap.get(routine.subjectId)?.name ?? 'Unknown'
-    syncSession(session, subjectName)
+    await persistSession(session)
     const existingLog = getRoutineLogForToday(routine.id)
     const logId = existingLog?.id ?? uuid()
-    const targetMins = routine.dayMinutes[dow] ?? 0
     const log: RoutineLog = {
       id: logId,
       routineId: routine.id,
       date: todayStr,
-      actualMinutes: mins,
-      completed: mins >= targetMins,
+      actualMinutes: (existingLog?.actualMinutes ?? 0) + mins,
+      completed: false,
       createdAt: existingLog?.createdAt ?? isoNow(),
     }
     await db.routineLogs.put(log)
@@ -158,6 +170,7 @@ export function SchedulePage() {
       undo: async () => {
         await db.sessions.delete(session.id)
         if (!existingLog) await db.routineLogs.delete(logId)
+        else if (existingLog) await db.routineLogs.put(existingLog)
         await loadData()
       },
       redo: async () => {
@@ -210,7 +223,7 @@ export function SchedulePage() {
   async function attendActivity(activity: Activity) {
     const existingLog = getActivityLogForToday(activity.id)
     if (existingLog) return
-    const mins = activity.dayMinutes[dow] ?? 0
+    const mins = activity.dayMinutes[dow] ?? activity.duration ?? 0
     const log: ActivityLog = {
       id: uuid(),
       activityId: activity.id,
@@ -221,7 +234,7 @@ export function SchedulePage() {
     }
     await db.activityLogs.add(log)
     let session: Session | null = null
-    if (activity.subjectId && mins > 0) {
+    if (activity.createsSession && activity.subjectId && mins > 0) {
       session = {
         id: uuid(),
         subjectId: activity.subjectId,
@@ -267,24 +280,31 @@ export function SchedulePage() {
     await loadData()
   }
 
-
+  async function deleteActivity(activity: Activity) {
+    await db.activities.update(activity.id, { deletedAt: isoNow(), updatedAt: isoNow() })
+    await loadData()
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex space-x-1 rounded-lg border border-slate-200 dark:border-slate-700 p-1 bg-white dark:bg-slate-800">
+        <div className="flex border-b border-slate-200 dark:border-slate-700">
           <button
             onClick={() => setTab('today')}
             className={cn(
-              'px-4 py-1.5 text-sm font-medium rounded-md transition-colors',
-              tab === 'today' ? 'bg-primary-600 text-white' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+              'px-4 py-2 text-sm font-medium transition-colors',
+              tab === 'today'
+                ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
             )}
           >Today</button>
           <button
             onClick={() => setTab('plan')}
             className={cn(
-              'px-4 py-1.5 text-sm font-medium rounded-md transition-colors',
-              tab === 'plan' ? 'bg-primary-600 text-white' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+              'px-4 py-2 text-sm font-medium transition-colors',
+              tab === 'plan'
+                ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
             )}
           >Weekly Plan</button>
         </div>
@@ -295,9 +315,18 @@ export function SchedulePage() {
       </div>
 
       {tab === 'today' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {todaysActivities.length === 0 && todaysRoutines.length === 0 && (
-            <EmptyState title="Nothing scheduled" description="No routines or activities for today. Use the buttons above to add some." />
+            <EmptyState
+              title="Nothing scheduled"
+              description="Add a routine or activity to start tracking today."
+              action={
+                <div className="flex gap-2 justify-center">
+                  <Button size="sm" onClick={() => setAddRoutineOpen(true)}>Add Routine</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setAddActivityOpen(true)}>Add Activity</Button>
+                </div>
+              }
+            />
           )}
 
           {todaysActivities.map(activity => (
@@ -306,8 +335,11 @@ export function SchedulePage() {
               activity={activity}
               subjectName={activity.subjectId ? subjectsMap.get(activity.subjectId)?.name ?? null : null}
               existingLog={getActivityLogForToday(activity.id)}
+              isExpanded={expandedId === activity.id}
+              onToggleExpand={() => setExpandedId(expandedId === activity.id ? null : activity.id)}
               onAttended={() => attendActivity(activity)}
               onSkip={() => skipActivity(activity)}
+              onEdit={() => setActivityEditing(activity)}
             />
           ))}
 
@@ -326,6 +358,8 @@ export function SchedulePage() {
               onSaveCustom={() => { void logCustom(routine, Number(customMinutes)); setLogCustomFor(null); setCustomMinutes('') }}
               onMarkDone={() => markDone(routine)}
               onSkip={() => skipRoutine(routine)}
+              isExpanded={expandedId === routine.id}
+              onToggleExpand={() => setExpandedId(expandedId === routine.id ? null : routine.id)}
             />
           ))}
         </div>
@@ -336,7 +370,8 @@ export function SchedulePage() {
           routines={routines}
           activities={activities}
           onEditRoutine={r => setRoutineEditing(r)}
-          onEditCell={(routineId, d, mins) => setCellEditing({ routineId, dow: d, minutes: String(mins) })}
+          onEditActivity={a => setActivityEditing(a)}
+          onEditCell={(itemId, d, mins, isActivity) => setCellEditing({ itemId, dow: d, minutes: String(mins), isActivity })}
         />
       )}
 
@@ -344,35 +379,51 @@ export function SchedulePage() {
         <RoutineEditModal
           routine={routineEditing}
           subjects={subjects}
+          projects={projects}
           onClose={() => setRoutineEditing(null)}
           onSave={async r => { await saveRoutine(r); setRoutineEditing(null) }}
           onDelete={async r => { await deleteRoutine(r); setRoutineEditing(null) }}
         />
       )}
 
+      {activityEditing && (
+        <ActivityEditModal
+          activity={activityEditing}
+          subjects={subjects}
+          onClose={() => setActivityEditing(null)}
+          onSave={async a => { await saveActivity(a); setActivityEditing(null) }}
+          onDelete={async a => { await deleteActivity(a); setActivityEditing(null) }}
+        />
+      )}
+
       {cellEditing && (() => {
-        const routine = routines.find(r => r.id === cellEditing.routineId)
-        if (!routine) return null
-        const next: Routine = {
-          ...routine,
-          dayMinutes: { ...routine.dayMinutes, [cellEditing.dow]: Number(cellEditing.minutes) || 0 },
-          updatedAt: isoNow(),
-        }
+        const routine = !cellEditing.isActivity ? routines.find(r => r.id === cellEditing.itemId) : null
+        const activity = cellEditing.isActivity ? activities.find(a => a.id === cellEditing.itemId) : null
+        const next = routine
+          ? { ...routine, dayMinutes: { ...routine.dayMinutes, [cellEditing.dow]: Number(cellEditing.minutes) || 0 }, updatedAt: isoNow() } as Routine
+          : activity
+            ? { ...activity, dayMinutes: { ...activity.dayMinutes, [cellEditing.dow]: Number(cellEditing.minutes) || 0 }, updatedAt: isoNow() } as Activity
+            : null
+        if (!next) return null
+        const currentMins = next.dayMinutes[cellEditing.dow] ?? 0
         return (
           <CellEditModal
             dayLabel={DAY_LABELS[cellEditing.dow]}
-            currentMinutes={routine.dayMinutes[cellEditing.dow] ?? 0}
+            currentMinutes={currentMins}
             value={cellEditing.minutes}
             onChange={v => setCellEditing({ ...cellEditing, minutes: v })}
             onCancel={() => setCellEditing(null)}
-            onSave={async () => { await saveRoutine(next); setCellEditing(null) }}
+            onSave={async () => {
+              if (routine) await saveRoutine(next as Routine)
+              else if (activity) await saveActivity(next as Activity)
+              setCellEditing(null)
+            }}
             onClear={async () => {
-              const cleared: Routine = {
-                ...routine,
-                dayMinutes: { ...routine.dayMinutes, [cellEditing.dow]: 0 },
-                updatedAt: isoNow(),
-              }
-              await saveRoutine(cleared)
+              const cleared = routine
+                ? { ...routine, dayMinutes: { ...routine.dayMinutes, [cellEditing.dow]: 0 }, updatedAt: isoNow() } as Routine
+                : { ...activity!, dayMinutes: { ...activity!.dayMinutes, [cellEditing.dow]: 0 }, updatedAt: isoNow() } as Activity
+              if (routine) await saveRoutine(cleared as Routine)
+              else if (activity) await saveActivity(cleared as Activity)
               setCellEditing(null)
             }}
           />
@@ -383,6 +434,7 @@ export function SchedulePage() {
         <RoutineEditModal
           routine={null}
           subjects={subjects}
+          projects={projects}
           onClose={() => setAddRoutineOpen(false)}
           onSave={async r => { await saveRoutine(r); setAddRoutineOpen(false) }}
           onDelete={null}
@@ -395,6 +447,7 @@ export function SchedulePage() {
           subjects={subjects}
           onClose={() => setAddActivityOpen(false)}
           onSave={async a => { await saveActivity(a); setAddActivityOpen(false) }}
+          onDelete={null}
         />
       )}
     </div>
@@ -417,35 +470,78 @@ function RoutineCard(props: {
   onSaveCustom: () => void
   onMarkDone: () => void
   onSkip: () => void
+  isExpanded: boolean
+  onToggleExpand: () => void
 }) {
-  const { routine, subjectName, existingLog, targetMins, isLoggingCustom, customMinutes, onCustomMinutesChange, onStartCustom, onCancelCustom, onSaveCustom, onMarkDone, onSkip } = props
+  const {
+    routine, subjectName, existingLog, targetMins,
+    isLoggingCustom, customMinutes,
+    onCustomMinutesChange, onStartCustom, onCancelCustom, onSaveCustom,
+    onMarkDone, onSkip,
+    isExpanded, onToggleExpand,
+  } = props
   const loggedMins = existingLog?.actualMinutes ?? 0
   const pct = targetMins > 0 ? Math.min(100, Math.round((loggedMins / targetMins) * 100)) : 0
 
   if (existingLog?.completed) {
+    const doneTime = existingLog.createdAt ? format(new Date(existingLog.createdAt), 'h:mm a') : format(new Date(), 'h:mm a')
+    if (!isExpanded) {
+      return (
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          className="w-full text-left rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity"
+        >
+          <span className="text-green-600">✓</span>
+          <span className="font-medium line-through text-slate-700 dark:text-slate-200">{routine.name}</span>
+          <span className="text-slate-400 text-sm">·</span>
+          <span className="text-sm text-slate-500 dark:text-slate-400">{loggedMins}m</span>
+          <span className="text-slate-400 text-sm">·</span>
+          <span className="text-sm text-slate-500 dark:text-slate-400">Done {doneTime}</span>
+        </button>
+      )
+    }
     return (
       <Card>
-        <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
+        <div className="flex items-center gap-3 opacity-70">
           <span className="text-green-600">✓</span>
-          <span className="font-medium">{routine.name}</span>
+          <span className="font-medium line-through text-slate-700 dark:text-slate-200">{routine.name}</span>
           <span className="text-slate-400">·</span>
-          <span>{loggedMins}m</span>
+          <span className="text-sm">{loggedMins}m</span>
           <span className="text-slate-400">·</span>
-          <span>Done at {format(new Date(), 'h:mm a')}</span>
+          <span className="text-sm">Done {doneTime}</span>
+          <button onClick={onToggleExpand} className="ml-auto text-xs text-slate-500 hover:underline">Collapse</button>
         </div>
+        <div className="mt-3 text-sm text-slate-600 dark:text-slate-400">{subjectName} · {dayPatternLabel(routine.dayMinutes)}</div>
       </Card>
     )
   }
 
   if (existingLog && !existingLog.completed) {
+    if (!isExpanded) {
+      return (
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          className="w-full text-left rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity"
+        >
+          <span className="text-amber-500">—</span>
+          <span className="font-medium text-slate-700 dark:text-slate-200">{routine.name}</span>
+          <span className="text-slate-400 text-sm">·</span>
+          <span className="text-sm text-amber-600 dark:text-amber-400">Skipped</span>
+        </button>
+      )
+    }
     return (
       <Card>
-        <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
-          <span>—</span>
-          <span className="font-medium">{routine.name}</span>
+        <div className="flex items-center gap-3 opacity-70">
+          <span className="text-amber-500">—</span>
+          <span className="font-medium text-slate-700 dark:text-slate-200">{routine.name}</span>
           <span className="text-slate-400">·</span>
-          <span>Skipped</span>
+          <span className="text-sm text-amber-600 dark:text-amber-400">Skipped</span>
+          <button onClick={onToggleExpand} className="ml-auto text-xs text-slate-500 hover:underline">Collapse</button>
         </div>
+        <div className="mt-3 text-sm text-slate-600 dark:text-slate-400">{subjectName} · {dayPatternLabel(routine.dayMinutes)}</div>
       </Card>
     )
   }
@@ -462,17 +558,17 @@ function RoutineCard(props: {
         </div>
       </CardHeader>
       <div className="text-sm text-slate-600 dark:text-slate-400 mb-2">
-        {subjectName} · {Object.entries(routine.dayMinutes).filter(([, m]) => (m ?? 0) > 0).map(([d]) => WEEKDAYS[Number(d)]).join(' ')}
+        {subjectName} · {dayPatternLabel(routine.dayMinutes)}
       </div>
       {loggedMins > 0 && (
         <div className="mb-3">
-          <div className="h-2 rounded bg-slate-200 dark:bg-slate-700 overflow-hidden">
-            <div className="h-full" style={{ width: `${pct}%`, backgroundColor: routine.color }} />
+          <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: routine.color }} />
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">{loggedMins}m / {targetMins}m logged</div>
         </div>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={onMarkDone}>✓ Mark Done</Button>
         {isLoggingCustom ? (
           <div className="flex items-center gap-2">
@@ -507,34 +603,74 @@ function ActivityCard(props: {
   existingLog?: ActivityLog
   onAttended: () => void
   onSkip: () => void
+  onEdit: () => void
+  isExpanded: boolean
+  onToggleExpand: () => void
 }) {
-  const { activity, subjectName, existingLog, onAttended, onSkip } = props
-  const mins = Object.values(activity.dayMinutes).reduce((sum, m) => sum + (m ?? 0), 0) || 60
-
+  const { activity, subjectName, existingLog, onAttended, onSkip, onEdit, isExpanded, onToggleExpand } = props
+  const mins = activity.dayMinutes[new Date().getDay() as DayOfWeek] ?? activity.duration ?? 0
   if (existingLog) {
     if (existingLog.status === 'completed') {
+      const doneTime = existingLog.createdAt ? format(new Date(existingLog.createdAt), 'h:mm a') : format(new Date(), 'h:mm a')
+      if (!isExpanded) {
+        return (
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            className="w-full text-left rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity"
+          >
+            <span className="text-green-600">✓</span>
+            <span className="font-medium line-through text-slate-700 dark:text-slate-200">{activity.name}</span>
+            <span className="text-slate-400 text-sm">·</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">{mins}m</span>
+            <span className="text-slate-400 text-sm">·</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Done {doneTime}</span>
+          </button>
+        )
+      }
       return (
         <Card>
-          <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
+          <div className="flex items-center gap-3 opacity-70">
             <span className="text-green-600">✓</span>
-            <span className="font-medium">{activity.name}</span>
+            <span className="font-medium line-through text-slate-700 dark:text-slate-200">{activity.name}</span>
             <span className="text-slate-400">·</span>
-            <span>{mins}m</span>
+            <span className="text-sm">{mins}m</span>
             <span className="text-slate-400">·</span>
-            <span>Done at {format(new Date(), 'h:mm a')}</span>
+            <span className="text-sm">Done {doneTime}</span>
+            <button onClick={onToggleExpand} className="ml-auto text-xs text-slate-500 hover:underline">Collapse</button>
           </div>
+          {subjectName && <div className="mt-3 text-sm text-slate-600 dark:text-slate-400">{subjectName}</div>}
+          {activity.scheduledTime && (
+            <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">{formatTime12h(activity.scheduledTime)}</div>
+          )}
         </Card>
       )
     }
     if (existingLog.status === 'skipped') {
+      if (!isExpanded) {
+        return (
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            className="w-full text-left rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity"
+          >
+            <span className="text-amber-500">—</span>
+            <span className="font-medium text-slate-700 dark:text-slate-200">{activity.name}</span>
+            <span className="text-slate-400 text-sm">·</span>
+            <span className="text-sm text-amber-600 dark:text-amber-400">Skipped</span>
+          </button>
+        )
+      }
       return (
         <Card>
-          <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
-            <span>—</span>
-            <span className="font-medium">{activity.name}</span>
+          <div className="flex items-center gap-3 opacity-70">
+            <span className="text-amber-500">—</span>
+            <span className="font-medium text-slate-700 dark:text-slate-200">{activity.name}</span>
             <span className="text-slate-400">·</span>
-            <span>Skipped</span>
+            <span className="text-sm text-amber-600 dark:text-amber-400">Skipped</span>
+            <button onClick={onToggleExpand} className="ml-auto text-xs text-slate-500 hover:underline">Collapse</button>
           </div>
+          {subjectName && <div className="mt-3 text-sm text-slate-600 dark:text-slate-400">{subjectName}</div>}
         </Card>
       )
     }
@@ -559,9 +695,10 @@ function ActivityCard(props: {
       {subjectName && (
         <div className="text-sm text-slate-600 dark:text-slate-400 mb-2">{subjectName}</div>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={onAttended}>✓ Attended</Button>
         <Button size="sm" variant="danger" onClick={onSkip}>Skipped</Button>
+        <Button size="sm" variant="secondary" onClick={onEdit}>Edit</Button>
       </div>
     </Card>
   )
@@ -574,14 +711,23 @@ function WeeklyPlanGrid(props: {
   routines: Routine[]
   activities: Activity[]
   onEditRoutine: (r: Routine) => void
-  onEditCell: (routineId: string, dow: DayOfWeek, minutes: number) => void
+  onEditActivity: (a: Activity) => void
+  onEditCell: (itemId: string, dow: DayOfWeek, minutes: number, isActivity: boolean) => void
 }) {
-  const { routines, activities, onEditRoutine, onEditCell } = props
+  const { routines, activities, onEditRoutine, onEditActivity, onEditCell } = props
 
   if (routines.length === 0 && activities.length === 0) {
     return <EmptyState title="No routines or activities yet" description="Add one using the buttons above to start planning your week." />
   }
 
+  const maxRoutineMin = routines.reduce((m, r) => Math.max(m, ...Object.values(r.dayMinutes).map(v => v ?? 0)), 0)
+  const maxActivityMin = activities.reduce((m, a) => Math.max(m, ...Object.values(a.dayMinutes).map(v => v ?? 0)), 0)
+
+  function blockHeight(mins: number, max: number): string {
+    if (mins <= 0 || max <= 0) return '24px'
+    const ratio = mins / max
+    return `${Math.max(24, Math.round(ratio * 72))}px`
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -593,17 +739,38 @@ function WeeklyPlanGrid(props: {
           </div>
         ))}
         {routines.map(r => (
-          <RoutineGridRow key={r.id} routine={r} onEditRoutine={onEditRoutine} onEditCell={onEditCell} />
+          <RoutineGridRow
+            key={r.id}
+            routine={r}
+            maxMinutes={maxRoutineMin}
+            onEditRoutine={onEditRoutine}
+            onEditCell={onEditCell}
+            blockHeight={blockHeight}
+          />
         ))}
         {activities.map(a => (
-          <ActivityGridRow key={a.id} activity={a} onEditCell={onEditCell} />
+          <ActivityGridRow
+            key={a.id}
+            activity={a}
+            maxMinutes={maxActivityMin}
+            onEditActivity={onEditActivity}
+            onEditCell={onEditCell}
+            blockHeight={blockHeight}
+          />
         ))}
       </div>
     </div>
-)}
+  )
+}
 
-function RoutineGridRow(props: { routine: Routine; onEditRoutine: (r: Routine) => void; onEditCell: (id: string, dow: DayOfWeek, m: number) => void }) {
-  const { routine, onEditRoutine, onEditCell } = props
+function RoutineGridRow(props: {
+  routine: Routine
+  maxMinutes: number
+  onEditRoutine: (r: Routine) => void
+  onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
+  blockHeight: (mins: number, max: number) => string
+}) {
+  const { routine, maxMinutes, onEditRoutine, onEditCell, blockHeight } = props
   return (
     <>
       <button
@@ -622,15 +789,20 @@ function RoutineGridRow(props: { routine: Routine; onEditRoutine: (r: Routine) =
           <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
               <button
-                onClick={() => onEditCell(routine.id, dow, mins)}
+                onClick={() => onEditCell(routine.id, dow, mins, false)}
                 className="w-full rounded text-xs text-white font-medium flex items-center justify-center transition-opacity hover:opacity-80"
-                style={{ backgroundColor: routine.color, height: '40px' }}
+                style={{ backgroundColor: routine.color, height: blockHeight(mins, maxMinutes) }}
                 title={`${mins}m on ${DAY_LABELS[dow]}`}
               >
                 {mins}m
               </button>
             ) : (
-              <div className="h-[40px]" />
+              <button
+                onClick={() => onEditCell(routine.id, dow, 30, false)}
+                className="w-full text-xs text-slate-400 hover:text-primary-500 flex items-center justify-center rounded border border-dashed border-transparent hover:border-primary-300 transition-colors"
+                style={{ height: '24px' }}
+                title={`Add ${DAY_LABELS[dow]}`}
+              >+</button>
             )}
           </div>
         )
@@ -639,33 +811,46 @@ function RoutineGridRow(props: { routine: Routine; onEditRoutine: (r: Routine) =
   )
 }
 
-function ActivityGridRow(props: { activity: Activity; onEditCell: (id: string, dow: DayOfWeek, m: number) => void }) {
-  const { activity, onEditCell } = props
+function ActivityGridRow(props: {
+  activity: Activity
+  maxMinutes: number
+  onEditActivity: (a: Activity) => void
+  onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
+  blockHeight: (mins: number, max: number) => string
+}) {
+  const { activity, maxMinutes, onEditActivity, onEditCell, blockHeight } = props
   return (
     <>
-      <div className="text-left py-2 pr-3 text-sm text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
+      <button
+        onClick={() => onEditActivity(activity)}
+        className="text-left py-2 pr-3 text-sm text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+      >
         <div className="flex items-center gap-2 truncate">
           <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activity.color }} />
           <span className="truncate">{activity.name}{activity.scheduledTime ? ` (${formatTime12h(activity.scheduledTime)})` : ''}</span>
         </div>
-      </div>
+      </button>
       {WEEKDAYS.map((_, i) => {
         const dow = i as DayOfWeek
         const mins = activity.dayMinutes[dow] ?? 0
-        const displayTime = dow === todayDow() && activity.scheduledTime
         return (
           <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
               <button
-                onClick={() => onEditCell(activity.id, dow, mins)}
+                onClick={() => onEditCell(activity.id, dow, mins, true)}
                 className="w-full rounded text-xs text-white font-medium flex items-center justify-center transition-opacity hover:opacity-80"
-                style={{ backgroundColor: activity.color, height: '40px' }}
+                style={{ backgroundColor: activity.color, height: blockHeight(mins, maxMinutes) }}
                 title={`${mins}m on ${DAY_LABELS[dow]}`}
               >
-                {displayTime ? formatTime12h(activity.scheduledTime!) : `${mins}m`}
+                {activity.scheduledTime ? formatTime12h(activity.scheduledTime) : `${mins}m`}
               </button>
             ) : (
-              <div className="h-[40px]" />
+              <button
+                onClick={() => onEditCell(activity.id, dow, activity.duration ?? 60, true)}
+                className="w-full text-xs text-slate-400 hover:text-primary-500 flex items-center justify-center rounded border border-dashed border-transparent hover:border-primary-300 transition-colors"
+                style={{ height: '24px' }}
+                title={`Add ${DAY_LABELS[dow]}`}
+              >+</button>
             )}
           </div>
         )
@@ -716,17 +901,21 @@ function CellEditModal(props: {
 function RoutineEditModal(props: {
   routine: Routine | null
   subjects: Array<{ id: string; name: string }>
+  projects: Project[]
   onClose: () => void
   onSave: (r: Routine) => Promise<void>
   onDelete: ((r: Routine) => Promise<void>) | null
 }) {
-  const { routine, subjects, onClose, onSave, onDelete } = props
+  const { routine, subjects, projects, onClose, onSave, onDelete } = props
   const [name, setName] = useState(routine?.name ?? '')
   const [subjectId, setSubjectId] = useState(routine?.subjectId ?? subjects[0]?.id ?? '')
+  const [projectId, setProjectId] = useState<string>(routine?.projectId ?? '')
   const [color, setColor] = useState(routine?.color ?? DEFAULT_COLORS[0])
   const [dayMinutes, setDayMinutes] = useState<Partial<Record<DayOfWeek, number>>>(routine?.dayMinutes ?? {})
   const [scheduledTime, setScheduledTime] = useState(routine?.scheduledTime ?? '')
   const [notes, setNotes] = useState(routine?.notes ?? '')
+
+  const subjectProjects = useMemo(() => projects.filter(p => p.subjectId === subjectId), [projects, subjectId])
 
   function setDay(dow: DayOfWeek, mins: number) {
     const next = { ...dayMinutes }
@@ -741,6 +930,7 @@ function RoutineEditModal(props: {
       id: routine?.id ?? uuid(),
       name: name.trim() || 'Untitled Routine',
       subjectId,
+      projectId: projectId || null,
       dayMinutes,
       color,
       scheduledTime: scheduledTime || undefined,
@@ -760,24 +950,20 @@ function RoutineEditModal(props: {
             <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputCls} />
           </Field>
           <Field label="Subject">
-            <select value={subjectId} onChange={e => setSubjectId(e.target.value)} className={inputCls}>
+            <select value={subjectId} onChange={e => { setSubjectId(e.target.value); setProjectId('') }} className={inputCls}>
               {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </Field>
-          <Field label="Color">
-            <div className="flex gap-2 flex-wrap">
-              {DEFAULT_COLORS.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={cn('w-7 h-7 rounded-full border-2', color === c ? 'border-slate-900 dark:border-white' : 'border-transparent')}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
+          <Field label="Project (optional)">
+            <select value={projectId} onChange={e => setProjectId(e.target.value)} className={inputCls}>
+              <option value="">None</option>
+              {subjectProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </Field>
-          <Field label="Days & minutes">
+          <Field label="Color">
+            <ColorPicker value={color} onChange={setColor} />
+          </Field>
+          <Field label="Schedule (days & minutes)">
             <div className="grid grid-cols-7 gap-1">
               {WEEKDAYS.map((d, i) => {
                 const dow = i as DayOfWeek
@@ -832,27 +1018,29 @@ function ActivityEditModal(props: {
   subjects: Array<{ id: string; name: string }>
   onClose: () => void
   onSave: (a: Activity) => Promise<void>
+  onDelete: ((a: Activity) => Promise<void>) | null
 }) {
-  const { activity, subjects, onClose, onSave } = props
+  const { activity, subjects, onClose, onSave, onDelete } = props
   const [name, setName] = useState(activity?.name ?? '')
   const [subjectId, setSubjectId] = useState<string>(activity?.subjectId ?? '')
   const [color, setColor] = useState(activity?.color ?? DEFAULT_COLORS[1])
   const [dayMinutes, setDayMinutes] = useState<Partial<Record<DayOfWeek, number>>>(activity?.dayMinutes ?? {})
   const [scheduledTime, setScheduledTime] = useState(activity?.scheduledTime ?? '')
   const [notes, setNotes] = useState(activity?.notes ?? '')
-  const [minutes, setMinutes] = useState(activity ? Math.max(...Object.values(activity.dayMinutes).map(m => m ?? 0), 60) : 60)
+  const [duration, setDuration] = useState(activity?.duration ?? 60)
+  const [createsSession, setCreatesSession] = useState(activity?.createsSession ?? false)
 
   function setDay(dow: DayOfWeek, active: boolean) {
     const next = { ...dayMinutes }
-    if (active) next[dow] = minutes
+    if (active) next[dow] = duration
     else delete next[dow]
     setDayMinutes(next)
   }
 
-  function updateMinutes(m: number) {
-    setMinutes(m)
+  function updateDuration(d: number) {
+    setDuration(d)
     const next: Partial<Record<DayOfWeek, number>> = {}
-    for (const d of Object.keys(dayMinutes) as unknown as DayOfWeek[]) next[d] = m
+    for (const k of Object.keys(dayMinutes) as unknown as DayOfWeek[]) next[k] = d
     setDayMinutes(next)
   }
 
@@ -863,6 +1051,8 @@ function ActivityEditModal(props: {
       name: name.trim() || 'Untitled Activity',
       subjectId: subjectId || null,
       dayMinutes,
+      duration,
+      createsSession,
       scheduledTime: scheduledTime || undefined,
       notes: notes || undefined,
       color,
@@ -886,23 +1076,13 @@ function ActivityEditModal(props: {
               {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </Field>
-          <Field label="Color">
-            <div className="flex gap-2 flex-wrap">
-              {DEFAULT_COLORS.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={cn('w-7 h-7 rounded-full border-2', color === c ? 'border-slate-900 dark:border-white' : 'border-transparent')}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
+          <Field label="Scheduled time">
+            <input type="time" value={scheduledTime} onChange={e => setScheduledTime(e.target.value)} className={inputCls} />
           </Field>
-          <Field label="Minutes per session">
-            <input type="number" min="5" step="5" value={minutes} onChange={e => updateMinutes(Number(e.target.value))} className={inputCls} />
+          <Field label="Duration (minutes)">
+            <input type="number" min="5" step="5" value={duration} onChange={e => updateDuration(Number(e.target.value))} className={inputCls} />
           </Field>
-          <Field label="Days">
+          <Field label="Schedule (days)">
             <div className="grid grid-cols-7 gap-1">
               {WEEKDAYS.map((d, i) => {
                 const dow = i as DayOfWeek
@@ -918,16 +1098,32 @@ function ActivityEditModal(props: {
               })}
             </div>
           </Field>
-          <Field label="Scheduled time (optional)">
-            <input type="time" value={scheduledTime} onChange={e => setScheduledTime(e.target.value)} className={inputCls} />
+          <Field label="Color">
+            <ColorPicker value={color} onChange={setColor} />
           </Field>
           <Field label="Notes">
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputCls} />
           </Field>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={createsSession}
+              onChange={e => setCreatesSession(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+            />
+            <span>Create study session when marked Attended</span>
+          </label>
         </div>
-        <div className="flex justify-end gap-2 mt-6">
-          <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={handleSave}>Save</Button>
+        <div className="flex justify-between mt-6">
+          <div>
+            {onDelete && activity && (
+              <Button size="sm" variant="danger" onClick={() => onDelete(activity)}>Delete</Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button size="sm" onClick={handleSave}>Save</Button>
+          </div>
         </div>
       </div>
     </div>
@@ -948,9 +1144,4 @@ function Field(props: { label: string; children: React.ReactNode }) {
   )
 }
 
-function formatTime12h(hhmm: string): string {
-  const [h, m] = hhmm.split(':').map(Number)
-  const period = h >= 12 ? 'PM' : 'AM'
-  const hh = h === 0 ? 12 : h > 12 ? h - 12 : h
-  return `${hh}:${String(m).padStart(2, '0')} ${period}`
-}
+export default SchedulePage

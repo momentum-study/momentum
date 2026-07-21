@@ -1,10 +1,12 @@
 import { lazy, Suspense } from 'react'
-import { Link, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { AppLayout } from '../components/layout/AppLayout'
 import { DataProvider } from './providers'
 import { AuthProvider } from './auth-provider'
 import { UndoProvider } from '../lib/use-undo'
+const SchedulePage = lazy(() => import('../features/schedule/SchedulePage'))
+
 const Dashboard = lazy(() => import('../features/dashboard/Dashboard'))
 const SubjectsPage = lazy(() => import('../features/subjects/SubjectsPage'))
 const ProjectsPage = lazy(() => import('../features/projects/ProjectsPage'))
@@ -17,8 +19,6 @@ const CalendarPage = lazy(() => import('../features/calendar/CalendarPage'))
 const CategoriesPage = lazy(() => import('../features/categories/CategoriesPage'))
 const GroupsPage = lazy(() => import('../features/groups/GroupsPage'))
 const GroupDetailPage = lazy(() => import('../features/groups/GroupDetailPage'))
-const RoutinePage = lazy(() => import('../features/routines/RoutinePage'))
-const ActivitiesPage = lazy(() => import('../features/activities/ActivitiesPage'))
 const AIReviewPage = lazy(() => import('../features/reviews/AIReviewPage'))
 const StudyPage = lazy(() => import('../features/study/StudyPage'))
 const ReviewSessionPage = lazy(() => import('../features/study/ReviewSessionPage'))
@@ -44,8 +44,9 @@ function RouterContent() {
         <Route path="/study/review" element={<ReviewSessionPage />} />
         <Route path="/study/log" element={<ReviewLogPage />} />
         <Route path="/study/exam" element={<ExamConfigPage />} />
-        <Route path="/routines" element={<RoutinePage />} />
-        <Route path="/activities" element={<ActivitiesPage />} />
+        <Route path="/routines" element={<Navigate to="/schedule" replace />} />
+        <Route path="/activities" element={<Navigate to="/schedule" replace />} />
+        <Route path="/schedule" element={<SchedulePage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/groups" element={<GroupsPage />} />
         <Route path="/groups/:id" element={<GroupDetailPage />} />

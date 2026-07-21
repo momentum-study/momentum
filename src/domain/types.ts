@@ -193,6 +193,10 @@ export interface Activity {
   name: string
   subjectId: string | null
   dayMinutes: Partial<Record<DayOfWeek, number>>
+  /** Default duration in minutes for any scheduled day (used when dayMinutes[dow] is not set) */
+  duration?: number
+  /** When true, marking the activity 'attended' auto-creates a Session record */
+  createsSession?: boolean
   scheduledTime?: string
   notes?: string
   color: string

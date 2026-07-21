@@ -8,7 +8,7 @@ export interface WidgetConfig {
 }
 
 export const DASHBOARD_WIDGETS_METADATA: { id: string; label: string }[] = [
-  { id: 'stats',        label: 'Today & This Week' },
+  { id: 'stats',         label: 'Today & This Week' },
   { id: 'today',        label: 'Today Overview' },
   { id: 'streak-goal',  label: 'Study Streak & Daily Goal' },
   { id: 'pomodoro',     label: 'Study Timer' },
@@ -16,15 +16,17 @@ export const DASHBOARD_WIDGETS_METADATA: { id: string; label: string }[] = [
   { id: 'study-review', label: 'Study Review' },
   { id: 'calendar',     label: 'Study Calendar' },
   { id: 'recent',       label: 'Recent Sessions' },
+  { id: 'today-schedule', label: "Today's Schedule" },
+  { id: 'auto-log',     label: 'Pending Auto-Logs' },
+  { id: 'assignments',  label: 'Upcoming Assignments' },
 ]
 
-const DEFAULT_CONFIGS: Record<string, Omit<WidgetConfig, 'id' | 'label'>> = 
+export const DEFAULT_CONFIGS: Record<string, Omit<WidgetConfig, 'id' | 'label'>> = 
   DASHBOARD_WIDGETS_METADATA.reduce((acc, w, i) => {
     acc[w.id] = { size: 'small', order: i }
     return acc
   }, {} as Record<string, Omit<WidgetConfig, 'id' | 'label'>>)
-
-const DEFAULT_WIDGET_IDS = DASHBOARD_WIDGETS_METADATA.map((w) => w.id)
+export const DEFAULT_WIDGET_IDS = DASHBOARD_WIDGETS_METADATA.map((w) => w.id)
 
 export function useDashboardWidgets() {
   const [visibleWidgets, setVisibleWidgets] = useState<string[]>(() => {
@@ -85,6 +87,7 @@ export function useDashboardWidgets() {
     visibleWidgets, 
     setVisibleWidgets, 
     widgetConfigs, 
+    setWidgetConfigs,
     setWidgetConfig, 
     reorderWidgets, 
     toggleWidgetSize 

@@ -13,7 +13,7 @@ interface ModalProps {
 export function Modal({ open, onClose, title, children, className }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const lastFocusedRef = useRef<HTMLElement | null>(null)
-
+  const mouseDownTargetRef = useRef<EventTarget | null>(null)
   useEffect(() => {
     const el = dialogRef.current
     if (!el) return
@@ -45,8 +45,11 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       // We handle cancel explicitly here, so suppress the default native close to avoid the
       // double-fire of the onClose handler.
       onCancel={(e) => { e.preventDefault(); onClose() }}
+      onMouseDown={(e) => { mouseDownTargetRef.current = e.target }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target === e.currentTarget && mouseDownTargetRef.current === e.currentTarget) {
+          onClose()
+        }
       }}
       className={cn(
         'w-full max-w-lg rounded-lg border border-slate-200 bg-white p-0 shadow-lg backdrop:bg-black/40',

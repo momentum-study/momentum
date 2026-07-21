@@ -93,6 +93,7 @@ function applyPrefs(base: typeof NAV_ITEMS, prefs: NavPrefs): typeof NAV_ITEMS {
   return ordered.filter((item) => !hidden.has(item.to))
 }
 
+
 export function AppLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -129,9 +130,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const visibleItems = applyPrefs(NAV_ITEMS, prefs)
   function openCustomizer() {
-    // Seed draft with ALL nav items so hidden ones appear and can be restored.
+    const allTos = NAV_ITEMS.map((i) => i.to)
+    const savedOrder = prefs.order.length > 0 ? prefs.order : allTos
+    const order = [...savedOrder.filter((to) => allTos.includes(to))]
+    for (const to of allTos) {
+      if (!order.includes(to)) order.push(to)
+    }
     setDraftPrefs({
-      order: NAV_ITEMS.map((i) => i.to),
+      order,
       hidden: [...prefs.hidden],
     })
   }

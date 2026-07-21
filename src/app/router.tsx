@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { HashRouter, Link, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { AppLayout } from '../components/layout/AppLayout'
 import { DataProvider } from './providers'
@@ -59,16 +59,14 @@ function RouterContent() {
 
 export function AppRouter() {
   return (
-    <HashRouter>
-      <AuthProvider>
-        <UndoProvider>
-          <DataProvider>
-            <AppLayout>
-              <RouterContent />
-            </AppLayout>
-          </DataProvider>
-        </UndoProvider>
-      </AuthProvider>
-    </HashRouter>
+    <AuthProvider>
+      <UndoProvider>
+        <DataProvider>
+          <AppLayout>
+            <RouterContent />
+          </AppLayout>
+        </DataProvider>
+      </UndoProvider>
+    </AuthProvider>
   )
 }

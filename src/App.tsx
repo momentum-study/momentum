@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from 'react'
+import { HashRouter } from 'react-router-dom'
 import { AppRouter } from './app/router'
 import { applyDarkMode, loadSettings } from './features/settings/SettingsPage'
 import { seedDefaults } from './db/app-db'
@@ -30,9 +31,11 @@ export function App() {
   }, [])
   return (
     <ErrorBoundary>
-      <ReloadPrompt />
-      <CommandPalette open={open} onClose={() => setOpen(false)} />
-      <AppRouter />
+      <HashRouter>
+        <ReloadPrompt />
+        <CommandPalette open={open} onClose={() => setOpen(false)} />
+        <AppRouter />
+      </HashRouter>
     </ErrorBoundary>
   )
 }

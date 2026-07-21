@@ -76,6 +76,21 @@ export function ReloadPrompt() {
     return () => clearInterval(id)
   }, [pollStopped])
 
+  // Force an update check on every page load so the banner shows promptly
+  // after deploy, without waiting for the 60s poll interval.
+  useEffect(() => {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then(regs => {
+        for (const reg of regs) {
+          if (reg.active) {
+            reg.update().catch(() => {})
+          }
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   if (!offlineReady && !showPrompt) return null
 
   return (

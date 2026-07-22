@@ -130,7 +130,8 @@ export function eventToShortcutKey(e: KeyboardEvent): string {
   const parts: string[] = []
   if (e.metaKey) parts.push('Cmd')
   if (e.ctrlKey) parts.push('Ctrl')
-  if (e.shiftKey && e.key !== 'Shift') parts.push('Shift')
+  // Don't add Shift for keys that already encode it (e.g. ? = Shift+/)
+  if (e.shiftKey && e.key !== 'Shift' && e.key !== '?') parts.push('Shift')
   if (e.altKey && e.key !== 'Alt') parts.push('Alt')
 
   // Normalize key names

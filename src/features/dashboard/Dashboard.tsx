@@ -391,24 +391,6 @@ export default function Dashboard() {
     setBatchSubjectId('')
     await loadData()
   }
-
-
-  if (isLoading) return <PageSpinner />
-  const todayMinutes = academicSessions
-    .filter((s) => toLocalDateString(s.startAt) === todayStr)
-    .reduce((sum, s) => sum + s.durationMinutes, 0)
-  const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
-  const goalPct = Math.min(100, Math.round((todayMinutes / settings.dailyTargetMinutes) * 100))
-  const allRecent = academicSessions
-    .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
-    .slice(0, 50)
-    .map((s) => ({
-      ...s,
-      subjectName: data.subjects.find((sub) => sub.id === s.subjectId)?.name ?? 'Unknown',
-      subjectColor: data.subjects.find((sub) => sub.id === s.subjectId)?.color ?? '#94a3b8',
-    }))
-  const recentSessions = allRecent.slice(0, recentLimit)
-
   const toggleWidget = (id: string) => {
     if (visibleWidgets.includes(id)) {
       setVisibleWidgets(visibleWidgets.filter((w) => w !== id))
@@ -449,6 +431,25 @@ export default function Dashboard() {
       window.removeEventListener('momentum:dashboard-calendar-today', onToday)
     }
   }, [])
+
+
+
+  if (isLoading) return <PageSpinner />
+  const todayMinutes = academicSessions
+    .filter((s) => toLocalDateString(s.startAt) === todayStr)
+    .reduce((sum, s) => sum + s.durationMinutes, 0)
+  const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
+  const goalPct = Math.min(100, Math.round((todayMinutes / settings.dailyTargetMinutes) * 100))
+  const allRecent = academicSessions
+    .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
+    .slice(0, 50)
+    .map((s) => ({
+      ...s,
+      subjectName: data.subjects.find((sub) => sub.id === s.subjectId)?.name ?? 'Unknown',
+      subjectColor: data.subjects.find((sub) => sub.id === s.subjectId)?.color ?? '#94a3b8',
+    }))
+  const recentSessions = allRecent.slice(0, recentLimit)
+
 
   const sizeClasses: Record<string, string> = {
     small: 'lg:col-span-1 lg:row-span-1',

@@ -165,8 +165,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         if (!allowed) return
       }
 
-      // Special: ? shortcut only fires when not in input (suppressInInput is already true)
-      if (shortcut.id === 'help' && (e.shiftKey || focused)) return
+      // ? shortcut requires Shift on US/UK keyboards; the focused-input guard above already handled suppression
 
       e.preventDefault()
       e.stopPropagation()

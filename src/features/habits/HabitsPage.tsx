@@ -52,6 +52,7 @@ export default function HabitsPage() {
   const [newHabitStatus, setNewHabitStatus] = useState<'active' | 'potential'>('active')
   const [parkForLater, setParkForLater] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIndex, setSelectedIndex] = useState(0)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null)
   const [dayDetailDate, setDayDetailDate] = useState<string | null>(null)
@@ -606,6 +607,57 @@ export default function HabitsPage() {
       </Card>
     )
   }
+  // N — Add new habit
+  useEffect(() => {
+    function onAdd() { setShowModal(true) }
+    window.addEventListener('momentum:habits-add', onAdd)
+    return () => window.removeEventListener('momentum:habits-add', onAdd)
+  }, [])
+
+  // Space — Toggle today's check-in for selected habit
+  useEffect(() => {
+    function onToggleToday() {
+      const habit = currentHabits[selectedIndex]
+      if (habit) quickLogToday(habit.id)
+    }
+    window.addEventListener('momentum:habits-toggle-today', onToggleToday)
+    return () => window.removeEventListener('momentum:habits-toggle-today', onToggleToday)
+  }, [selectedIndex, currentHabits])
+
+  // A — Archive selected
+  useEffect(() => {
+    function onArchive() {
+      const habit = currentHabits[selectedIndex]
+      if (habit) archiveHabitFn(habit.id)
+    }
+    window.addEventListener('momentum:habits-archive', onArchive)
+    return () => window.removeEventListener('momentum:habits-archive', onArchive)
+  }, [selectedIndex, currentHabits])
+
+  // ↑ / ↓ — Navigate list
+  useEffect(() => {
+    function onPrev() { setSelectedIndex((i) => Math.max(0, i - 1)) }
+    function onNext() { setSelectedIndex((i) => Math.min(currentHabits.length - 1, i + 1)) }
+    window.addEventListener('momentum:habits-prev', onPrev)
+    window.addEventListener('momentum:habits-next', onNext)
+    return () => {
+      window.removeEventListener('momentum:habits-prev', onPrev)
+      window.removeEventListener('momentum:habits-next', onNext)
+    }
+  }, [currentHabits.length])
+
+  // 1-7 — Select habit by position
+  useEffect(() => {
+    function onSelect(e: Event) {
+      const pos = (e as CustomEvent).detail as number
+      if (pos >= 1 && pos <= currentHabits.length) {
+        setSelectedIndex(pos - 1)
+      }
+    }
+    window.addEventListener('momentum:habits-select', onSelect)
+    return () => window.removeEventListener('momentum:habits-select', onSelect)
+  }, [currentHabits.length])
+
 
   return (
     <div className="space-y-6">

@@ -61,10 +61,7 @@ export function DashboardWidget({
       onDrop={handleDrop}
       className={cn(
         'bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden',
-        'transition-all duration-200 ease-in-out cursor-grab active:cursor-grabbing',
-        size === 'small' && 'lg:col-span-1',
-        size === 'medium' && 'lg:col-span-2',
-        size === 'large' && 'lg:col-span-2 lg:row-span-2',
+        'transition-all duration-200 ease-in-out cursor-grab active:cursor-grabbing h-full',
         className
       )}
     >

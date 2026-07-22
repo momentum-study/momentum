@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
@@ -55,6 +55,28 @@ export default function ReportsPage() {
   const { data, isLoading } = useData()
   const [scope, setScope] = useState<ScopeOption>('academic')
   const [period, setPeriod] = useState<Period>('week')
+
+  useEffect(() => {
+    function onPeriod(e: Event) {
+      const val = (e as CustomEvent).detail as string
+      if (val === 'week' || val === 'month' || val === 'threeMonths' || val === 'all') {
+        setPeriod(val)
+      }
+    }
+    window.addEventListener('momentum:reports-period', onPeriod)
+    return () => window.removeEventListener('momentum:reports-period', onPeriod)
+  }, [])
+
+  useEffect(() => {
+    function onScope(e: Event) {
+      const val = (e as CustomEvent).detail as string
+      if (val === 'all' || val === 'academic' || val === 'nonAcademic') {
+        setScope(val)
+      }
+    }
+    window.addEventListener('momentum:reports-scope', onScope)
+    return () => window.removeEventListener('momentum:reports-scope', onScope)
+  }, [])
 
   // Scope filter first
   const scopeFiltered = useMemo(() => {

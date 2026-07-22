@@ -179,8 +179,18 @@ export function AppLayout({ children }: { children: ReactNode }) {
       }
 
       switch (shortcut.id) {
+        // ── App-wide actions ──
         case 'command-palette':
           window.dispatchEvent(new CustomEvent('momentum:command-palette'))
+          break
+        case 'log-time':
+          window.dispatchEvent(new CustomEvent('momentum:log-time'))
+          break
+        case 'start-timer':
+          window.dispatchEvent(new CustomEvent('momentum:timer-toggle'))
+          break
+        case 'stop-timer':
+          window.dispatchEvent(new CustomEvent('momentum:timer-stop-save'))
           break
         case 'help':
         case 'help-alt':
@@ -203,6 +213,129 @@ export function AppLayout({ children }: { children: ReactNode }) {
           break
         case 'replay-tour':
           window.dispatchEvent(new CustomEvent('momentum:replay-tour'))
+          break
+
+        // ── Dashboard-specific ──
+        case 'dash-log-time':
+          window.dispatchEvent(new CustomEvent('momentum:log-time'))
+          break
+        case 'dash-widget-1': case 'dash-widget-2': case 'dash-widget-3': case 'dash-widget-4':
+        case 'dash-widget-5': case 'dash-widget-6': case 'dash-widget-7': case 'dash-widget-8': {
+          const idx = parseInt(shortcut.id.replace('dash-widget-', ''), 10)
+          window.dispatchEvent(new CustomEvent('momentum:dashboard-toggle-widget', { detail: idx }))
+          break
+        }
+        case 'dash-cal-prev':
+          window.dispatchEvent(new CustomEvent('momentum:dashboard-calendar-prev'))
+          break
+        case 'dash-cal-next':
+          window.dispatchEvent(new CustomEvent('momentum:dashboard-calendar-next'))
+          break
+        case 'dash-cal-today':
+          window.dispatchEvent(new CustomEvent('momentum:dashboard-calendar-today'))
+          break
+
+        // ── Subjects-specific ──
+        case 'subj-add':
+          window.dispatchEvent(new CustomEvent('momentum:subjects-add'))
+          break
+        case 'subj-edit':
+          window.dispatchEvent(new CustomEvent('momentum:subjects-edit'))
+          break
+        case 'subj-delete':
+          window.dispatchEvent(new CustomEvent('momentum:subjects-delete'))
+          break
+        case 'subj-up':
+          window.dispatchEvent(new CustomEvent('momentum:subjects-prev'))
+          break
+        case 'subj-down':
+          window.dispatchEvent(new CustomEvent('momentum:subjects-next'))
+          break
+        case 'subj-open':
+          window.dispatchEvent(new CustomEvent('momentum:subjects-open'))
+          break
+
+        // ── Habits-specific ──
+        case 'habit-add':
+          window.dispatchEvent(new CustomEvent('momentum:habits-add'))
+          break
+        case 'habit-toggle':
+          window.dispatchEvent(new CustomEvent('momentum:habits-toggle-today'))
+          break
+        case 'habit-archive':
+          window.dispatchEvent(new CustomEvent('momentum:habits-archive'))
+          break
+        case 'habit-up':
+          window.dispatchEvent(new CustomEvent('momentum:habits-prev'))
+          break
+        case 'habit-down':
+          window.dispatchEvent(new CustomEvent('momentum:habits-next'))
+          break
+        case 'habit-1': case 'habit-2': case 'habit-3': case 'habit-4':
+        case 'habit-5': case 'habit-6': case 'habit-7': {
+          const idx = parseInt(shortcut.id.replace('habit-', ''), 10)
+          window.dispatchEvent(new CustomEvent('momentum:habits-select', { detail: idx }))
+          break
+        }
+
+        // ── Marks-specific ──
+        case 'mark-add':
+          window.dispatchEvent(new CustomEvent('momentum:marks-add'))
+          break
+        case 'mark-delete':
+          window.dispatchEvent(new CustomEvent('momentum:marks-delete'))
+          break
+        case 'mark-up':
+          window.dispatchEvent(new CustomEvent('momentum:marks-prev'))
+          break
+        case 'mark-down':
+          window.dispatchEvent(new CustomEvent('momentum:marks-next'))
+          break
+        case 'mark-edit':
+          window.dispatchEvent(new CustomEvent('momentum:marks-edit'))
+          break
+
+        // ── Calendar-specific ──
+        case 'cal-add':
+          window.dispatchEvent(new CustomEvent('momentum:calendar-add'))
+          break
+        case 'cal-prev':
+          window.dispatchEvent(new CustomEvent('momentum:calendar-prev-month'))
+          break
+        case 'cal-next':
+          window.dispatchEvent(new CustomEvent('momentum:calendar-next-month'))
+          break
+        case 'cal-today':
+          window.dispatchEvent(new CustomEvent('momentum:calendar-today'))
+          break
+        case 'cal-up':
+          window.dispatchEvent(new CustomEvent('momentum:calendar-prev-task'))
+          break
+        case 'cal-down':
+          window.dispatchEvent(new CustomEvent('momentum:calendar-next-task'))
+          break
+
+        // ── Reports-specific ──
+        case 'report-day':
+          window.dispatchEvent(new CustomEvent('momentum:reports-period', { detail: 'week' }))
+          break
+        case 'report-week':
+          window.dispatchEvent(new CustomEvent('momentum:reports-period', { detail: 'month' }))
+          break
+        case 'report-month':
+          window.dispatchEvent(new CustomEvent('momentum:reports-period', { detail: 'threeMonths' }))
+          break
+        case 'report-year':
+          window.dispatchEvent(new CustomEvent('momentum:reports-period', { detail: 'all' }))
+          break
+        case 'report-all':
+          window.dispatchEvent(new CustomEvent('momentum:reports-scope', { detail: 'all' }))
+          break
+        case 'report-academic':
+          window.dispatchEvent(new CustomEvent('momentum:reports-scope', { detail: 'academic' }))
+          break
+        case 'report-nonacademic':
+          window.dispatchEvent(new CustomEvent('momentum:reports-scope', { detail: 'nonAcademic' }))
           break
       }
     }

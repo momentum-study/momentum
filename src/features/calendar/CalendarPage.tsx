@@ -114,6 +114,44 @@ export default function CalendarPage() {
     if (!filterCategory) return activeTasks
     return activeTasks.filter((a) => a.category === filterCategory)
   }, [activeTasks, filterCategory])
+  // Keyboard shortcuts
+  const [selectedIndex, setSelectedIndex] = useState(0)
+
+  // N — Add new task
+  useEffect(() => {
+    function onAdd() { setModalOpen(true) }
+    window.addEventListener('momentum:calendar-add', onAdd)
+    return () => window.removeEventListener('momentum:calendar-add', onAdd)
+  }, [])
+
+  // ← / → — Navigate month
+  useEffect(() => {
+    function onPrev() { setViewDate(d => subMonths(d, 1)) }
+    function onNext() { setViewDate(d => addMonths(d, 1)) }
+    function onToday() { setViewDate(new Date()) }
+    window.addEventListener('momentum:calendar-prev-month', onPrev)
+    window.addEventListener('momentum:calendar-next-month', onNext)
+    window.addEventListener('momentum:calendar-today', onToday)
+    return () => {
+      window.removeEventListener('momentum:calendar-prev-month', onPrev)
+      window.removeEventListener('momentum:calendar-next-month', onNext)
+      window.removeEventListener('momentum:calendar-today', onToday)
+    }
+  }, [])
+
+  // ↑ / ↓ — Navigate tasks
+  useEffect(() => {
+    function onPrev() { setSelectedIndex(i => Math.max(0, i - 1)) }
+    function onNext() { setSelectedIndex(i => Math.min(filteredTasks.length - 1, i + 1)) }
+    window.addEventListener('momentum:calendar-prev-task', onPrev)
+    window.addEventListener('momentum:calendar-next-task', onNext)
+    return () => {
+      window.removeEventListener('momentum:calendar-prev-task', onPrev)
+      window.removeEventListener('momentum:calendar-next-task', onNext)
+    }
+  }, [filteredTasks.length])
+
+void selectedIndex // consumed by keyboard navigation event listeners for task selection
 
   const tasksByDate = useMemo(() => {
     const map = new Map<string, Assignment[]>()

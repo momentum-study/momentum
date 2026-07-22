@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, gradeColor, isoNow, pctToGrade, getSubjectPathLabel, getSubjectPickerOptions } from '../../lib/utils'
@@ -58,6 +58,7 @@ export default function MarksPage() {
   const { data, isLoading, loadData } = useData()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Mark | null>(null)
+  const [selectedIndex, setSelectedIndex] = useState(0)
   const [form, setForm] = useState<MarkForm>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -108,6 +109,51 @@ export default function MarksPage() {
   const visibleMarks = filteredMarks.slice(0, visibleCount)
 
   // Early return AFTER all hooks
+  const confirmDelete = async (id: string) => {
+    setDeleting(null)
+    await db.marks.update(id, { deletedAt: isoNow(), updatedAt: isoNow() })
+    await loadData()
+  }
+  const deleteMark = confirmDelete
+  const openAdd = () => { setEditing(null); setForm(emptyForm()); setModalOpen(true) }
+  const openEdit = (m: Mark) => { setEditing(m); setForm(toForm(m)); setModalOpen(true) }
+  const closeModal = () => { setModalOpen(false); setEditing(null) }
+  // N — Add new mark
+  useEffect(() => {
+    function onAdd() { openAdd() }
+    window.addEventListener('momentum:marks-add', onAdd)
+    return () => window.removeEventListener('momentum:marks-add', onAdd)
+  }, [])
+  // Del — Delete selected mark
+  useEffect(() => {
+    function onDelete() {
+      const mark = filteredMarks[selectedIndex]
+      if (mark) deleteMark(mark.id)
+    }
+    window.addEventListener('momentum:marks-delete', onDelete)
+    return () => window.removeEventListener('momentum:marks-delete', onDelete)
+  }, [selectedIndex, filteredMarks])
+  // ↑ / ↓ — Navigate list
+  useEffect(() => {
+    function onPrev() { setSelectedIndex(i => Math.max(0, i - 1)) }
+    function onNext() { setSelectedIndex(i => Math.min(filteredMarks.length - 1, i + 1)) }
+    window.addEventListener('momentum:marks-prev', onPrev)
+    window.addEventListener('momentum:marks-next', onNext)
+    return () => {
+      window.removeEventListener('momentum:marks-prev', onPrev)
+      window.removeEventListener('momentum:marks-next', onNext)
+    }
+  }, [filteredMarks.length])
+  // Enter — Edit selected mark
+  useEffect(() => {
+    function onEdit() {
+      const mark = filteredMarks[selectedIndex]
+      if (mark) openEdit(mark)
+    }
+    window.addEventListener('momentum:marks-edit', onEdit)
+    return () => window.removeEventListener('momentum:marks-edit', onEdit)
+  }, [selectedIndex, filteredMarks])
+  // Early return AFTER all hooks
   if (isLoading) return <PageSpinner />
 
   const toggleSort = (key: SortKey) => {
@@ -119,9 +165,6 @@ export default function MarksPage() {
     }
   }
 
-  const openAdd = () => { setEditing(null); setForm(emptyForm()); setModalOpen(true) }
-  const openEdit = (m: Mark) => { setEditing(m); setForm(toForm(m)); setModalOpen(true) }
-  const closeModal = () => { setModalOpen(false); setEditing(null) }
 
   const updateField = <K extends keyof MarkForm>(k: K, v: MarkForm[K]) =>
     setForm((prev) => ({ ...prev, [k]: v }))
@@ -154,11 +197,6 @@ export default function MarksPage() {
     closeModal()
   }
 
-  const confirmDelete = async (id: string) => {
-    setDeleting(null)
-    await db.marks.update(id, { deletedAt: isoNow(), updatedAt: isoNow() })
-    await loadData()
-  }
 
   const formValid =
     form.name.trim() !== '' &&

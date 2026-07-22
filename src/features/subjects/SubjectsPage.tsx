@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { v4 as uuid } from 'uuid'
 import { Link } from 'react-router-dom'
 import { useData } from '../../app/providers'
@@ -43,6 +43,7 @@ export default function SubjectsPage() {
   const [formData, setFormData] = useState<SubjectFormData>(emptyFormData)
   const [isSaving, setIsSaving] = useState(false)
   const [filterCategory, setFilterCategory] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
 
   const activeSubjects = data.subjects.filter((s) => !s.deletedAt)
   const topLevelSubjects = activeSubjects
@@ -50,7 +51,7 @@ export default function SubjectsPage() {
     .sort((a, b) => a.name.localeCompare(b.name))
   const activeCategories = data.categories.filter((c) => !c.deletedAt)
 
-  const handleOpenModal = (subject?: Subject) => {
+  const handleOpenModal = (subject: Subject | null = null) => {
     if (subject) {
       setEditingSubject(subject)
       setFormData({
@@ -199,6 +200,52 @@ export default function SubjectsPage() {
         : [...prev.routine, day].sort(),
     }))
   }
+  // Keyboard shortcuts for subject management
+  useEffect(() => {
+    function onAdd() { handleOpenModal(null) }
+    window.addEventListener('momentum:subjects-add', onAdd)
+    return () => window.removeEventListener('momentum:subjects-add', onAdd)
+  }, [])
+  
+  useEffect(() => {
+    function onEdit() {
+      const subs = topLevelSubjects
+      if (subs[selectedIndex]) handleOpenModal(subs[selectedIndex])
+    }
+    window.addEventListener('momentum:subjects-edit', onEdit)
+    return () => window.removeEventListener('momentum:subjects-edit', onEdit)
+  }, [selectedIndex, topLevelSubjects])
+  
+  useEffect(() => {
+    function onDelete() {
+      const subs = topLevelSubjects
+      if (subs[selectedIndex]) {
+        setDeleteSubject(subs[selectedIndex])
+      }
+    }
+    window.addEventListener('momentum:subjects-delete', onDelete)
+    return () => window.removeEventListener('momentum:subjects-delete', onDelete)
+  }, [selectedIndex, topLevelSubjects])
+  
+  useEffect(() => {
+    function onPrev() { setSelectedIndex(i => Math.max(0, i - 1)) }
+    function onNext() { setSelectedIndex(i => Math.min(topLevelSubjects.length - 1, i + 1)) }
+    window.addEventListener('momentum:subjects-prev', onPrev)
+    window.addEventListener('momentum:subjects-next', onNext)
+    return () => {
+      window.removeEventListener('momentum:subjects-prev', onPrev)
+      window.removeEventListener('momentum:subjects-next', onNext)
+    }
+  }, [topLevelSubjects.length])
+  
+  useEffect(() => {
+    function onOpen() {
+      const subs = topLevelSubjects
+      if (subs[selectedIndex]) handleOpenModal(subs[selectedIndex])
+    }
+    window.addEventListener('momentum:subjects-open', onOpen)
+    return () => window.removeEventListener('momentum:subjects-open', onOpen)
+  }, [selectedIndex, topLevelSubjects])
 
   if (isLoading) return <PageSpinner />
 

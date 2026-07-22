@@ -2,7 +2,7 @@ import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
 import { SubjectBreakdown } from '../../components/widgets/SubjectBreakdown'
 import { formatTotalToday, getLiveTimerSeconds, getLiveTimerSubjectId, getTotalTodayMinutes, isTimerActive } from '../../lib/timer-utils'
 import { useEffect, useMemo, useState } from 'react'
-import { format, subDays, differenceInCalendarDays } from 'date-fns'
+import { addMonths, differenceInCalendarDays, format, subDays, subMonths } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { PomodoroTimer } from '../../components/widgets/PomodoroTimer'
 import { useData } from '../../app/providers'
@@ -520,10 +520,43 @@ export default function Dashboard() {
     }
   }
 
+  // Log time shortcut (Cmd+L or N on dashboard)
+  useEffect(() => {
+    function onLogTime() { setLogModalOpen(true) }
+    window.addEventListener('momentum:log-time', onLogTime)
+    return () => window.removeEventListener('momentum:log-time', onLogTime)
+  }, [])
+
+  // Widget toggle shortcuts (1-8)
+  useEffect(() => {
+    function onToggle(e: Event) {
+      const idx = (e as CustomEvent).detail as number
+      const widget = visibleWidgets[idx - 1]
+      if (widget) toggleWidget(widget)
+    }
+    window.addEventListener('momentum:dashboard-toggle-widget', onToggle)
+    return () => window.removeEventListener('momentum:dashboard-toggle-widget', onToggle)
+  }, [visibleWidgets, toggleWidget])
+
+  // Calendar month navigation
+  useEffect(() => {
+    function onPrevMonth() { setCalendarMonth(d => subMonths(d, 1)) }
+    function onNextMonth() { setCalendarMonth(d => addMonths(d, 1)) }
+    function onToday() { setCalendarMonth(new Date()) }
+    window.addEventListener('momentum:dashboard-calendar-prev', onPrevMonth)
+    window.addEventListener('momentum:dashboard-calendar-next', onNextMonth)
+    window.addEventListener('momentum:dashboard-calendar-today', onToday)
+    return () => {
+      window.removeEventListener('momentum:dashboard-calendar-prev', onPrevMonth)
+      window.removeEventListener('momentum:dashboard-calendar-next', onNextMonth)
+      window.removeEventListener('momentum:dashboard-calendar-today', onToday)
+    }
+  }, [])
+
   const sizeClasses: Record<string, string> = {
     small: 'lg:col-span-1 lg:row-span-1',
     medium: 'lg:col-span-2 lg:row-span-1',
-    large: 'lg:col-span-2 lg:row-span-2',
+    large: 'lg:col-span-3 lg:row-span-2',
   }
 
   function removeWidgetWithUndo(id: string) {
@@ -1238,7 +1271,7 @@ export default function Dashboard() {
         Customise
       </button>
       {/* Dashboard grid with widgets */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 auto-rows-min">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-[minmax(80px,auto)] grid-flow-dense">
         {visibleWidgets.map(id => {
           const size = widgetConfigs[id]?.size || 'small'
           const meta = DASHBOARD_WIDGETS_METADATA.find(w => w.id === id)
@@ -1253,7 +1286,7 @@ export default function Dashboard() {
             ...(id === 'calendar' || id === 'recent' ? { defaultOpen: false } : {}),
           } as const
           return (
-            <div key={id} className={sizeClasses[size]}>
+            <div key={id} className={cn(sizeClasses[size], 'h-full')}>
               <DashboardWidget {...widgetProps}>
                 {renderWidget(id)}
               </DashboardWidget>

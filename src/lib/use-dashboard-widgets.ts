@@ -23,7 +23,10 @@ export const DASHBOARD_WIDGETS_METADATA: { id: string; label: string }[] = [
 
 export const DEFAULT_CONFIGS: Record<string, Omit<WidgetConfig, 'id' | 'label'>> = 
   DASHBOARD_WIDGETS_METADATA.reduce((acc, w, i) => {
-    acc[w.id] = { size: 'small', order: i }
+    let size: WidgetConfig['size'] = 'small'
+    if (w.id === 'stats' || w.id === 'today' || w.id === 'calendar' || w.id === 'recent') size = 'medium'
+    if (w.id === 'streak-goal') size = 'large'
+    acc[w.id] = { size, order: i }
     return acc
   }, {} as Record<string, Omit<WidgetConfig, 'id' | 'label'>>)
 export const DEFAULT_WIDGET_IDS = DASHBOARD_WIDGETS_METADATA.map((w) => w.id)

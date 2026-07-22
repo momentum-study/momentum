@@ -1,7 +1,8 @@
 // Backup / restore helpers for Momentum's IndexedDB
 import { db } from '../db/app-db'
 import type { AppData } from '../app/providers'
-import { loadSettings, saveSettings, type Settings } from '../features/settings/SettingsPage'
+import { loadSettings, saveSettings } from './settings-store'
+import type { Settings } from './settings-store'
 
 const EXPORT_VERSION = 2
 

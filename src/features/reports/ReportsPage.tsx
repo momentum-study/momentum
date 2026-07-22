@@ -6,7 +6,7 @@ import { PageSpinner } from '../../components/ui/Spinner'
 import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor, sessionLocalDate, toLocalDateString } from '../../lib/utils'
 import type { Session, DayOfWeek } from '../../domain/types'
 import { Link } from 'react-router-dom'
-import { loadSettings } from '../settings/SettingsPage'
+import { loadSettings } from '../../lib/settings-store'
 
 type ScopeOption = 'academic' | 'nonAcademic' | 'all'
 type Period = 'week' | 'month' | 'threeMonths' | 'all'

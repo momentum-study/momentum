@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { loadTimerState } from '../../lib/timer-persistence'
 import { isTimerActive, getLiveTimerSubjectId } from '../../lib/timer-utils'
 import { useSubjects } from '../../app/providers'
@@ -29,6 +29,7 @@ function getMainTimerSeconds(): number {
 
 export function FloatingTimerBanner() {
   const location = useLocation()
+  const navigate = useNavigate()
   const subjects = useSubjects()
   const [seconds, setSeconds] = useState(0)
   const [subjectId, setSubjectId] = useState<string | null>(null)
@@ -61,18 +62,18 @@ export function FloatingTimerBanner() {
 
   return (
     <div
-      className="pointer-events-none fixed bottom-4 left-1/2 z-50 -translate-x-1/2"
+      className="pointer-events-auto fixed bottom-4 left-1/2 z-50 -translate-x-1/2"
       aria-live="polite"
       aria-label="Active study timer"
     >
-      <div className="flex items-center gap-2 rounded-full bg-primary-600 px-5 py-2 shadow-lg">
+      <button onClick={() => navigate('/')} className="flex items-center gap-2 rounded-full bg-primary-600 px-5 py-2 shadow-lg">
         <span className="text-sm font-medium text-white">
           Studying{subjectName ? `: ${subjectName}` : ''}
         </span>
         <span className="text-sm font-bold text-white tabular-nums">
           {formatSeconds(seconds)}
         </span>
-      </div>
+      </button>
     </div>
   )
 }

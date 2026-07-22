@@ -23,7 +23,7 @@ import type { UserProfile } from '../domain/cloud-types'
 import { syncService } from '../lib/sync-service'
 import { db as localDb } from '../db/app-db'
 import { pullSettings } from '../lib/settings-sync'
-import { loadSettings } from '../features/settings/SettingsPage'
+import { loadSettings } from '../lib/settings-store'
 import { pullAllData } from '../lib/data-sync'
 import { subscribeToUserData, installSyncHooks, uninstallSyncHooks } from '../lib/data-sync'
 interface AuthContextValue {

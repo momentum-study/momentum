@@ -28,22 +28,22 @@ export function DashboardWidget({
   const dragRef = useRef<HTMLDivElement>(null)
   const [isOpen, setIsOpen] = useState(defaultOpen)
 
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragStart = (e: React.DragEvent<HTMLElement>) => {
     e.dataTransfer.setData('text/plain', id)
     e.dataTransfer.effectAllowed = 'move'
     e.currentTarget.classList.add('opacity-50', 'border-dashed', 'border-2', 'border-primary-500')
   }
 
-  const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragEnd = (e: React.DragEvent<HTMLElement>) => {
     e.currentTarget.classList.remove('opacity-50', 'border-dashed', 'border-2', 'border-primary-500')
   }
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragOver = (e: React.DragEvent<HTMLElement>) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
   }
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = (e: React.DragEvent<HTMLElement>) => {
     e.preventDefault()
     const fromId = e.dataTransfer.getData('text/plain')
     if (fromId && fromId !== id && onReorder) {
@@ -54,18 +54,20 @@ export function DashboardWidget({
   return (
     <div
       ref={dragRef}
-      draggable
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
       className={cn(
-        'bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden',
-        'transition-all duration-200 ease-in-out cursor-grab active:cursor-grabbing h-full',
+        'relative bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden',
+        'transition-all duration-200 ease-in-out h-full',
         className
       )}
     >
-      <div className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700">
+      <div
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700 cursor-grab active:cursor-grabbing"
+      >
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 select-none">{label}</h3>
         <div className="flex items-center gap-1">
           {onToggleSize && (
@@ -101,6 +103,48 @@ export function DashboardWidget({
         </div>
       </div>
       {isOpen && <div className="p-3">{children}</div>}
+      {onToggleSize && (
+        <div
+          className="absolute bottom-0 right-0 h-3 w-3 cursor-se-resize opacity-30 hover:opacity-100"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            const grid = e.currentTarget.closest('.grid') as HTMLElement
+            if (!grid) return
+            const colWidth = grid.offsetWidth / 3
+            const startX = e.clientX
+            const widget = e.currentTarget.closest('[data-widget-id]') as HTMLElement
+            const startWidth = widget?.offsetWidth ?? 0
+            const startCols = Math.max(1, Math.min(3, Math.round(startWidth / colWidth)))
+
+            function onMove(ev: MouseEvent) {
+              const delta = ev.clientX - startX
+              const cols = Math.max(1, Math.min(3, Math.round((startWidth + delta) / colWidth)))
+              if (widget) {
+                widget.style.width = `${cols * colWidth}px`
+                widget.style.transition = 'none'
+              }
+            }
+
+            function onUp(ev: MouseEvent) {
+              document.removeEventListener('mousemove', onMove)
+              document.removeEventListener('mouseup', onUp)
+              const delta = ev.clientX - startX
+              const cols = Math.max(1, Math.min(3, Math.round((startWidth + delta) / colWidth)))
+              if (widget) {
+                widget.style.width = ''
+                widget.style.transition = ''
+              }
+              if (cols !== startCols && onToggleSize) {
+                onToggleSize()
+              }
+            }
+
+            document.addEventListener('mousemove', onMove)
+            document.addEventListener('mouseup', onUp)
+          }}
+        />
+      )}
     </div>
   )
 }

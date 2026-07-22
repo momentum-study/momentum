@@ -2,7 +2,7 @@ import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
 import { SubjectBreakdown } from '../../components/widgets/SubjectBreakdown'
 import { formatTotalToday, getLiveTimerSeconds, getLiveTimerSubjectId, getTotalTodayMinutes, isTimerActive } from '../../lib/timer-utils'
 import { useEffect, useMemo, useState } from 'react'
-import { addMonths, differenceInCalendarDays, format, subDays, subMonths } from 'date-fns'
+import { addMonths, format, subDays, subMonths } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { PomodoroTimer } from '../../components/widgets/PomodoroTimer'
 import { useData } from '../../app/providers'
@@ -10,11 +10,13 @@ import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
+import { NumberInput } from '../../components/ui/NumberInput'
 import { Modal } from '../../components/ui/Modal'
 import { HoverCard } from '../../components/ui/HoverCard'
 import { useSwipe } from '../../lib/use-swipe'
 import { cn, formatMinutes, getSessionScope, isoNow, toLocalDateString } from '../../lib/utils'
-import { loadSettings } from '../settings/SettingsPage'
+import { loadSettings } from '../../lib/settings-store'
+import { useStreak } from '../../lib/use-streak'
 import { db } from '../../db/app-db'
 import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakDayForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
 import { getDueCount } from '../../lib/fsrs-scheduler'
@@ -25,7 +27,6 @@ import { useDashboardWidgets, DASHBOARD_WIDGETS_METADATA, DEFAULT_CONFIGS, DEFAU
 import { DashboardWidget } from '../../components/widgets/DashboardWidget'
 
 const STREAK_MILESTONES = [7, 14, 21, 30, 66, 100] as const
-const BEST_STREAK_KEY = 'momentum-best-streak'
 const CELEBRATION_KEY = 'momentum-last-celebration'
 function copySessionInfo(session: Session & { subjectName: string }) {
   const time = format(new Date(session.startAt), 'h:mm a')
@@ -34,29 +35,20 @@ function copySessionInfo(session: Session & { subjectName: string }) {
 }
 
 function SessionRow({
-  session, project, subjects, menuSessionId, setMenuSessionId,
+  session, project, menuSessionId, setMenuSessionId,
   setEditLog, setEditDuration, setEditDate, setEditSubjectId,
-  showEditRowId, setShowEditRowId, deleteSession,
-  editDuration, editDate, editSubjectId, saveEditLog, todayStr,
+  deleteSession,
   selected, onToggleSelect,
 }: {
   session: Session & { subjectName: string; subjectColor: string }
   project: { name: string } | undefined
-  subjects: { id: string; name: string; deletedAt?: string | null }[]
   menuSessionId: string | null
   setMenuSessionId: (id: string | null) => void
   setEditLog: (s: Session | null) => void
   setEditDuration: (n: number) => void
   setEditDate: (s: string) => void
   setEditSubjectId: (s: string) => void
-  showEditRowId: string | null
-  setShowEditRowId: (id: string | null) => void
   deleteSession: (id: string) => void
-  editDuration: number
-  editDate: string
-  editSubjectId: string
-  saveEditLog: () => Promise<void>
-  todayStr: string
   selected: boolean
   onToggleSelect: (id: string) => void
 }) {
@@ -67,105 +59,72 @@ function SessionRow({
       setEditDuration(session.durationMinutes)
       setEditDate(toLocalDateString(session.startAt))
       setEditSubjectId(session.subjectId)
-      setShowEditRowId(session.id)
     },
   })
   const srcLabel = session.source === 'timer' ? 'timer' : session.source === 'pomodoro' ? 'pomodoro' : session.source === 'quickLog' ? 'quick log' : session.source === 'autoRoutine' ? 'routine' : 'manual'
   return (
-    <>
-      <li
-        key={session.id}
-        className="flex items-center justify-between py-2"
-        onDoubleClick={() => {
-          setEditLog(session)
-          setEditDuration(session.durationMinutes)
-          setEditDate(toLocalDateString(session.startAt))
-          setEditSubjectId(session.subjectId)
-          setShowEditRowId(session.id)
-        }}
-        {...swipe}
-      >
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={() => onToggleSelect(session.id)}
-          className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-primary-600 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700"
-          aria-label={`Select session ${session.subjectName}`}
-        />
-        <HoverCard
-          content={
-            <div className="space-y-1 text-sm">
-              <div className="font-medium">{session.subjectName}</div>
-              {project && <div className="text-slate-500">{project.name}</div>}
-              <div className="text-slate-500">{format(new Date(session.startAt), 'h:mm a')} · {formatMinutes(session.durationMinutes)}</div>
-              <div className="text-slate-500">Source: {srcLabel}</div>
-              {session.note && <div className="text-slate-400 italic">{session.note}</div>}
-            </div>
-          }
-        >
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.subjectColor }} />
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{session.subjectName}{project && <span className="text-slate-500"> · {project.name}</span>}</div>
-              <div className="text-xs text-slate-500">{format(new Date(session.startAt), 'h:mm a')}{session.source === 'timer' ? ' ⏱' : session.source === 'pomodoro' ? ' 🍅' : ' ✏️'}</div>
-            </div>
+    <li
+      key={session.id}
+      className="flex items-center justify-between py-2"
+      onDoubleClick={() => {
+        setEditLog(session)
+        setEditDuration(session.durationMinutes)
+        setEditDate(toLocalDateString(session.startAt))
+        setEditSubjectId(session.subjectId)
+      }}
+      {...swipe}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={() => onToggleSelect(session.id)}
+        className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-primary-600 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700"
+        aria-label={`Select session ${session.subjectName}`}
+      />
+      <HoverCard
+        content={
+          <div className="space-y-1 text-sm">
+            <div className="font-medium">{session.subjectName}</div>
+            {project && <div className="text-slate-500">{project.name}</div>}
+            <div className="text-slate-500">{format(new Date(session.startAt), 'h:mm a')} · {formatMinutes(session.durationMinutes)}</div>
+            <div className="text-slate-500">Source: {srcLabel}</div>
+            {session.note && <div className="text-slate-400 italic">{session.note}</div>}
           </div>
-        </HoverCard>
-        <div className="flex items-center gap-2">
-          <div className="text-sm text-slate-600">{formatMinutes(session.durationMinutes)}</div>
-          <div className="relative">
-            <button type="button" aria-label="More actions" onClick={() => setMenuSessionId(menuSessionId === session.id ? null : session.id)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700">
-              <span className="block text-lg leading-none">⋯</span>
-            </button>
-            {menuSessionId === session.id && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={() => setMenuSessionId(null)} />
-                <div className="absolute right-0 z-30 mt-1 w-36 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                  <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { setEditLog(session); setEditDuration(session.durationMinutes); setEditDate(toLocalDateString(session.startAt)); setEditSubjectId(session.subjectId); setShowEditRowId(session.id); setMenuSessionId(null) }}>
-                    Edit time
-                  </button>
-                  <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { copySessionInfo(session); setMenuSessionId(null) }}>
-                    Copy
-                  </button>
-                  <button type="button" className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { deleteSession(session.id); setMenuSessionId(null) }}>
-                    Delete
-                  </button>
-                </div>
-              </>
-            )}
+        }
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: session.subjectColor }} />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{session.subjectName}{project && <span className="text-slate-500"> · {project.name}</span>}</div>
+            <div className="text-xs text-slate-500">{format(new Date(session.startAt), 'h:mm a')}{session.source === 'timer' ? ' ⏱' : session.source === 'pomodoro' ? ' 🍅' : ' ✏️'}</div>
           </div>
         </div>
-      </li>
-      {showEditRowId === session.id && (
-        <li className="bg-slate-50 dark:bg-slate-800 px-3 py-3 border-l-4 border-primary-500">
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              <div>
-                <label className="label text-xs">Minutes</label>
-                <input type="text" inputMode="numeric" pattern="[0-9]*" className="input w-20" value={editDuration === 0 ? '' : String(editDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setEditDuration(0); return }; const n = Number(v); if (isNaN(n)) return; setEditDuration(Math.max(1, n)) }} />
+      </HoverCard>
+      <div className="flex items-center gap-2">
+        <div className="text-sm text-slate-600">{formatMinutes(session.durationMinutes)}</div>
+        <div className="relative">
+          <button type="button" aria-label="More actions" onClick={() => setMenuSessionId(menuSessionId === session.id ? null : session.id)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700">
+            <span className="block text-lg leading-none">⋯</span>
+          </button>
+          {menuSessionId === session.id && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setMenuSessionId(null)} />
+              <div className="absolute right-0 z-30 mt-1 w-36 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { setEditLog(session); setEditDuration(session.durationMinutes); setEditDate(toLocalDateString(session.startAt)); setEditSubjectId(session.subjectId); setMenuSessionId(null) }}>
+                  Edit time
+                </button>
+                <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { copySessionInfo(session); setMenuSessionId(null) }}>
+                  Copy
+                </button>
+                <button type="button" className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { deleteSession(session.id); setMenuSessionId(null) }}>
+                  Delete
+                </button>
               </div>
-              <div>
-                <label className="label text-xs">Date</label>
-                <input type="date" className="input" max={todayStr} value={editDate} onChange={(e) => setEditDate(e.target.value)} />
-              </div>
-              <div>
-                <label className="label text-xs">Subject</label>
-                <select className="input" value={editSubjectId} onChange={(e) => setEditSubjectId(e.target.value)}>
-                  <option value="">— Select subject —</option>
-                  {subjects.filter((s) => !s.deletedAt).map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="primary" className="text-xs" onClick={async () => { await saveEditLog(); setShowEditRowId(null) }}>Save</Button>
-              <Button variant="secondary" className="text-xs" onClick={() => { setEditLog(null); setShowEditRowId(null) }}>Cancel</Button>
-            </div>
-          </div>
-        </li>
-      )}
-    </>
+            </>
+          )}
+        </div>
+      </div>
+    </li>
   )
 }
 
@@ -191,81 +150,15 @@ export default function Dashboard() {
     () => data.sessions.filter((s) => !s.deletedAt && getSessionScope(s, data.subjects, data.categories) === 'academic'),
     [data.sessions, data.subjects, data.categories]
   )
+  const todayAcademicMinutes = useMemo(
+    () => academicSessions
+      .filter((s) => toLocalDateString(s.startAt) === todayStr)
+      .reduce((sum, s) => sum + s.durationMinutes, 0),
+    [academicSessions, todayStr]
+  )
   const settings = useMemo(() => loadSettings(), [])
 
-  const streak = useMemo(() => {
-    const daySet = new Set<string>()
-    for (const s of academicSessions) {
-      daySet.add(toLocalDateString(s.startAt))
-    }
-    let count = 0
-    let missed = 0
-    let d = new Date()
-    while (true) {
-      const ds = format(d, 'yyyy-MM-dd')
-      if (daySet.has(ds)) {
-        count++
-        // missed is NOT reset on hit days — only one gap is forgiven across the entire chain
-        d = subDays(d, 1)
-      } else {
-        missed++
-        if (missed > 1) break
-        d = subDays(d, 1)
-      }
-    }
-    return count
-  }, [academicSessions])
-  // Longest streak: compute from sessions using the same one-gap-per-chain rule as current streak.
-  // Persisted to localStorage so the best ever value survives data cleanup.
-  const longestStreak = useMemo(() => {
-    const daySet = new Set<string>()
-    for (const s of academicSessions) {
-      daySet.add(toLocalDateString(s.startAt))
-    }
-    const sortedDays = Array.from(daySet).sort()
-    if (sortedDays.length <= 1) return 0
-    let max = 0
-    let cur = 1
-    let chainMissed = 0
-    for (let i = 1; i < sortedDays.length; i++) {
-      const diff = differenceInCalendarDays(new Date(sortedDays[i]), new Date(sortedDays[i - 1]))
-      if (diff === 1) {
-        cur++
-        if (cur > max) max = cur
-        // Consecutive runs reset the chain's missed counter — the gap was already consumed
-        chainMissed = 0
-      } else if (diff === 2) {
-        // Exactly one day gap — forgive it once per chain
-        chainMissed++
-        if (chainMissed > 1) {
-          // Second gap in this chain → break
-          if (cur > max) max = cur
-          cur = 1
-          chainMissed = 0
-        } else {
-          cur++
-          if (cur > max) max = cur
-        }
-      } else {
-        // Gap > 1 day → break
-        if (cur > max) max = cur
-        cur = 1
-        chainMissed = 0
-      }
-    }
-    if (cur > max) max = cur
-    // Consider any previously stored best streak from localStorage
-    try {
-      const stored = Number(localStorage.getItem(BEST_STREAK_KEY))
-      if (stored > max) max = stored
-    } catch {}
-    return max
-  }, [academicSessions])
-  useEffect(() => {
-    try {
-      localStorage.setItem(BEST_STREAK_KEY, String(longestStreak))
-    } catch {}
-  }, [longestStreak])
+  const { streak, longestStreak } = useStreak(academicSessions)
   // Celebration: trigger once per day when the daily goal is met or a streak
   // milestone is reached today. Guarded by localStorage so it only fires once.
   useEffect(() => {
@@ -321,6 +214,7 @@ export default function Dashboard() {
     try { return JSON.parse(sessionStorage.getItem(LOG_FORM_KEY) ?? 'null') } catch { return null }
   })()
 
+  const [logSubjectManuallySet, setLogSubjectManuallySet] = useState(false)
   const [logSubjectId, setLogSubjectId] = useState(persistedForm?.subjectId ?? '')
   const [logProjectId, setLogProjectId] = useState(persistedForm?.projectId ?? '')
   const [logTaskId, setLogTaskId] = useState(persistedForm?.taskId ?? '')
@@ -356,6 +250,10 @@ export default function Dashboard() {
   }, [fabOpen])
 
   async function handleLogTime() {
+    if (logDuration < 1) {
+      alert('Duration must be at least 1 minute')
+      return
+    }
     const note = logNote.trim()
     // Use noon local time on the selected date so the ISO instant always
     // round-trips back to the same calendar date regardless of timezone
@@ -427,7 +325,6 @@ export default function Dashboard() {
     interval = window.setInterval(tick, active ? 1000 : 5000)
   }, [])
   const [editSubjectId, setEditSubjectId] = useState('')
-  const [showEditRowId, setShowEditRowId] = useState<string | null>(null)
 
   async function saveEditLog() {
     if (!editLog) return
@@ -741,7 +638,6 @@ export default function Dashboard() {
               </div>
               <div className="relative">
                 <div className="grid grid-cols-7 gap-px rounded-sm border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 p-px">
-                  {Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth(), 1).getDay() }).map((_, i) => <div key={`pad-${i}`} />)}
                   {(() => {
                     const HEATMAP_DAYS = 60
                     const targetMinutes = Math.max(1, settings.dailyTargetMinutes)
@@ -802,7 +698,7 @@ export default function Dashboard() {
             <div className="text-xs text-slate-500">Streak milestones:</div>
             <div className="flex flex-wrap gap-2">
               {STREAK_MILESTONES.map((m) => {
-                const reached = longestStreak >= m
+                const reached = streak >= m
                 const approached = m === nextMilestone
                 return (
                   <div key={m} className="group relative">
@@ -886,7 +782,7 @@ export default function Dashboard() {
                 const dayNum = i + 1
                 const dateStr = `${format(calendarMonth, 'yyyy-MM')}-${String(dayNum).padStart(2, '0')}`
                 const mins = minutesByDay[dateStr] ?? 0
-                const intensity = mins / heatMax
+                const intensity = heatMax > 0 ? mins / heatMax : 0
                 const isToday = dateStr === todayStr
                 const isFuture = dateStr > todayStr
                 return (
@@ -894,7 +790,7 @@ export default function Dashboard() {
                     key={dayNum}
                     title={`${dateStr}: ${formatMinutes(mins)}`}
                     className={cn(
-                      'flex h-9 flex-col items-center justify-center rounded text-xs transition-all',
+                      'flex min-h-[2.5rem] flex-col items-center justify-center rounded text-xs transition-all overflow-hidden',
                       isToday && 'ring-2 ring-primary-500',
                       isFuture && 'text-slate-300 dark:text-slate-600',
                       !isFuture && mins === 0 && 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
@@ -907,7 +803,7 @@ export default function Dashboard() {
                     )}
                   >
                     <span>{dayNum}</span>
-                    {mins > 0 && <span className="text-[10px] opacity-80">{formatMinutes(mins)}</span>}
+                    {mins > 0 && <span className="text-[10px] opacity-80 truncate max-w-full leading-tight">{formatMinutes(mins)}</span>}
                   </div>
                 )
               })}
@@ -1007,21 +903,13 @@ export default function Dashboard() {
                               key={session.id}
                               session={session}
                               project={project}
-                              subjects={data.subjects}
                               menuSessionId={menuSessionId}
                               setMenuSessionId={setMenuSessionId}
                               setEditLog={setEditLog}
                               setEditDuration={setEditDuration}
                               setEditDate={setEditDate}
                               setEditSubjectId={setEditSubjectId}
-                              showEditRowId={showEditRowId}
-                              setShowEditRowId={setShowEditRowId}
                               deleteSession={deleteSession}
-                              editDuration={editDuration}
-                              editDate={editDate}
-                              editSubjectId={editSubjectId}
-                              saveEditLog={saveEditLog}
-                              todayStr={todayStr}
                               selected={selectedSessionIds.has(session.id)}
                               onToggleSelect={(id) => setSelectedSessionIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })}
                             />
@@ -1385,7 +1273,7 @@ export default function Dashboard() {
       <Modal open={logModalOpen} onClose={() => setLogModalOpen(false)} title="Log Study Time">
         <div className="space-y-3">
           {(() => {
-            const existingToday = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
+            const existingToday = todayAcademicMinutes
             const previewTotal = existingToday + logDuration
             const target = settings.dailyTargetMinutes
             const toGo = Math.max(0, target - previewTotal)
@@ -1398,7 +1286,7 @@ export default function Dashboard() {
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="label">Subject</label>
-              <select className="input" value={logSubjectId} onChange={(e) => { setLogSubjectId(e.target.value); setLogProjectId(''); setLogTaskId('') }}>
+              <select className="input" value={logSubjectId} onChange={(e) => { const val = e.target.value; setLogSubjectId(val); setLogSubjectManuallySet(val !== ''); setLogProjectId(''); setLogTaskId('') }}>
                 <option value="">Select subject</option>
                 {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
@@ -1406,7 +1294,7 @@ export default function Dashboard() {
             {logSubjectId && data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).length > 0 && (
               <div>
                 <label className="label">Project (optional)</label>
-                <select className="input" value={logProjectId} onChange={(e) => { const pid = e.target.value; setLogProjectId(pid); setLogTaskId(''); if (pid) { const proj = data.projects.find((p) => p.id === pid); if (proj) setLogSubjectId(proj.subjectId) } }}>
+                <select className="input" value={logProjectId} onChange={(e) => { const pid = e.target.value; setLogProjectId(pid); setLogTaskId(''); if (pid && !logSubjectManuallySet) { const proj = data.projects.find((p) => p.id === pid); if (proj) setLogSubjectId(proj.subjectId) } }}>
                   <option value="">— Select project —</option>
                   {data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
@@ -1429,7 +1317,7 @@ export default function Dashboard() {
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="label">Minutes</label>
-              <input type="text" inputMode="numeric" pattern="[0-9]*" className="input w-24" value={logDuration === 0 ? '' : String(logDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setLogDuration(0); return }; const n = Number(v); if (isNaN(n)) return; setLogDuration(n) }} />
+              <NumberInput value={logDuration} onChange={setLogDuration} min={1} className="input w-24" />
             </div>
             <div>
               <label className="label">Date</label>
@@ -1477,7 +1365,7 @@ export default function Dashboard() {
         <div className="space-y-3">
           <div>
             <label className="label">Minutes</label>
-            <input type="text" inputMode="numeric" pattern="[0-9]*" className="input" value={editDuration === 0 ? '' : String(editDuration)} onChange={(e) => { const v = e.target.value; if (v === '') { setEditDuration(0); return }; const n = Number(v); if (isNaN(n)) return; setEditDuration(Math.max(1, n)) }} />
+            <NumberInput value={editDuration} onChange={setEditDuration} min={1} className="input" />
           </div>
           <div>
             <label className="label">Date</label>

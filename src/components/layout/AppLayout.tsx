@@ -22,8 +22,7 @@ import { useFocusMode } from '../../lib/use-focus-mode'
     { to: '/study', label: 'Study', icon: '🧠' },
     { to: '/reports', label: 'Reports', icon: '📈' },
     { to: '/habits', label: 'Habits', icon: '🔥' },
-    { to: '/routines', label: 'Routines', icon: '📋' },
-    { to: '/activities', label: 'Activities', icon: '🎭' },
+    { to: '/schedule', label: 'Schedule', icon: '📋' },
     { to: '/marks', label: 'Marks', icon: '📝' },
     { to: '/groups', label: 'Groups', icon: '👥' },
     { to: '/categories', label: 'Categories', icon: '🗂️' },
@@ -37,7 +36,7 @@ interface NavPrefs {
   order: string[]
   hidden: string[]
 }
-const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/activities', '/marks', '/groups', '/categories', '/reviews'] }
+const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/marks', '/groups', '/categories', '/reviews'] }
 
 function loadPrefs(): NavPrefs {
   if (typeof localStorage === 'undefined') return { ...DEFAULT_PREFS }
@@ -210,6 +209,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
           break
         case 'escape':
           window.dispatchEvent(new CustomEvent('momentum:escape'))
+          break
+        case 'discard-session':
+          window.dispatchEvent(new CustomEvent('momentum:discard-session'))
           break
         case 'replay-tour':
           window.dispatchEvent(new CustomEvent('momentum:replay-tour'))

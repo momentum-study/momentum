@@ -26,7 +26,7 @@ export default function ActivitiesPage() {
   const [scheduledTime, setScheduledTime] = useState('')
   const [notes, setNotes] = useState('')
 
-  const [dayFilter, setDayFilter] = useState<DayOfWeek | 'all'>('all')
+  const [dayFilter, setDayFilter] = useState<DayOfWeek | 'all'>(new Date().getDay() as DayOfWeek)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [pendingLog, setPendingLog] = useState<Activity | null>(null)
 
@@ -173,18 +173,37 @@ export default function ActivitiesPage() {
     }
   }
 
+  function getMostRecentScheduledDay(scheduledDows: DayOfWeek[]): string {
+    const now = new Date()
+    const today = now.getDay()
+    for (let offset = 0; offset < 7; offset++) {
+      const candidateDow = (today - offset + 7) % 7
+      if (scheduledDows.includes(candidateDow as DayOfWeek)) {
+        const d = new Date(now)
+        d.setDate(now.getDate() - offset)
+        return format(d, 'yyyy-MM-dd')
+      }
+    }
+    return format(now, 'yyyy-MM-dd')
+  }
+
   async function confirmLog(activity: Activity, status: 'completed' | 'skipped') {
     try {
       const now = isoNow()
+      // Use the most recent scheduled day as the default date
+      const scheduledDows = (Object.keys(activity.dayMinutes) as unknown as DayOfWeek[]).filter(
+        (d) => (activity.dayMinutes[d] ?? 0) > 0
+      )
+      const logDate = scheduledDows.length > 0 ? getMostRecentScheduledDay(scheduledDows) : todayStr
       const log: ActivityLog = {
         id: uuid(),
         activityId: activity.id,
-        date: todayStr,
+        date: logDate,
         status,
         createdAt: now,
       }
       if (status === 'completed') {
-        log.actualMinutes = activity.dayMinutes[todayDow] ?? 0
+        log.actualMinutes = activity.duration || activity.dayMinutes[todayDow as DayOfWeek] || 30
       }
       await db.activityLogs.add(log)
       await loadData()

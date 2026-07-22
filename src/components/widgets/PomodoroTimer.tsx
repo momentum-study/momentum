@@ -6,8 +6,8 @@ import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { cn, isoNow, isTopLevelSubject, getChildSubjects, getSubjectPathLabel } from '../../lib/utils'
 import { formatTotalToday, getTotalTodayMinutes } from '../../lib/timer-utils'
-import { loadSettings, saveSettings } from '../../features/settings/SettingsPage'
-import type { Settings } from '../../features/settings/SettingsPage'
+import { loadSettings, saveSettings } from '../../lib/settings-store'
+import type { Settings } from '../../lib/settings-store'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
 import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor, splitSessionAtMidnight } from '../../lib/timer-persistence'
@@ -160,6 +160,7 @@ export function PomodoroTimer() {
   const [changeSubjectOpen, setChangeSubjectOpen] = useState(false)
   const [changeSubjectConfirmation, setChangeSubjectConfirmation] = useState('')
   const changeSubjectConfirmationTimer = useRef<number | null>(null)
+  const [timerNotes, setTimerNotes] = useState('')
   const [myGroups, setMyGroups] = useState<Group[]>([])
   const [uid, setUid] = useState<string | null>(null)
   const allGroupsPresence = useAllGroupsPresence(uid, uid)
@@ -181,6 +182,11 @@ export function PomodoroTimer() {
       setUid(stored)
       groupService.listMyGroups(stored).then(setMyGroups)
     }
+  }, [])
+  // Restore notes from persisted timer state on mount
+  useEffect(() => {
+    const stored = loadTimerState()
+    if (stored) setTimerNotes(stored.notes ?? '')
   }, [])
 
 
@@ -216,6 +222,7 @@ export function PomodoroTimer() {
   // already fired for the current run so it only triggers once.
   const [safetyMessage, setSafetyMessage] = useState('')
   const simpleSafetyFiredRef = useRef(false)
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const pomSafetyFiredRef = useRef(false)
   const [pomPhase, setPomPhase] = useState<Phase>(() => {
     const saved = loadTimerState()
@@ -401,6 +408,7 @@ export function PomodoroTimer() {
         phase: nextPhase,
         cyclesCompleted: newCycles,
         config: cfg,
+        notes: timerNotes,
       }
       saveTimerState(newState)
     } else {
@@ -417,6 +425,7 @@ export function PomodoroTimer() {
         phase: 'focus',
         cyclesCompleted: st.pomCycles,
         config: cfg,
+        notes: timerNotes,
       }
       saveTimerState(newState)
     }
@@ -534,7 +543,82 @@ export function PomodoroTimer() {
     return () => { groupService.clearPresence(uid).catch(() => {}) }
   }, [isRunning, subjectId, data.subjects])
 
-  // Save config to localStorage
+  // Pause timer when tab is hidden (lid close, screen lock, etc.)
+  useEffect(() => {
+    let wasHidden = document.hidden
+    function onVisibilityChange() {
+      const nowHidden = document.hidden
+      // Tab just became hidden while timer was running
+      if (nowHidden && !wasHidden && (simpleStartedAt || pomStartedAt)) {
+        if (simpleStartedAt) {
+          pauseSimple()
+        } else if (pomStartedAt) {
+          pausePomodoro()
+        }
+        try {
+          import('../../lib/notification-service').then(({ sendNotification }) => {
+            sendNotification(
+              'Study session paused',
+              'Timer paused while tab was hidden. Come back to resume!',
+              'visibility-pause'
+            )
+          })
+        } catch { /* ignore */ }
+      }
+      wasHidden = nowHidden
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [simpleStartedAt, pomStartedAt])
+  useEffect(() => {
+    function onDiscardSession() {
+      // Only prompt if there's an active or paused session
+      if (!simpleStartedAt && !simplePausedOffset && !pomStartedAt) return
+      setShowDiscardConfirm(true)
+    }
+    window.addEventListener('momentum:discard-session', onDiscardSession)
+    return () => window.removeEventListener('momentum:discard-session', onDiscardSession)
+  }, [simpleStartedAt, simplePausedOffset, pomStartedAt])
+
+  // Listen for keyboard shortcuts from Dashboard
+  useEffect(() => {
+    function onTimerToggle() {
+      if (simpleStartedAt !== null) {
+        pauseSimple()
+      } else if (pomStartedAt !== null) {
+        pausePomodoro()
+      } else {
+        // Not running — start based on current mode
+        if (mode === 'simple') {
+          // Match UI behavior: use resume if paused, start otherwise
+          if (simplePausedOffset > 0) {
+            resumeSimple()
+          } else {
+            // Don't start if no subject selected (match UI disabled state)
+            if (subjectId || projectId) startSimple()
+          }
+        } else {
+          // Don't start if no subject selected (match UI disabled state)
+          if (subjectId || projectId) startPomodoro()
+        }
+      }
+    }
+    window.addEventListener('momentum:timer-toggle', onTimerToggle)
+    return () => window.removeEventListener('momentum:timer-toggle', onTimerToggle)
+  }, [simpleStartedAt, pomStartedAt, mode, subjectId, projectId, simplePausedOffset])
+
+  useEffect(() => {
+    function onStopSave() {
+      if (mode === 'simple') {
+        void stopSimple()
+      } else {
+        void resetPomodoro()
+      }
+    }
+    window.addEventListener('momentum:timer-stop-save', onStopSave)
+    return () => window.removeEventListener('momentum:timer-stop-save', onStopSave)
+  }, [mode])
+
   function saveConfig(patch: Partial<typeof config>) {
     const updated = { ...config, ...patch }
     setConfig(updated)
@@ -574,6 +658,7 @@ export function PomodoroTimer() {
       cyclesCompleted: 0,
       config: configRef.current,
       simplePausedOffset: simplePausedOffset,
+      notes: timerNotes,
     }
     saveTimerState(state)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
@@ -594,6 +679,7 @@ export function PomodoroTimer() {
       cyclesCompleted: 0,
       config: configRef.current,
       simplePausedOffset: elapsed,
+      notes: timerNotes,
     }
     saveTimerState(state)
     // Presence is managed centrally by the `isRunning` effect above.
@@ -613,6 +699,7 @@ export function PomodoroTimer() {
       cyclesCompleted: 0,
       config: configRef.current,
       simplePausedOffset: simplePausedOffset,
+      notes: timerNotes,
     }
     saveTimerState(state)
   }
@@ -672,7 +759,7 @@ export function PomodoroTimer() {
         endAt: now.toISOString(),
         durationMinutes,
         durationSeconds,
-        note: task ? `Task: ${task.title}` : undefined,
+        note: timerNotes || (task ? `Task: ${task.title}` : undefined),
         source: 'timer',
         createdAt: isoNow(),
         updatedAt: isoNow(),
@@ -681,6 +768,7 @@ export function PomodoroTimer() {
     lastSavedCumulativeRef.current = total
     simpleSafetyFiredRef.current = false
     setSafetyMessage('')
+    setTimerNotes('')
   }
 
   async function changeSubject(newSubjectId: string) {
@@ -766,6 +854,7 @@ export function PomodoroTimer() {
         phase: 'focus',
         cyclesCompleted: 0,
         config: configRef.current,
+        notes: timerNotes,
       }
       saveTimerState(state)
     } else {
@@ -780,6 +869,7 @@ export function PomodoroTimer() {
         phase: pomPhase,
         cyclesCompleted: pomCycles,
         config: configRef.current,
+        notes: timerNotes,
       }
       saveTimerState(state)
     }
@@ -805,6 +895,7 @@ export function PomodoroTimer() {
       phase: pomPhase,
       cyclesCompleted: pomCycles,
       config: configRef.current,
+      notes: timerNotes,
     }
     saveTimerState(state)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
@@ -822,6 +913,7 @@ export function PomodoroTimer() {
       phase: pomPhase,
       cyclesCompleted: pomCycles,
       config: configRef.current,
+      notes: timerNotes,
     }
     saveTimerState(state)
   }
@@ -851,7 +943,7 @@ export function PomodoroTimer() {
           endAt: end.toISOString(),
           durationMinutes: partialMinutes,
           durationSeconds: partialSeconds,
-          note: task ? `Task: ${task.title}` : undefined,
+          note: timerNotes || (task ? `Task: ${task.title}` : undefined),
           source: 'pomodoro',
           createdAt: isoNow(),
           updatedAt: isoNow(),
@@ -863,6 +955,20 @@ export function PomodoroTimer() {
     setPomPhase('focus')
     setPomCycles(0)
     setPomSeconds(config.focusMinutes * 60)
+    setTimerNotes('')
+  }
+  function discardSession() {
+    setSimpleStartedAt(null)
+    setSimplePausedOffset(0)
+    setSimpleSeconds(0)
+    setPomStartedAt(null)
+    setPomSeconds(config.focusMinutes * 60)
+    setPomPhase('focus')
+    setPomCycles(0)
+    setSafetyMessage('')
+    setShowDiscardConfirm(false)
+    clearPendingSession()
+    setTimerNotes('')
   }
 
   const currentSeconds = mode === 'simple' ? simpleSeconds : pomSeconds
@@ -1166,14 +1272,27 @@ export function PomodoroTimer() {
             )}
           </>
         ) : !(mode === 'simple' && (simpleStartedAt !== null || simplePausedOffset > 0)) ? (
-          <div className="text-sm text-slate-600 dark:text-slate-300">
-            Studying <span className="font-semibold">{getSubjectPathLabel(subjectId, data.subjects)}</span>
-            {myGroups.length > 0 && (
-              <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                {myGroups.length} group{myGroups.length === 1 ? '' : 's'}
-              </span>
-            )}
-          </div>
+          <>
+            <div className="text-sm text-slate-600 dark:text-slate-300">
+              Studying <span className="font-semibold">{getSubjectPathLabel(subjectId, data.subjects)}</span>
+              {myGroups.length > 0 && (
+                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                  {myGroups.length} group{myGroups.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+            <textarea
+              placeholder="What are you working on?"
+              value={timerNotes}
+              onChange={(e) => {
+                setTimerNotes(e.target.value)
+                const state = loadTimerState()
+                if (state) saveTimerState({ ...state, notes: e.target.value })
+              }}
+              className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
+              rows={2}
+            />
+          </>
         ) : null}
       </div>
 
@@ -1183,6 +1302,17 @@ export function PomodoroTimer() {
           <div className="text-center text-base font-medium text-slate-700 dark:text-slate-200">
             Studying <span className="font-semibold text-slate-900 dark:text-slate-50">{getSubjectPathLabel(subjectId, data.subjects) || 'Unknown'}</span>
           </div>
+          <textarea
+            placeholder="What are you working on?"
+            value={timerNotes}
+            onChange={(e) => {
+              setTimerNotes(e.target.value)
+              const state = loadTimerState()
+              if (state) saveTimerState({ ...state, notes: e.target.value })
+            }}
+            className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
+            rows={2}
+          />
           <div className="text-center text-6xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
             {fmt(simpleSeconds)}
           </div>
@@ -1211,6 +1341,20 @@ export function PomodoroTimer() {
               <Button variant="primary" onClick={resumeSimple}>Resume</Button>
             )}
             <Button variant="danger" onClick={stopSimple}>Stop & Save</Button>
+            {showDiscardConfirm ? (
+              <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm dark:border-red-800 dark:bg-red-900/30">
+                <span className="text-red-700 dark:text-red-300">Discard this session?</span>
+                <Button variant="danger" size="sm" onClick={discardSession}>Confirm</Button>
+                <Button variant="secondary" size="sm" onClick={() => setShowDiscardConfirm(false)}>Cancel</Button>
+              </div>
+            ) : (
+              <Button
+                variant="secondary"
+                onClick={() => setShowDiscardConfirm(true)}
+              >
+                Discard
+              </Button>
+            )}
           </div>
         </div>
       ) : (
@@ -1235,12 +1379,25 @@ export function PomodoroTimer() {
                 <Button variant="secondary" onClick={resetPomodoro}>
                   Reset
                 </Button>
+                {showDiscardConfirm ? (
+                  <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm dark:border-red-800 dark:bg-red-900/30">
+                    <span className="text-red-700 dark:text-red-300">Discard this session?</span>
+                    <Button variant="danger" size="sm" onClick={discardSession}>Confirm</Button>
+                    <Button variant="secondary" size="sm" onClick={() => setShowDiscardConfirm(false)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowDiscardConfirm(true)}
+                  >
+                    Discard
+                  </Button>
+                )}
               </>
             )}
           </div>
         </>
       )}
-
       {/* Change Subject — only when timer is running */}
       {isTimerActive && (
         <div className="mt-2 flex flex-col items-center gap-1">

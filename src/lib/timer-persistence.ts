@@ -79,6 +79,8 @@ export interface PersistedTimerState {
   simplePausedOffset: number
   subjectId?: string
   parentSubjectId?: string | null
+  /** Notes about what the user is studying. */
+  notes?: string
 }
 export function saveTimerState(state: PersistedTimerState): void {
   try {

@@ -12,12 +12,11 @@ export const DASHBOARD_WIDGETS_METADATA: { id: string; label: string }[] = [
   { id: 'today',        label: 'Today Overview' },
   { id: 'streak-goal',  label: 'Study Streak & Daily Goal' },
   { id: 'pomodoro',     label: 'Study Timer' },
-  { id: 'log-time',     label: 'Log Study Time' },
   { id: 'study-review', label: 'Study Review' },
   { id: 'calendar',     label: 'Study Calendar' },
   { id: 'recent',       label: 'Recent Sessions' },
   { id: 'today-schedule', label: "Today's Schedule" },
-  { id: 'auto-log',     label: 'Pending Auto-Logs' },
+  { id: 'assignments',  label: 'Upcoming Assignments' },
   { id: 'assignments',  label: 'Upcoming Assignments' },
 ]
 

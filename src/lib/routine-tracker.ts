@@ -4,7 +4,7 @@ import { v4 as uuid } from 'uuid'
 import { db } from '../db/app-db'
 import type { Session, RoutineLog, StreakDay, DayOfWeek } from '../domain/types'
 import { getSessionScope, isoNow, sessionLocalDate } from './utils'
-import { loadSettings } from '../features/settings/SettingsPage'
+import { loadSettings } from './settings-store'
 
 /**
  * For the given session, find all matching routines (today's day + same subject

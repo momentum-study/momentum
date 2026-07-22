@@ -4,7 +4,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db as firestore, isFirebaseConfigured } from './firebase'
 import { isoNow } from './utils'
-import type { Settings } from '../features/settings/SettingsPage'
+import type { Settings } from './settings-store'
 
 const CLOUD_COLLECTION = 'userSettings'
 

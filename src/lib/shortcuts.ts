@@ -27,6 +27,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'log-time', label: 'Log Study Time', keys: 'Cmd+L', category: 'global', description: 'Open the log study time modal' },
   { id: 'start-timer', label: 'Start/Pause Timer', keys: 'Cmd+Shift+T', category: 'global', description: 'Start or pause the study timer' },
   { id: 'stop-timer', label: 'Stop & Save Timer', keys: 'Cmd+Shift+S', category: 'global', description: 'Stop and save the current timer session' },
+  { id: 'discard-session', label: 'Discard Session', keys: 'Cmd+Shift+Del', category: 'global', description: 'Discard the current timer session without saving' },
   { id: 'undo', label: 'Undo', keys: 'Cmd+Z', category: 'global', description: 'Undo last action' },
   { id: 'redo', label: 'Redo', keys: 'Cmd+Shift+Z', category: 'global', description: 'Redo last undone action' },
   { id: 'help', label: 'Keyboard Shortcuts', keys: '?', category: 'global', description: 'Open keyboard shortcut help overlay', suppressInInput: true },

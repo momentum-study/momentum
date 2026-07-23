@@ -128,8 +128,7 @@ export function isInputFocused(): boolean {
  */
 export function eventToShortcutKey(e: KeyboardEvent): string {
   const parts: string[] = []
-  if (e.metaKey) parts.push('Cmd')
-  if (e.ctrlKey) parts.push('Ctrl')
+  if (e.metaKey || e.ctrlKey) parts.push('Cmd')
   // Don't add Shift for keys that already encode it (e.g. ? = Shift+/)
   if (e.shiftKey && e.key !== 'Shift' && e.key !== '?') parts.push('Shift')
   if (e.altKey && e.key !== 'Alt') parts.push('Alt')
@@ -144,7 +143,11 @@ export function eventToShortcutKey(e: KeyboardEvent): string {
   else if (key === 'Escape') parts.push('Esc')
   else if (key === ' ') parts.push('Space')
   else if (key === 'Enter') parts.push('Enter')
-  else if (key === '/') parts.push('/')
+  else if (key === '/') {
+    // No modifier + / = ? on US/UK keyboards (Shift+/ is just / in this context)
+    if (parts.length === 0) parts.push('?')
+    else parts.push('/')
+  }
   else if (key === '?') parts.push('?')
   else if (key.length === 1) parts.push(key.toUpperCase())
   else parts.push(key)

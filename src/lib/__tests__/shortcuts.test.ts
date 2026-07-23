@@ -19,10 +19,10 @@ describe('eventToShortcutKey', () => {
     expect(eventToShortcutKey(makeEvent({ metaKey: true, key: 'k' }))).toBe('Cmd+K')
   })
   it('converts Ctrl+K', () => {
-    expect(eventToShortcutKey(makeEvent({ ctrlKey: true, key: 'k' }))).toBe('Ctrl+K')
+    expect(eventToShortcutKey(makeEvent({ ctrlKey: true, key: 'k' }))).toBe('Cmd+K')
   })
   it('converts Ctrl+Shift+T', () => {
-    expect(eventToShortcutKey(makeEvent({ ctrlKey: true, shiftKey: true, key: 'T' }))).toBe('Ctrl+Shift+T')
+    expect(eventToShortcutKey(makeEvent({ ctrlKey: true, shiftKey: true, key: 'T' }))).toBe('Cmd+Shift+T')
   })
   it('converts Cmd+Shift+Z', () => {
     expect(eventToShortcutKey(makeEvent({ metaKey: true, shiftKey: true, key: 'Z' }))).toBe('Cmd+Shift+Z')

@@ -14,7 +14,7 @@ import { NumberInput } from '../../components/ui/NumberInput'
 import { Modal } from '../../components/ui/Modal'
 import { HoverCard } from '../../components/ui/HoverCard'
 import { useSwipe } from '../../lib/use-swipe'
-import { cn, formatMinutes, getSessionScope, isoNow, toLocalDateString } from '../../lib/utils'
+import { cn, formatMinutes, getSessionScope, getSubjectPathLabel, isoNow, toLocalDateString } from '../../lib/utils'
 import { loadSettings } from '../../lib/settings-store'
 import { useStreak } from '../../lib/use-streak'
 import { db } from '../../db/app-db'
@@ -132,7 +132,7 @@ export default function Dashboard() {
   const { data, isLoading, loadData } = useData()
   const { syncSession, syncSessionDelete } = useSessionSync()
   const { push } = useUndo()
-  const { visibleWidgets, setVisibleWidgets, widgetConfigs, setWidgetConfigs, setWidgetConfig, reorderWidgets, toggleWidgetSize } = useDashboardWidgets()
+  const { visibleWidgets, setVisibleWidgets, widgetConfigs, setWidgetConfigs, setWidgetConfig, setWidgetSize, reorderWidgets } = useDashboardWidgets()
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [logModalOpen, setLogModalOpen] = useState(false)
   const [recentLimit, setRecentLimit] = useState(10)
@@ -1170,7 +1170,7 @@ export default function Dashboard() {
             label,
             size,
             onRemove: () => removeWidgetWithUndo(id),
-            onToggleSize: () => toggleWidgetSize(id),
+            onSetSize: (s: 'small' | 'medium' | 'large') => setWidgetSize(id, s),
             onReorder: reorderWidgets,
             ...(id === 'calendar' || id === 'recent' ? { defaultOpen: false } : {}),
           } as const
@@ -1289,7 +1289,7 @@ export default function Dashboard() {
               <label className="label">Subject</label>
               <select className="input" value={logSubjectId} onChange={(e) => { const val = e.target.value; setLogSubjectId(val); setLogSubjectManuallySet(val !== ''); setLogProjectId(''); setLogTaskId('') }}>
                 <option value="">Select subject</option>
-                {data.subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {data.subjects.filter(s => !s.deletedAt).map((s) => <option key={s.id} value={s.id}>{getSubjectPathLabel(s.id, data.subjects)}</option>)}
               </select>
             </div>
             {logSubjectId && data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).length > 0 && (

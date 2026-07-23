@@ -77,6 +77,9 @@ export function useDashboardWidgets() {
     })
   }, [])
 
+  const setWidgetSize = useCallback((id: string, size: WidgetConfig['size']) => {
+    setWidgetConfigs(prev => ({ ...prev, [id]: { ...prev[id], size } }))
+  }, [])
   const toggleWidgetSize = useCallback((id: string) => {
     setWidgetConfigs(prev => {
       const current = prev[id].size
@@ -85,13 +88,14 @@ export function useDashboardWidgets() {
     })
   }, [])
 
-  return { 
-    visibleWidgets, 
-    setVisibleWidgets, 
-    widgetConfigs, 
+  return {
+    visibleWidgets,
+    setVisibleWidgets,
+    widgetConfigs,
     setWidgetConfigs,
-    setWidgetConfig, 
-    reorderWidgets, 
-    toggleWidgetSize 
+    setWidgetConfig,
+    setWidgetSize,
+    reorderWidgets,
+    toggleWidgetSize
   }
 }

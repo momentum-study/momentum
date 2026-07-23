@@ -9,7 +9,7 @@ interface DashboardWidgetProps {
   defaultOpen?: boolean
   onRemove?: () => void
   onReorder?: (fromId: string, toId: string) => void
-  onToggleSize?: () => void
+  onSetSize?: (size: 'small' | 'medium' | 'large') => void
   children: ReactNode
   className?: string
 }
@@ -17,11 +17,10 @@ interface DashboardWidgetProps {
 export function DashboardWidget({
   id,
   label,
-  size,
   defaultOpen = true,
   onRemove,
   onReorder,
-  onToggleSize,
+  onSetSize,
   children,
   className,
 }: DashboardWidgetProps) {
@@ -71,16 +70,6 @@ export function DashboardWidget({
       >
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 select-none">{label}</h3>
         <div className="flex items-center gap-1">
-          {onToggleSize && (
-            <button
-              onClick={onToggleSize}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-xs px-1"
-              aria-label={`Toggle size (${size})`}
-              title={`Size: ${size}`}
-            >
-              {size === 'small' ? '⬚' : size === 'medium' ? '▭' : '▣'}
-            </button>
-          )}
           <button
             onClick={() => setIsOpen((v) => !v)}
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
@@ -104,43 +93,31 @@ export function DashboardWidget({
         </div>
       </div>
       {isOpen && <div className="p-3">{children}</div>}
-      {onToggleSize && (
+      {onSetSize && (
         <div
-          className="absolute bottom-0 right-0 h-5 w-5 cursor-se-resize opacity-60 hover:opacity-100 bg-slate-200 dark:bg-slate-700 rounded-tl-md flex items-center justify-center"
+          className="absolute bottom-0 right-0 h-5 w-5 cursor-se-resize opacity-60 hover:opacity-100 bg-slate-200 dark:bg-slate-700 rounded-tl-md flex items-center justify-center z-10"
           onMouseDown={(e) => {
             e.preventDefault()
             e.stopPropagation()
             const grid = e.currentTarget.closest('.grid') as HTMLElement
             if (!grid) return
             const colWidth = grid.offsetWidth / 3
-            const startX = e.clientX
             const widget = e.currentTarget.closest('[data-widget-id]') as HTMLElement
             const cell = widget?.parentElement as HTMLElement
             if (!cell) return
-            const startWidth = cell.offsetWidth
-            const startCols = Math.max(1, Math.min(3, Math.round(startWidth / colWidth)))
 
             function onMove(ev: MouseEvent) {
-              const delta = ev.clientX - startX
-              const cols = Math.max(1, Math.min(3, Math.round((startWidth + delta) / colWidth)))
-              if (cell) {
-                cell.style.gridColumn = `span ${cols}`
-                cell.style.transition = 'none'
-              }
+              const cols = Math.max(1, Math.min(3, Math.round((ev.clientX - grid.getBoundingClientRect().left) / colWidth)))
+              cell.style.gridColumn = `span ${cols}`
             }
 
             function onUp(ev: MouseEvent) {
               document.removeEventListener('mousemove', onMove)
               document.removeEventListener('mouseup', onUp)
-              const delta = ev.clientX - startX
-              const cols = Math.max(1, Math.min(3, Math.round((startWidth + delta) / colWidth)))
-              if (cell) {
-                cell.style.gridColumn = ''
-                cell.style.transition = ''
-              }
-              if (cols !== startCols && onToggleSize) {
-                onToggleSize()
-              }
+              const cols = Math.max(1, Math.min(3, Math.round((ev.clientX - grid.getBoundingClientRect().left) / colWidth)))
+              cell.style.gridColumn = ''
+              const sizes: ('small' | 'medium' | 'large')[] = ['small', 'medium', 'large']
+              onSetSize?.(sizes[cols - 1])
             }
 
             document.addEventListener('mousemove', onMove)

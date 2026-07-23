@@ -341,8 +341,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
       }
     }
 
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    document.addEventListener('keyup', onKeyDown)
+    return () => document.removeEventListener('keyup', onKeyDown)
   }, [navigate, setSidebarOpen, toggleFocusMode])
 
   // Listen for momentum:help events from other components

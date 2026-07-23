@@ -105,7 +105,7 @@ export function DashboardWidget({
       {isOpen && <div className="p-3">{children}</div>}
       {onToggleSize && (
         <div
-          className="absolute bottom-0 right-0 h-3 w-3 cursor-se-resize opacity-30 hover:opacity-100"
+          className="absolute bottom-0 right-0 h-5 w-5 cursor-se-resize opacity-60 hover:opacity-100 bg-slate-200 dark:bg-slate-700 rounded-tl-md flex items-center justify-center"
           onMouseDown={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -143,7 +143,11 @@ export function DashboardWidget({
             document.addEventListener('mousemove', onMove)
             document.addEventListener('mouseup', onUp)
           }}
-        />
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-slate-500 dark:text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16l8-8M12 16l4-4M16 16l0 0" />
+          </svg>
+        </div>
       )}
     </div>
   )

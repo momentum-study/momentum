@@ -54,6 +54,7 @@ export function DashboardWidget({
   return (
     <div
       ref={dragRef}
+      data-widget-id={id}
       className={cn(
         'relative bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden',
         'transition-all duration-200 ease-in-out h-full',
@@ -114,15 +115,17 @@ export function DashboardWidget({
             const colWidth = grid.offsetWidth / 3
             const startX = e.clientX
             const widget = e.currentTarget.closest('[data-widget-id]') as HTMLElement
-            const startWidth = widget?.offsetWidth ?? 0
+            const cell = widget?.parentElement as HTMLElement
+            if (!cell) return
+            const startWidth = cell.offsetWidth
             const startCols = Math.max(1, Math.min(3, Math.round(startWidth / colWidth)))
 
             function onMove(ev: MouseEvent) {
               const delta = ev.clientX - startX
               const cols = Math.max(1, Math.min(3, Math.round((startWidth + delta) / colWidth)))
-              if (widget) {
-                widget.style.width = `${cols * colWidth}px`
-                widget.style.transition = 'none'
+              if (cell) {
+                cell.style.gridColumn = `span ${cols}`
+                cell.style.transition = 'none'
               }
             }
 
@@ -131,9 +134,9 @@ export function DashboardWidget({
               document.removeEventListener('mouseup', onUp)
               const delta = ev.clientX - startX
               const cols = Math.max(1, Math.min(3, Math.round((startWidth + delta) / colWidth)))
-              if (widget) {
-                widget.style.width = ''
-                widget.style.transition = ''
+              if (cell) {
+                cell.style.gridColumn = ''
+                cell.style.transition = ''
               }
               if (cols !== startCols && onToggleSize) {
                 onToggleSize()
@@ -145,7 +148,7 @@ export function DashboardWidget({
           }}
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-slate-500 dark:text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16l8-8M12 16l4-4M16 16l0 0" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 16l4-4M12 20l4-4M8 20l4-4" />
           </svg>
         </div>
       )}

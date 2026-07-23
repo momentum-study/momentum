@@ -5,7 +5,6 @@ import { cn } from '../../lib/utils'
 interface DashboardWidgetProps {
   id: string
   label: string
-  size: 'small' | 'medium' | 'large'
   defaultOpen?: boolean
   onRemove?: () => void
   onReorder?: (fromId: string, toId: string) => void
@@ -26,15 +25,17 @@ export function DashboardWidget({
 }: DashboardWidgetProps) {
   const dragRef = useRef<HTMLDivElement>(null)
   const [isOpen, setIsOpen] = useState(defaultOpen)
+  const [previewCols, setPreviewCols] = useState(0)
+  const [dragging, setDragging] = useState(false)
 
   const handleDragStart = (e: React.DragEvent<HTMLElement>) => {
     e.dataTransfer.setData('text/plain', id)
     e.dataTransfer.effectAllowed = 'move'
-    e.currentTarget.classList.add('opacity-50', 'border-dashed', 'border-2', 'border-primary-500')
+    setDragging(true)
   }
 
-  const handleDragEnd = (e: React.DragEvent<HTMLElement>) => {
-    e.currentTarget.classList.remove('opacity-50', 'border-dashed', 'border-2', 'border-primary-500')
+  const handleDragEnd = () => {
+    setDragging(false)
   }
 
   const handleDragOver = (e: React.DragEvent<HTMLElement>) => {
@@ -48,6 +49,7 @@ export function DashboardWidget({
     if (fromId && fromId !== id && onReorder) {
       onReorder(fromId, id)
     }
+    setDragging(false)
   }
 
   return (
@@ -55,8 +57,11 @@ export function DashboardWidget({
       ref={dragRef}
       data-widget-id={id}
       className={cn(
-        'relative bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden',
-        'transition-all duration-200 ease-in-out h-full',
+        'relative bg-white dark:bg-slate-800 rounded-lg shadow-sm border h-full',
+        'transition-all duration-150',
+        dragging
+          ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 opacity-60 scale-95'
+          : 'border-slate-200 dark:border-slate-700 opacity-100',
         className
       )}
     >
@@ -68,7 +73,12 @@ export function DashboardWidget({
         onDrop={handleDrop}
         className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700 cursor-grab active:cursor-grabbing"
       >
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 select-none">{label}</h3>
+        <div className="flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-300 dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+          </svg>
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 select-none">{label}</h3>
+        </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setIsOpen((v) => !v)}
@@ -94,40 +104,53 @@ export function DashboardWidget({
       </div>
       {isOpen && <div className="p-3">{children}</div>}
       {onSetSize && (
-        <div
-          className="absolute bottom-0 right-0 h-5 w-5 cursor-se-resize opacity-60 hover:opacity-100 bg-slate-200 dark:bg-slate-700 rounded-tl-md flex items-center justify-center z-10"
-          onMouseDown={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            const grid = e.currentTarget.closest('.grid') as HTMLElement
-            if (!grid) return
-            const colWidth = grid.offsetWidth / 3
-            const widget = e.currentTarget.closest('[data-widget-id]') as HTMLElement
-            const cell = widget?.parentElement as HTMLElement
-            if (!cell) return
+        <>
+          {/* Preview overlay — shows target size while dragging */}
+          {previewCols > 0 && (
+            <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-primary-400 rounded-lg bg-primary-500/10 z-20 flex items-center justify-center">
+              <span className="text-xs font-medium text-primary-600 dark:text-primary-400 bg-white/80 dark:bg-slate-800/80 px-2 py-1 rounded">
+                {previewCols === 1 ? '1 column' : previewCols === 2 ? '2 columns' : '3 columns'}
+              </span>
+            </div>
+          )}
+          {/* Resize handle */}
+          <div
+            className="absolute bottom-0 right-0 h-5 w-5 cursor-se-resize opacity-60 hover:opacity-100 bg-slate-200 dark:bg-slate-700 rounded-tl-md flex items-center justify-center z-10"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              const grid = e.currentTarget.closest('.grid') as HTMLElement
+              if (!grid) return
+              const colWidth = grid.offsetWidth / 3
+              const widget = e.currentTarget.closest('[data-widget-id]') as HTMLElement
+              const cell = widget?.parentElement as HTMLElement
+              if (!cell) return
 
-            function onMove(ev: MouseEvent) {
-              const cols = Math.max(1, Math.min(3, Math.round((ev.clientX - grid.getBoundingClientRect().left) / colWidth)))
-              cell.style.gridColumn = `span ${cols}`
-            }
+              function onMove(ev: MouseEvent) {
+                const cols = Math.max(1, Math.min(3, Math.round((ev.clientX - grid.getBoundingClientRect().left) / colWidth)))
+                cell.style.gridColumn = `span ${cols}`
+                setPreviewCols(cols)
+              }
 
-            function onUp(ev: MouseEvent) {
-              document.removeEventListener('mousemove', onMove)
-              document.removeEventListener('mouseup', onUp)
-              const cols = Math.max(1, Math.min(3, Math.round((ev.clientX - grid.getBoundingClientRect().left) / colWidth)))
-              cell.style.gridColumn = ''
-              const sizes: ('small' | 'medium' | 'large')[] = ['small', 'medium', 'large']
-              onSetSize?.(sizes[cols - 1])
-            }
+              function onUp(ev: MouseEvent) {
+                document.removeEventListener('mousemove', onMove)
+                document.removeEventListener('mouseup', onUp)
+                const cols = Math.max(1, Math.min(3, Math.round((ev.clientX - grid.getBoundingClientRect().left) / colWidth)))
+                cell.style.gridColumn = ''
+                const sizes: ('small' | 'medium' | 'large')[] = ['small', 'medium', 'large']
+                onSetSize?.(sizes[cols - 1])
+                setPreviewCols(0)
+              }
 
-            document.addEventListener('mousemove', onMove)
-            document.addEventListener('mouseup', onUp)
-          }}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-slate-500 dark:text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 16l4-4M12 20l4-4M8 20l4-4" />
-          </svg>
-        </div>
+              document.addEventListener('mousemove', onMove)
+              document.addEventListener('mouseup', onUp)
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-slate-500 dark:text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 16l4-4M12 20l4-4M8 20l4-4" />
+            </svg>
+          </div>
+        </>
       )}
     </div>
   )

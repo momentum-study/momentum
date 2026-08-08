@@ -1,0 +1,1 @@
+async function e(){return typeof Notification>"u"?!1:Notification.permission==="granted"?!0:Notification.permission==="denied"?!1:await Notification.requestPermission()==="granted"}function o(i,t,n){if(!(typeof Notification>"u")&&Notification.permission==="granted")try{new Notification(i,{body:t,icon:"/favicon.svg",tag:n})}catch{}}export{e as r,o as s};

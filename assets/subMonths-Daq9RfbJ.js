@@ -1,1 +1,0 @@
-import{a0 as c,Z as o}from"./index-DMa9-Y14.js";function f(e,s,n){const t=c(e,n==null?void 0:n.in);if(isNaN(s))return o(e,NaN);if(!s)return t;const a=t.getDate(),r=o(e,t.getTime());r.setMonth(t.getMonth()+s+1,0);const u=r.getDate();return a>=u?r:(t.setFullYear(r.getFullYear(),r.getMonth(),a),t)}function M(e,s,n){return f(e,-1,n)}export{f as a,M as s};

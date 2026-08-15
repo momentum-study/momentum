@@ -7,6 +7,22 @@ const COLOR_PRESETS = [
   '#14b8a6', '#f97316', '#84cc16', '#64748b',
 ]
 
+// Human-readable names for the preset swatches, shown on hover.
+export const COLOR_NAMES: Record<string, string> = {
+  '#6366f1': 'Indigo',
+  '#8b5cf6': 'Violet',
+  '#3b82f6': 'Blue',
+  '#06b6d4': 'Cyan',
+  '#10b981': 'Emerald',
+  '#f59e0b': 'Amber',
+  '#ef4444': 'Red',
+  '#ec4899': 'Pink',
+  '#14b8a6': 'Teal',
+  '#f97316': 'Orange',
+  '#84cc16': 'Lime',
+  '#64748b': 'Slate',
+}
+
 interface ColorPickerProps {
   value: string
   onChange: (color: string) => void
@@ -24,6 +40,7 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
           <button
             key={c}
             type="button"
+            title={COLOR_NAMES[c] ?? c}
             className={cn(
               'h-8 w-8 rounded-full transition-transform hover:scale-110',
               value === c && 'ring-2 ring-offset-2 ring-slate-400 dark:ring-slate-500'

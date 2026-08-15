@@ -614,6 +614,14 @@ export default function Dashboard() {
   const [viewModalOpen, setViewModalOpen] = useState(false)
   const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
   const [liveTimerSubjectId, setLiveTimerSubjectId] = useState<string | null>(null)
+  // Round live timer seconds down to whole minutes so the "Today by Subject"
+  // breakdown only recomputes once per minute instead of every second. The
+  // per-second precision is already shown in the "Today" total card above;
+  // re-rendering the whole breakdown each tick causes visible flicker.
+  const liveTimerWholeMinutes = useMemo(
+    () => Math.floor(liveTimerSeconds / 60) * 60,
+    [liveTimerSeconds]
+  )
   useEffect(() => {
     let interval: number | null = null
     let active = isTimerActive()
@@ -1029,7 +1037,7 @@ export default function Dashboard() {
                 subjects={data.subjects}
                 categories={data.categories}
                 todayStr={todayStr}
-                liveTimerSeconds={liveTimerSeconds}
+                liveTimerSeconds={liveTimerWholeMinutes}
                 liveTimerSubjectId={liveTimerSubjectId}
               />
             </div>
@@ -1870,12 +1878,15 @@ export default function Dashboard() {
         <div className="space-y-3">
           {(() => {
             const existingToday = todayAcademicMinutes
-            const previewTotal = existingToday + logDuration
             const target = settings.dailyTargetMinutes
-            const toGo = Math.max(0, target - previewTotal)
+            const afterLog = existingToday + logDuration
+            const toGo = Math.max(0, target - afterLog)
             return (
               <div className="text-sm text-slate-600 dark:text-slate-400">
-                Today: {formatMinutes(previewTotal)} (of {formatMinutes(target)} goal) — {toGo > 0 ? `${formatMinutes(toGo)} to go` : 'goal reached'}
+                Today: {formatMinutes(existingToday)} (of {formatMinutes(target)} goal){' '}
+                <span className="text-slate-400 dark:text-slate-500">
+                  — logging {formatMinutes(logDuration)}{afterLog >= target ? ' reaches goal' : ` (${formatMinutes(toGo)} to go after logging)`}
+                </span>
               </div>
             )
           })()}

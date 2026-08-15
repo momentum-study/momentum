@@ -47,7 +47,13 @@ export interface UseTimerTabLockResult {
 export function useTimerTabLock(isLocalRunning: boolean): UseTimerTabLockResult {
   const myTabIdRef = useRef<string>(shortId())
   const channelRef = useRef<BroadcastChannel | null>(null)
-  const lastPeerTsRef = useRef<number>(Date.now())
+  // Track when we last heard from a peer. Initialise to 0 so that on first
+  // render we treat any existing owner key as stale (no peer has actually
+  // broadcast yet). This prevents a stale `momentum-timer-owner` from a
+  // previous crashed/force-quit tab from making a fresh tab think another
+  // tab is the owner — the cause of the spurious "Timer is running in another
+  // tab — controls disabled here" message.
+  const lastPeerTsRef = useRef<number>(0)
   const lastPeerTabIdRef = useRef<string>('')
   const [peerTs, setPeerTs] = useState<number>(0)
   const [ownerId, setOwnerId] = useState<string | null>(() => {

@@ -239,9 +239,9 @@ export default function ProjectsPage() {
             weekStartDate.setDate(weekStartDate.getDate() - weekStartDate.getDay())
             weekStartDate.setHours(0, 0, 0, 0)
             const effectiveMinutes = project.dailyTargetMinutes
-              ? data.sessions.filter((s) => s.projectId === project.id && toLocalDateString(s.startAt) === todayStr).reduce((sum, s) => sum + s.durationMinutes, 0)
+              ? data.sessions.filter((s) => s.projectId === project.id && !s.deletedAt && toLocalDateString(s.startAt) === todayStr).reduce((sum, s) => sum + s.durationMinutes, 0)
               : project.weeklyTargetMinutes
-                ? data.sessions.filter((s) => s.projectId === project.id && new Date(s.startAt) >= weekStartDate).reduce((sum, s) => sum + s.durationMinutes, 0)
+                ? data.sessions.filter((s) => s.projectId === project.id && !s.deletedAt && new Date(s.startAt) >= weekStartDate).reduce((sum, s) => sum + s.durationMinutes, 0)
                 : totalMinutes
             const goalLabel = project.dailyTargetMinutes ? 'daily' : project.weeklyTargetMinutes ? 'weekly' : 'total'
             const goalPct = goalTarget > 0 ? Math.min(100, Math.round((effectiveMinutes / goalTarget) * 100)) : 0

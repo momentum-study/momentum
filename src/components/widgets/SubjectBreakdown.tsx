@@ -1,7 +1,7 @@
 // SubjectBreakdown — shows today's study time grouped by subject.
 // Used in the Dashboard "Today" widget.
 
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import type { Session, Subject, Category } from '../../domain/types'
 import { sessionLocalDate, getTopLevelSubject, getSessionScope } from '../../lib/utils'
 
@@ -14,7 +14,7 @@ interface SubjectBreakdownProps {
   liveTimerSubjectId?: string | null
 }
 
-export function SubjectBreakdown({
+export const SubjectBreakdown = memo(function SubjectBreakdown({
   sessions,
   subjects,
   categories,
@@ -83,4 +83,4 @@ export function SubjectBreakdown({
       ))}
     </div>
   )
-}
+})

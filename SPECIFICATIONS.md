@@ -17,7 +17,7 @@ If you are a new instance about to work on Momentum, do these in order:
 7. **Read `momentum/src/app/router.tsx`** — the real route table (the §Routes table below is derived from it).
 8. **Read `momentum/src/app/providers.tsx`** — the data provider contract (`useData()`).
 9. **Read `momentum/src/lib/shortcuts.ts`** — the shortcut registry. The registry is canonical; the keydown handler in `AppLayout.tsx` dispatches from it.
-10. **Read `momentum/src/lib/use-dashboard-widgets.ts`** — the dashboard widget layout system (grid + freeform).
+10. **Read `momentum/src/lib/use-dashboard-widgets.ts`** — the dashboard widget layout system (grid mode only; freeform removed in 72e50ec, pending re-implementation).
 
 **Grounding rule:** the code is the source of truth. If this file and the code disagree, the code wins — and you MUST update this file to match (see §Maintenance Protocol). Never trust a stale spec over the actual implementation.
 
@@ -61,6 +61,7 @@ npm run dev           # dev server on :5173
 |------|------|-------|
 | `/` | Dashboard | |
 | `/subjects` | SubjectsPage | Nav label "Focus Areas" |
+| `/subjects/:id` | SubjectDetailPage | Detail view: stats, trend, heatmap, sessions, projects, children |
 | `/projects` | ProjectsPage | |
 | `/projects/:id` | ProjectDetailPage | |
 | `/marks` | MarksPage | Hidden from nav by default |
@@ -184,10 +185,14 @@ type Settings = {
 - Recent sessions (last 8) with subject + duration + optional `focusTag` badge. **Multi-select checkboxes hidden by default; only shown after clicking "Select Sessions".**
 - Achievements: dismissible celebratory card.
 - **Widget position persistence**: toggling a widget off/on MUST restore its original position, not append to the end.
-- **Widget layout system**: `use-dashboard-widgets.ts` supports `grid` and `freeform` modes. Freeform uses `Box { id, x, y, width, height, order }`, `resolveOverlaps`, `cascadeFreeformLayout`, `placeWithoutOverlap`. Storage key `momentum-dashboard-layout`. Widgets registered via `widget-registry.ts` (`registerWidget`, `window.Momentum.registerWidget`).
+- **Widget layout system**: `use-dashboard-widgets.ts` is grid-mode only (freeform removed in `72e50ec`; pending fresh re-implementation). Storage key `momentum-dashboard-layout` may still hold stale freeform `Box` records in user browsers — these are ignored by the grid code and safe to clear via DevTools. Widgets registered via `widget-registry.ts` (`registerWidget`, `window.Momentum.registerWidget`).
 
-### 6.2 Subjects (CRUD) — `src/features/subjects/SubjectsPage.tsx`
-Grid of cards (color dot, name, category). Add/Edit modal: name, category select (with "+ New" link to /categories), ColorPicker, routine checkboxes, weekly target. Warning banner if no categories. Delete with confirmation. Case-insensitive search. **Supports subject hierarchy** (parent/child).
+### 6.2 Subjects (CRUD) — `src/features/subjects/SubjectsPage.tsx` + `SubjectDetailPage.tsx`
+**List page** (`/subjects`): compact clickable cards (color dot, name, category, routine days, Today/Week/Total minutes, sub-count). Clicking a card navigates to `/subjects/:id`. Children render as compact dashed rows (not full cards). Add/Edit modal: name, category select (with "+ New" link to /categories), ColorPicker, routine checkboxes, weekly target. Warning banner if no categories. Delete with confirmation. Case-insensitive search. **Supports subject hierarchy** (parent/child).
+
+**Detail page** (`/subjects/:id`): rich analytics for one subject. Header (back link, color dot, name, category badge, parent label, routine days, Edit/Delete). Quick stats row (Today / This Week / This Month / All Time + session count). Weekly trend bar chart (5 weeks, daily avg, +/−% vs last week). 90-day heatmap (subject-specific daily target = `weeklyTargetMinutes / 7`, else global). Recent sessions grouped by date (time, duration, note, source badge, project badge). Projects under the subject with total minutes. Sub-focus areas with total minutes. Delete cascades soft-delete to child subjects + their sessions, with undo.
+
+**Color tooltips**: `ColorPicker` swatches and subject color dots show the preset name on hover (`COLOR_NAMES` map in `ColorPicker.tsx`).
 
 ### 6.3 Projects (CRUD) — `src/features/projects/ProjectsPage.tsx` + `ProjectDetailPage.tsx`
 Grid with name, subject, description, goal minutes. Add/Edit modal. Delete with confirmation. Case-insensitive search by project + subject name. **Project totals MUST filter soft-deleted sessions** (H5).
@@ -368,9 +373,12 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 - **Symptom**: the auto-log widget lists sessions that were already dismissed.
 - **Fix**: filter to `pendingConfirmation === true` AND within 24h; add "Dismiss all". (M7.)
 
-### 10.23 Freeform widget layout
-- **Symptom**: widgets jump to wrong positions, or saved x/y get overwritten on first switch.
-- **Fix**: keep inline style until state commit lands (L9); don't overwrite saved x/y on first switch (L10). `resolveOverlaps`/`cascadeFreeformLayout`/`placeWithoutOverlap` in `use-dashboard-widgets.ts`.
+### 10.23 Freeform dashboard layout (REMOVED, plan to re-implement)
+- **Status**: The freeform layout mode was removed in commit `72e50ec` because of persistent overlap/teleport bugs (horizontal packing that ignored width ordering, no cascade-up on widget removal). The codebase no longer references `layoutMode`, `setMode`, `setWidgetPx`, `runCascade`, or any of the cascade layout helpers.
+- **Symptom (historical)**: widgets jumped to wrong positions, or saved x/y got overwritten on first switch.
+- **Fix (historical)**: keep inline style until state commit lands (L9); don't overwrite saved x/y on first switch (L10). `resolveOverlaps` / `cascadeFreeformLayout` / `placeWithoutOverlap` in `use-dashboard-widgets.ts`.
+- **Open follow-up**: re-implement freeform mode with a fresh design that handles horizontal packing, top-of-column cascade, and out-of-bounds clipping correctly. Do NOT try to restore the old code; write it from scratch against the new grid-only `use-dashboard-widgets.ts`.
+- **Stall trap**: "the freeform code is gone, just restore it from git history" → don't; the algorithm had fundamental flaws. Start from `use-dashboard-widgets.ts`'s grid spine.
 
 ### 10.24 Timer subject fallback
 - **Symptom**: QuickTimer silently falls back to `data.subjects[0]` when the configured subject was deleted.
@@ -396,9 +404,30 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 - **Symptom**: "Upcoming Assignments" appears twice in the widget customise list, or daily-goal copy repeats.
 - **Fix**: dedupe widget list (regression #5); don't repeat daily-goal text in the Streak & Goal widget (regression #7).
 
-### 10.30 Modal drag-to-dismiss
-- **Symptom**: dragging inside a modal dismisses it.
-- **Fix**: rely on parent's `onMouseDown` only; remove inner handler. (L6.)
+### 10.30 Modal drag-to-dismiss — FIXED
+- **Symptom (historical)**: dragging inside a modal dismissed it.
+- **Fix**: `Modal.tsx` tracks the mousedown target in `mouseDownTargetRef` and only closes on click when both the mousedown and the click landed on the dialog element itself. Drag-from-inside-to-outside is ignored. (L6.)
+
+### 10.31 Dashboard cross-column drag: React #185 ("Maximum update depth exceeded") — FIXED
+- **Symptom (historical)**: dragging a widget between columns triggered React error #185 in the console (desktop browser only; not reproducible headless because the test browser had no stale SW precache).
+- **Fix applied**: `src/main.tsx` reads `__BUILD_ID__` (defined in `vite.config.ts`) and, on every load, compares it against the value cached in `localStorage['momentum-build-id']`. On mismatch it stamps the new id and calls `window.location.reload()` before React renders, so the mismatched old JS bundle never gets a chance to mount alongside the new HTML.
+- **Stall trap**: "can't reproduce, must be a flake" → it WAS reproducible, just only with a stale SW precache. Do not add a try/catch around `useSortable`/`DndContext` to silence the error — that masks the real cause (a JS/HTML bundle mismatch).
+
+### 10.32 Log-time modal preview inflates the "Today" total
+- **Symptom**: opening the Log Study Time modal and typing a duration caused the inline "Today: Xm" line to increase in lockstep with the typed minutes, making it appear the widget's total had changed before the session was saved.
+- **Fix**: the modal now shows the **actual** persisted today total (computed from `data.sessions`, like the widget does), and a *separate* muted annotation that reads `— logging Nm (k to go after logging)` or `— logging Nm reaches goal`. The widget itself (which uses `liveTotalTodayMinutes` from `getTotalTodayMinutes(data.sessions, ...)`) was never affected by the modal state — the user-visible confusion was caused by the modal's projected text.
+- **Stall trap**: "the widget is reading from modal state" → no, the widget reads `data.sessions`; the modal's `logDuration` is local state. Look at the modal preview text, not the widget props.
+
+### 10.33 Subject picker omits children of deleted parents — FIXED
+- **Symptom (historical)**: `getSubjectPickerOptions` in `utils.ts` only iterated top-level subjects (`isTopLevelSubject` filter). Any child subject whose `parentSubjectId` pointed to a soft-deleted parent was silently dropped from every picker (QuickTimer, Activities, Marks, Projects, Dashboard log modal).
+- **Fix applied (L4)**: `getSubjectPickerOptions` now builds an `activeIds` Set and promotes any non-deleted subject whose parent is missing to the list of "parent" options, so it renders as a top-level entry. Its own children (if any) are still nested under it.
+- **Stall trap**: "the subject is invisible because its parent is deleted" → yes, but `getSubjectPathLabel` and `getTopLevelSubject` in `utils.ts` already fall back to showing just the child's own name when the parent is gone — that part was fine. The picker was the only place that silently dropped the subject entirely.
+
+### 10.34 Timer tab-lock spurious "running in another tab" — FIXED
+- **Symptom**: opening the app (or a fresh tab) with a timer already running showed "Timer is running in another tab — controls disabled here" even when no other tab was actually running the timer.
+- **Root cause**: `useTimerTabLock` initialised `lastPeerTsRef` to `Date.now()`, so on first render `peerStale` was `false` (0ms since "last heard"). A stale `momentum-timer-owner` key left by a previously crashed/force-quit tab (which never fired `beforeunload`) was therefore treated as a live peer → `isOwnedElsewhere = true`.
+- **Fix applied**: initialise `lastPeerTsRef` to `0` so an existing owner key is treated as stale until a real heartbeat arrives. The reclaim effect then clears/claims it. A genuinely live peer still broadcasts every 2s, so real multi-tab ownership is unaffected.
+- **Stall trap**: "the lock is broken, remove it" → don't. The lock prevents duplicate session saves across tabs. The bug was only the initial-staleness assumption, not the ownership mechanism.
 
 ---
 
@@ -422,26 +451,29 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 
 Tracked in `momentum/.bugfix-plan.md` (CRITICAL/HIGH/MEDIUM/LOW with fix sketches). When you close one, update that file AND this section.
 
+**Closed on 2026-08-15** (see .bugfix-plan.md for STATUS comments):
+- **L4** Subject picker now promotes children of soft-deleted parents to top-level options in `getSubjectPickerOptions` (utils.ts), so they are no longer silently dropped from pickers.
+- **L6** Modal drag-to-dismiss was already correct in `Modal.tsx` (`mouseDownTargetRef` + click-target check); verified + regression test exists.
+- **BUG-185** React #185 from stale SW precache — added a startup `__MOMENTUM_BUILD_ID__` guard in `main.tsx` that reloads when the cached build id differs, forcing a clean fetch of the new bundle.
+
 **Closed on 2026-08-13** (see .bugfix-plan.md for STATUS comments):
 - C2, H2, M1, M7, L3, L11, L12
 
 **Closed earlier** (no items re-opened):
 - C1, H1, H3, H4, H5, H6, M2, M4, M6, M8, M9, M10, M11, M12, L1, L2, L7, L8, L9, L10
 
-Open items (from bugfix-plan + spec):
-- **L4** Subject picker hides children whose parent is deleted (or filter them out cleanly)
-- **L6** Modal drag-to-dismiss: rely on parent's `onMouseDown` only; remove inner handler
+All items from the original bugfix plan are now closed. No open bugs remain.
 
 **Disputed / stale-spec:** L5 (project dropdown) — contradicts Regression Checklist §6; current behavior is correct.
+
 
 Feature-level open items (from earlier spec, still valid):
 - Right-click context actions where appropriate (partially implemented: Dashboard sessions/routines, not Calendar/Marks/Subjects)
 - Notifications audit: existing service works correctly for safety/phase/save; no bugs found
 - Merge Today + This Week + Today's Schedule widgets into one "Today" widget
-- Dashboard widgets: free resizing with min/max (freeform mode has this; grid mode still uses S/M/L presets)
 - Remove autolog widget from dashboard; convert to popup/modal (autolog widget is already orphaned — not in `DASHBOARD_WIDGETS_METADATA`, so it only renders if a user has it in their persisted layout)
 - Remove log-time widget (redundant) — already done; log-time is now a modal triggered by FAB / Cmd+L / N shortcut
-
+- Re-implement freeform dashboard layout (removed in commit 72e50ec; needs fresh design for horizontal packing + cascade-up on removal)
 **Closed feature items:** discard-session timer leak, focus tags in study timer, notes before start, activities count toward study time, activity confirmation banner — all already implemented (verified in code).
 
 ---
@@ -497,5 +529,6 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 ### 14.4 Version stamp
 When you make a substantive update, bump the `SPEC_VERSION` marker below so instances can tell at a glance whether the file is current.
-
-**SPEC_VERSION: 3** — 2026-08-13 bug-fix sweep: closed C2, H2, M1, M7, L3, L11, L12; updated §12 to reflect current state.
+**SPEC_VERSION: 7** — 2026-08-15 closed H5 (added `!s.deletedAt` to daily/weekly effectiveMinutes in ProjectsPage, lines 242/244); bugfix-plan audit confirmed all 12 remaining plan items are fixed; live browser test of SubjectDetailPage passed (stats, trend, heatmap, sessions list render correctly); guarded BUG-185 reload to `import.meta.env.PROD` (was infinite-looping in dev because `__BUILD_ID__` is `Date.now()` per-build).
+**SPEC_VERSION: 5** — 2026-08-15 closed L4 (subject picker orphaned children), L6 (verified modal drag-to-dismiss already correct), BUG-185 (build-id reload guard added in `main.tsx`); updated §12 pending bugs list; added §10.32 (log-modal projected total); §10.31 status flipped to "fixed".
+**SPEC_VERSION: 4** — 2026-08-13 added §10.23 (freeform removal status), §10.31 (React #185 / stale SW cache), BUG-185 to §12 open items, freeform re-implement to feature backlog; updated §0 step 10 and §6.1 layout line.

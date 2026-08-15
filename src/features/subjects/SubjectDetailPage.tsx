@@ -385,31 +385,38 @@ export default function SubjectDetailPage() {
               </div>
             )}
           </div>
-          <div className="flex items-end gap-1.5" style={{ height: 80 }}>
+          <div className="relative flex items-end gap-2" style={{ height: 180 }}>
+            {/* Target reference line */}
+            {dailyTarget > 0 && (
+              <div
+                className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-primary-400/60 dark:border-primary-400/40"
+                style={{ bottom: `${Math.min(100, (dailyTarget / trendMax) * 100)}%` }}
+              >
+                <span className="absolute -top-4 right-0 text-[10px] text-primary-500 dark:text-primary-400">
+                  target {formatMinutes(dailyTarget)}/day
+                </span>
+              </div>
+            )}
             {weeklyTrend.map((w) => {
               const avgPerDay = w.minutes / 7
               const h = trendMax > 0 ? Math.max(2, (avgPerDay / trendMax) * 100) : 2
               return (
-                <div key={w.label} className="flex flex-1 flex-col items-center gap-1">
-                  <span className="text-[10px] text-slate-500">{formatMinutes(w.minutes)}</span>
+                <div key={w.label} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
+                  <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">{formatMinutes(w.minutes)}</span>
                   <div
                     className={cn(
-                      'w-full rounded-sm transition-all',
-                      w.isCurrent ? 'bg-primary-500 dark:bg-primary-400' : 'bg-slate-200 dark:bg-slate-700'
+                      'w-full max-w-10 rounded-t-md transition-all',
+                      w.isCurrent
+                        ? 'bg-gradient-to-t from-primary-600 to-primary-400 dark:from-primary-700 dark:to-primary-400'
+                        : 'bg-slate-200 dark:bg-slate-700'
                     )}
-                    style={{ height: `${h}%`, minHeight: 2 }}
+                    style={{ height: `${h}%`, minHeight: 3 }}
                   />
-                  <span className="text-[10px] text-slate-400 truncate w-full text-center">{w.label}</span>
+                  <span className="w-full truncate text-center text-[10px] text-slate-400">{w.label}</span>
                 </div>
               )
             })}
           </div>
-          {/* Target line reference */}
-          {dailyTarget > 0 && (
-            <div className="mt-1 text-[10px] text-slate-400">
-              Daily target: {formatMinutes(dailyTarget)}
-            </div>
-          )}
         </div>
       </Card>
 

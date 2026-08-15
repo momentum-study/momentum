@@ -21,6 +21,22 @@ If you are a new instance about to work on Momentum, do these in order:
 
 **Grounding rule:** the code is the source of truth. If this file and the code disagree, the code wins — and you MUST update this file to match (see §Maintenance Protocol). Never trust a stale spec over the actual implementation.
 
+### 0.1 "Read specs for momentum" — response protocol
+
+When a user says "read specs" (or "read specs for momentum") to a new instance, the instance MUST:
+1. Read this file (`momentum/SPECIFICATIONS.md`) in full.
+2. Also read `momentum/README.md` and `momentum/.bugfix-plan.md` (the two companion docs).
+3. Reply with a **short confirmation message** — for example:
+
+   > "Spec read. Momentum — local-first React/TypeScript PWA, 19 routes, Dexie/IndexedDB, deployed at momentum-study.github.io/momentum/. SPEC_VERSION 7 (2026-08-15). All bugfix-plan items closed. No open bugs. What do you want to work on?"
+
+   The message should include: app description, current SPEC_VERSION, key facts the user is likely to care about right now (deployment status, open bugs, live URL), and an offer to proceed.
+4. **Do NOT** start any work, edit any file, or run any commands. Just confirm load and wait for the user's instruction.
+5. **Do NOT** summarise the entire spec. The user knows what's in it; they triggered the read to bootstrap the instance, not to receive a recap.
+6. **Do NOT** do a full audit or "check for bugs" unprompted. Stay idle until the user asks for something specific.
+
+If the user follows up with a feature request, fix request, or question, then proceed normally using the spec as ground truth.
+
 **Verification commands** (run from `momentum/`):
 ```bash
 npx tsc --noEmit      # type-check (MUST pass before any deploy)
@@ -529,6 +545,6 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 ### 14.4 Version stamp
 When you make a substantive update, bump the `SPEC_VERSION` marker below so instances can tell at a glance whether the file is current.
-**SPEC_VERSION: 7** — 2026-08-15 closed H5 (added `!s.deletedAt` to daily/weekly effectiveMinutes in ProjectsPage, lines 242/244); bugfix-plan audit confirmed all 12 remaining plan items are fixed; live browser test of SubjectDetailPage passed (stats, trend, heatmap, sessions list render correctly); guarded BUG-185 reload to `import.meta.env.PROD` (was infinite-looping in dev because `__BUILD_ID__` is `Date.now()` per-build).
+**SPEC_VERSION: 8** — 2026-08-15 added §0.1 "Read specs for momentum" response protocol: a new instance told to read specs must read this file + README + .bugfix-plan, then reply with a short confirmation (app description, SPEC_VERSION, live URL, open-bug status) and wait — no work, no full recap, no unprompted audit.
 **SPEC_VERSION: 5** — 2026-08-15 closed L4 (subject picker orphaned children), L6 (verified modal drag-to-dismiss already correct), BUG-185 (build-id reload guard added in `main.tsx`); updated §12 pending bugs list; added §10.32 (log-modal projected total); §10.31 status flipped to "fixed".
 **SPEC_VERSION: 4** — 2026-08-13 added §10.23 (freeform removal status), §10.31 (React #185 / stale SW cache), BUG-185 to §12 open items, freeform re-implement to feature backlog; updated §0 step 10 and §6.1 layout line.

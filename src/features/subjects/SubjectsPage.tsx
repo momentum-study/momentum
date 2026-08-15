@@ -377,63 +377,65 @@ export default function SubjectsPage() {
               .filter((s) => !filterCategory || s.categoryId === filterCategory)
               .sort((a, b) => a.name.localeCompare(b.name))
             return (
-              <div key={subject.id} className="space-y-2">
-                <Card>
+              <div key={subject.id} className="space-y-1.5">
+                <Card className="!p-2.5">
                   <button
                     type="button"
                     onClick={() => navigate(`/subjects/${subject.id}`)}
-                    className="flex w-full items-start gap-3 text-left"
+                    className="flex w-full items-center gap-2.5 text-left"
                   >
                     <div
-                      className="mt-1.5 h-3 w-3 shrink-0 rounded-full"
+                      className="h-3 w-3 shrink-0 rounded-full"
                       title={colorName(subject.color || DEFAULT_COLOR)}
                       style={{ backgroundColor: subject.color || DEFAULT_COLOR }}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium text-slate-800 dark:text-slate-100">
-                        {subject.name}
-                      </div>
-                      <div className="text-sm text-slate-500">
-                        {data.categories.find((c) => c.id === subject.categoryId)?.name ?? 'Uncategorized'}
+                      <div className="flex items-baseline gap-2">
+                        <span className="truncate font-medium text-slate-800 dark:text-slate-100">
+                          {subject.name}
+                        </span>
+                        <span className="shrink-0 text-xs text-slate-400">
+                          {data.categories.find((c) => c.id === subject.categoryId)?.name ?? 'Uncategorized'}
+                        </span>
                       </div>
                       {subject.routine && subject.routine.length > 0 && (
-                        <div className="mt-1 text-xs text-slate-400">
+                        <div className="text-[11px] text-slate-400">
                           {subject.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}
                         </div>
                       )}
-                      {stats && (
-                        <div className="mt-1.5 flex flex-wrap gap-2 text-xs text-slate-500">
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                            Today {formatMinutes(stats.today)}
-                          </span>
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                            Week {formatMinutes(stats.week)}
-                          </span>
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                            Total {formatMinutes(stats.total)}
-                          </span>
-                          {stats.childIds.length > 0 && (
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                              {stats.childIds.length} sub
-                            </span>
-                          )}
-                        </div>
-                      )}
                     </div>
-                    <div className="flex shrink-0 gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Button variant="secondary" size="sm" onClick={() => handleOpenModal(subject)}>Edit</Button>
-                      <Button variant="danger" size="sm" onClick={() => setDeleteSubject(subject)}>Delete</Button>
+                    {stats && (
+                      <div className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                          {formatMinutes(stats.today)}
+                        </span>
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                          {formatMinutes(stats.week)}
+                        </span>
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                          {formatMinutes(stats.total)}
+                        </span>
+                        {stats.childIds.length > 0 && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                            {stats.childIds.length} sub
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex shrink-0 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="sm" onClick={() => handleOpenModal(subject)} aria-label={`Edit ${subject.name}`}>✎</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleteSubject(subject)} aria-label={`Delete ${subject.name}`}>🗑</Button>
                     </div>
                   </button>
                 </Card>
                 {children.length > 0 && (
-                  <div className="ml-6 space-y-1">
+                  <div className="ml-5 space-y-px">
                     {children.map((child) => (
                       <button
                         key={child.id}
                         type="button"
                         onClick={() => navigate(`/subjects/${child.id}`)}
-                        className="flex w-full items-center gap-2 rounded border border-dashed border-slate-200 px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700"
+                        className="flex w-full items-center gap-1.5 rounded border border-dashed border-slate-200 px-2 py-1 text-xs text-left hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700"
                       >
                         <div
                           className="h-2.5 w-2.5 shrink-0 rounded-full"

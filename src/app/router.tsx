@@ -9,6 +9,7 @@ const SchedulePage = lazy(() => import('../features/schedule/SchedulePage'))
 
 const Dashboard = lazy(() => import('../features/dashboard/Dashboard'))
 const SubjectsPage = lazy(() => import('../features/subjects/SubjectsPage'))
+const SubjectDetailPage = lazy(() => import('../features/subjects/SubjectDetailPage'))
 const ProjectsPage = lazy(() => import('../features/projects/ProjectsPage'))
 const ProjectDetailPage = lazy(() => import('../features/projects/ProjectDetailPage'))
 const ReportsPage = lazy(() => import('../features/reports/ReportsPage'))
@@ -33,6 +34,7 @@ function RouterContent() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/subjects" element={<SubjectsPage />} />
+        <Route path="/subjects/:id" element={<SubjectDetailPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/marks" element={<MarksPage />} />
         <Route path="/habits" element={<HabitsPage />} />

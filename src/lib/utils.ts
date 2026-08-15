@@ -128,7 +128,13 @@ export function getSubjectPathLabel(subjectId: string | null | undefined, subjec
 
 export function getSubjectPickerOptions(subjects: Subject[]): { id: string; label: string; parentId: string | null }[] {
   const active = subjects.filter((s) => !s.deletedAt)
-  const parents = active.filter(isTopLevelSubject).sort((a, b) => a.name.localeCompare(b.name))
+  const activeIds = new Set(active.map((s) => s.id))
+  // A subject is a "parent" if it's top-level, OR its own parent is deleted
+  // (in which case it should be promoted to a top-level option so it isn't
+  // silently dropped from the picker — L4).
+  const parents = active
+    .filter((s) => isTopLevelSubject(s) || (s.parentSubjectId != null && !activeIds.has(s.parentSubjectId)))
+    .sort((a, b) => a.name.localeCompare(b.name))
   const options: { id: string; label: string; parentId: string | null }[] = []
   for (const parent of parents) {
     options.push({ id: parent.id, label: parent.name, parentId: null })

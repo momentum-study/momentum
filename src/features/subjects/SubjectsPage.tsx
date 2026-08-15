@@ -1,15 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { v4 as uuid } from 'uuid'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, isoNow, isTopLevelSubject, getChildSubjects } from '../../lib/utils'
+import { cn, isoNow, isTopLevelSubject, getChildSubjects, formatMinutes, toLocalDateString } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
-import { ColorPicker } from '../../components/ui/ColorPicker'
+import { ColorPicker, COLOR_NAMES } from '../../components/ui/ColorPicker'
 import { useUndo } from '../../lib/use-undo'
 import { sessionLocalDate } from '../../lib/utils'
 import { recomputeStreakDaysForDates } from '../../lib/routine-tracker'
@@ -17,6 +17,10 @@ import type { Subject } from '../../domain/types'
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DEFAULT_COLOR = '#6366f1'
+/** Tooltip text for a subject's color dot: preset name, or hex, or fallback. */
+function colorName(hex: string): string {
+  return COLOR_NAMES[hex] ?? (hex || 'Color')
+}
 
 interface SubjectFormData {
   name: string
@@ -53,6 +57,31 @@ export default function SubjectsPage() {
     .filter((s) => isTopLevelSubject(s) && (!filterCategory || s.categoryId === filterCategory))
     .sort((a, b) => a.name.localeCompare(b.name))
   const activeCategories = data.categories.filter((c) => !c.deletedAt)
+  // Per-subject summary: today, week, total minutes + child IDs (for compact child list)
+  const subjectStats = useMemo(() => {
+    const map: Record<string, { today: number; week: number; total: number; childIds: string[] }> = {}
+    const todayStr = toLocalDateString(new Date().toISOString())
+    const now = new Date()
+    const weekAgo = new Date(now.getTime() - 7 * 86400000)
+    // Seed all active top-level subjects
+    for (const s of activeSubjects) map[s.id] = { today: 0, week: 0, total: 0, childIds: [] }
+    // Collect child IDs
+    for (const s of activeSubjects) {
+      if (s.parentSubjectId && map[s.parentSubjectId]) {
+        map[s.parentSubjectId].childIds.push(s.id)
+      }
+    }
+    const allIds = new Set(Object.keys(map))
+    for (const s of data.sessions) {
+      if (s.deletedAt || !allIds.has(s.subjectId)) continue
+      const ds = toLocalDateString(s.startAt)
+      const entry = map[s.subjectId]
+      entry.total += s.durationMinutes
+      if (ds === todayStr) entry.today += s.durationMinutes
+      if (new Date(s.startAt) >= weekAgo) entry.week += s.durationMinutes
+    }
+    return map
+  }, [activeSubjects, data.sessions])
 
   const handleOpenModal = (subject: Subject | null = null) => {
     if (subject) {
@@ -341,17 +370,23 @@ export default function SubjectsPage() {
           description="Add a focus area to start tracking your study time."
         />
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {topLevelSubjects.map((subject) => {
+            const stats = subjectStats[subject.id]
             const children = getChildSubjects(subject.id, activeSubjects)
               .filter((s) => !filterCategory || s.categoryId === filterCategory)
               .sort((a, b) => a.name.localeCompare(b.name))
             return (
               <div key={subject.id} className="space-y-2">
                 <Card>
-                  <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/subjects/${subject.id}`)}
+                    className="flex w-full items-start gap-3 text-left"
+                  >
                     <div
                       className="mt-1.5 h-3 w-3 shrink-0 rounded-full"
+                      title={colorName(subject.color || DEFAULT_COLOR)}
                       style={{ backgroundColor: subject.color || DEFAULT_COLOR }}
                     />
                     <div className="min-w-0 flex-1">
@@ -366,31 +401,53 @@ export default function SubjectsPage() {
                           {subject.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}
                         </div>
                       )}
+                      {stats && (
+                        <div className="mt-1.5 flex flex-wrap gap-2 text-xs text-slate-500">
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                            Today {formatMinutes(stats.today)}
+                          </span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                            Week {formatMinutes(stats.week)}
+                          </span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                            Total {formatMinutes(stats.total)}
+                          </span>
+                          {stats.childIds.length > 0 && (
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                              {stats.childIds.length} sub
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex shrink-0 gap-1">
+                    <div className="flex shrink-0 gap-1" onClick={(e) => e.stopPropagation()}>
                       <Button variant="secondary" size="sm" onClick={() => handleOpenModal(subject)}>Edit</Button>
                       <Button variant="danger" size="sm" onClick={() => setDeleteSubject(subject)}>Delete</Button>
                     </div>
-                  </div>
+                  </button>
                 </Card>
-                {children.map((child) => (
-                  <Card key={child.id} className="ml-6 border-dashed">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1.5 h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: child.color || DEFAULT_COLOR }} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium text-slate-800 dark:text-slate-100">{child.name}</div>
-                        <div className="text-sm text-slate-500">Sub-focus area under {subject.name}</div>
-                        {child.routine && child.routine.length > 0 && (
-                          <div className="mt-1 text-xs text-slate-400">{child.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}</div>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 gap-1">
-                        <Button variant="secondary" size="sm" onClick={() => handleOpenModal(child)}>Edit</Button>
-                        <Button variant="danger" size="sm" onClick={() => setDeleteSubject(child)}>Delete</Button>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
+                {children.length > 0 && (
+                  <div className="ml-6 space-y-1">
+                    {children.map((child) => (
+                      <button
+                        key={child.id}
+                        type="button"
+                        onClick={() => navigate(`/subjects/${child.id}`)}
+                        className="flex w-full items-center gap-2 rounded border border-dashed border-slate-200 px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700"
+                      >
+                        <div
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          title={colorName(child.color || DEFAULT_COLOR)}
+                          style={{ backgroundColor: child.color || DEFAULT_COLOR }}
+                        />
+                        <span className="truncate font-medium text-slate-700 dark:text-slate-200">{child.name}</span>
+                        <span className="ml-auto shrink-0 text-xs text-slate-400">
+                          {formatMinutes(subjectStats[child.id]?.total ?? 0)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}

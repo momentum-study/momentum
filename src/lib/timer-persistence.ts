@@ -115,6 +115,35 @@ export function clearTimerState(): void {
   }
 }
 
+/** Per-subject last-used note. Used by the Study Timer to show a gray
+ *  "last note" hint in the textarea so users can re-use their most recent
+ *  note for that subject without re-typing it. Stored in localStorage and
+ *  scoped per subject so different subjects don't bleed notes into each other. */
+const LAST_NOTE_PREFIX = 'momentum-last-note-'
+
+export function getLastNote(subjectId: string): string | null {
+  if (!subjectId || typeof localStorage === 'undefined') return null
+  try {
+    return localStorage.getItem(LAST_NOTE_PREFIX + subjectId)
+  } catch {
+    return null
+  }
+}
+
+export function setLastNote(subjectId: string, note: string): void {
+  if (!subjectId || typeof localStorage === 'undefined') return
+  const trimmed = note.trim()
+  try {
+    if (trimmed) {
+      localStorage.setItem(LAST_NOTE_PREFIX + subjectId, trimmed)
+    } else {
+      localStorage.removeItem(LAST_NOTE_PREFIX + subjectId)
+    }
+  } catch {
+    // ignore
+  }
+}
+
 /** Get the start of the next day (midnight) in local time, as ms since epoch. */
 function getLocalMidnightMs(date: Date): number {
   const d = new Date(date)

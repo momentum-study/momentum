@@ -11,7 +11,7 @@ import { loadSettings, saveSettings } from '../../lib/settings-store'
 import type { Settings } from '../../lib/settings-store'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
-import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor, splitSessionAtMidnight } from '../../lib/timer-persistence'
+import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor, splitSessionAtMidnight, setLastNote, getLastNote } from '../../lib/timer-persistence'
 import { FocusTagSelector, type FocusTag } from '../ui/FocusTagSelector'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
 import { groupService } from '../../lib/group-service'
@@ -25,28 +25,53 @@ const SAFETY_LIMIT_HOURS = 12
 const SAFETY_LIMIT_SECONDS = SAFETY_LIMIT_HOURS * 3600
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
 
-/** Notes textarea + focus tag selector. Used in both idle and active timer states. */
+/** Notes textarea + focus tag selector. Used in both idle and active timer states.
+ *  When `notes` is empty and `lastNoteHint` is set, the textarea shows the hint
+ *  as gray text. Clicking/focusing activates it (sets it as the actual note); if
+ *  the user instead starts typing, they overwrite the hint with their own value. */
 function TimerNotesAndTag({
   notes,
   onNotesChange,
   focusTag,
   onFocusTagChange,
+  lastNoteHint,
 }: {
   notes: string
   onNotesChange: (v: string) => void
   focusTag: FocusTag | null
   onFocusTagChange: (tag: FocusTag | null) => void
+  lastNoteHint?: string | null
 }) {
+  const showHint = notes.length === 0 && !!lastNoteHint
+  function activateHint() {
+    if (showHint && lastNoteHint) onNotesChange(lastNoteHint)
+  }
   return (
     <div>
       <label className="label">What are you working on?</label>
-      <textarea
-        placeholder="Optional notes"
-        value={notes}
-        onChange={(e) => onNotesChange(e.target.value)}
-        className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
-        rows={2}
-      />
+      <div className="relative">
+        <textarea
+          placeholder={showHint ? undefined : 'Optional notes'}
+          value={notes}
+          onChange={(e) => onNotesChange(e.target.value)}
+          onFocus={activateHint}
+          onClick={activateHint}
+          className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
+          rows={2}
+        />
+        {showHint && lastNoteHint && (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Use last note"
+            onMouseDown={(e) => e.preventDefault() /* keep focus on the textarea */}
+            onClick={activateHint}
+            className="pointer-events-none absolute inset-0 flex items-start px-2 py-1 text-left text-sm italic text-slate-400 dark:text-slate-500"
+          >
+            <span className="line-clamp-2">{lastNoteHint}</span>
+          </button>
+        )}
+      </div>
       <FocusTagSelector value={focusTag} onChange={onFocusTagChange} />
     </div>
   )
@@ -874,7 +899,8 @@ export function PomodoroTimer() {
       void updateStreakDayForSession(s).catch(err => console.error('Failed to update streak day:', err))
       syncSession(s, subjectName) // Fire-and-forget sync
     }
-  }
+    if (session.note) setLastNote(session.subjectId, session.note)
+   }
 
   async function stopSimple() {
     setSimpleStartedAt(null)
@@ -1468,6 +1494,7 @@ export function PomodoroTimer() {
               }}
               focusTag={timerFocusTag}
               onFocusTagChange={setTimerFocusTag}
+              lastNoteHint={timerNotes ? null : getLastNote(subjectId)}
             />
             <div className="flex justify-center gap-2 mt-3">
               {isOwnedElsewhere ? (
@@ -1505,6 +1532,7 @@ export function PomodoroTimer() {
               }}
               focusTag={timerFocusTag}
               onFocusTagChange={setTimerFocusTag}
+              lastNoteHint={timerNotes ? null : getLastNote(subjectId)}
             />
             {mode === 'simple' && (
               <div className="text-center text-xs text-slate-500 dark:text-slate-400">

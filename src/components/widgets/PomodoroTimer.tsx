@@ -4,6 +4,7 @@ import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
+import { Modal } from '../ui/Modal'
 import { cn, isoNow, isTopLevelSubject, getChildSubjects, getSubjectPathLabel } from '../../lib/utils'
 import { formatTotalToday, getTotalTodayMinutes } from '../../lib/timer-utils'
 import { loadSettings, saveSettings } from '../../lib/settings-store'
@@ -111,6 +112,127 @@ function getPhaseDuration(phase: Phase, cfg?: { focusMinutes: number; breakMinut
   if (phase === 'focus') return c.focusMinutes * 60
   if (phase === 'shortBreak') return c.breakMinutes * 60
   return c.longBreakMinutes * 60
+}
+
+/** Inline form rendered inside the Pomodoro settings modal. Holds local
+ *  draft string state so fields can be temporarily empty while typing,
+ *  then commits parsed + clamped values to the parent on Save (pitfall
+ *  10.10). */
+function PomodoroConfigForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: { focusMinutes: number; breakMinutes: number; longBreakMinutes: number; cycles: number; soundEnabled: boolean }
+  onSave: (next: { focusMinutes: number; breakMinutes: number; longBreakMinutes: number; cycles: number; soundEnabled: boolean }) => void
+  onCancel: () => void
+}) {
+  const [focusStr, setFocusStr] = useState(String(initial.focusMinutes))
+  const [breakStr, setBreakStr] = useState(String(initial.breakMinutes))
+  const [longStr, setLongStr] = useState(String(initial.longBreakMinutes))
+  const [cyclesStr, setCyclesStr] = useState(String(initial.cycles))
+  const [soundEnabled, setSoundEnabled] = useState(initial.soundEnabled)
+
+  // Re-sync the draft when the parent resets `initial` (e.g. after Save
+  // commits and `config` updates, or external settings change while
+  // the modal is open).
+  useEffect(() => {
+    setFocusStr(String(initial.focusMinutes))
+    setBreakStr(String(initial.breakMinutes))
+    setLongStr(String(initial.longBreakMinutes))
+    setCyclesStr(String(initial.cycles))
+    setSoundEnabled(initial.soundEnabled)
+  }, [initial.focusMinutes, initial.breakMinutes, initial.longBreakMinutes, initial.cycles, initial.soundEnabled])
+
+  function parseNum(raw: string, min: number, max: number, fallback: number) {
+    if (raw.trim() === '') return fallback
+    const n = Number(raw)
+    if (Number.isNaN(n)) return fallback
+    return Math.min(max, Math.max(min, Math.round(n)))
+  }
+
+  const focus = parseNum(focusStr, 1, 999, initial.focusMinutes)
+  const brk = parseNum(breakStr, 1, 999, initial.breakMinutes)
+  const long = parseNum(longStr, 1, 999, initial.longBreakMinutes)
+  const cycles = parseNum(cyclesStr, 1, 12, initial.cycles)
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label htmlFor="pcfg-focus" className="label">Focus (min)</label>
+          <input
+            id="pcfg-focus"
+            type="number"
+            min={1}
+            value={focusStr}
+            onChange={(e) => setFocusStr(e.target.value)}
+            className="input w-full text-center"
+          />
+        </div>
+        <div>
+          <label htmlFor="pcfg-break" className="label">Short break (min)</label>
+          <input
+            id="pcfg-break"
+            type="number"
+            min={1}
+            value={breakStr}
+            onChange={(e) => setBreakStr(e.target.value)}
+            className="input w-full text-center"
+          />
+        </div>
+        <div>
+          <label htmlFor="pcfg-long" className="label">Long break (min)</label>
+          <input
+            id="pcfg-long"
+            type="number"
+            min={1}
+            value={longStr}
+            onChange={(e) => setLongStr(e.target.value)}
+            className="input w-full text-center"
+          />
+        </div>
+        <div>
+          <label htmlFor="pcfg-cycles" className="label">Cycles (× then long)</label>
+          <input
+            id="pcfg-cycles"
+            type="number"
+            min={1}
+            max={12}
+            value={cyclesStr}
+            onChange={(e) => setCyclesStr(e.target.value)}
+            className="input w-full text-center"
+          />
+        </div>
+      </div>
+      <div className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-600 dark:bg-slate-800/50">
+        <span className="text-sm text-slate-700 dark:text-slate-200">Phase-change sound</span>
+        <button
+          type="button"
+          onClick={() => setSoundEnabled(!soundEnabled)}
+          aria-pressed={soundEnabled}
+          className={cn(
+            'relative h-6 w-11 rounded-full transition-colors',
+            soundEnabled ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'
+          )}
+        >
+          <span
+            className={cn(
+              'absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
+              soundEnabled && 'translate-x-5'
+            )}
+          />
+        </button>
+      </div>
+      <p className="text-[10px] text-slate-400">
+        Also editable in <a href="/settings" className="underline">Settings</a>
+      </p>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button variant="primary" size="sm" onClick={() => onSave({ focusMinutes: focus, breakMinutes: brk, longBreakMinutes: long, cycles, soundEnabled })}>Save</Button>
+      </div>
+    </div>
+  )
 }
 
 
@@ -546,7 +668,7 @@ export function PomodoroTimer() {
   const isRunning = simpleStartedAt !== null || pomStartedAt !== null
   useEffect(() => {
     if (!isRunning) { document.title = 'Momentum'; return }
-    document.title = simpleStartedAt !== null ? `${fmt(simpleSeconds)} — Momentum` : `${fmt(pomSeconds)} — Momentum`
+    document.title = simpleStartedAt !== null ? `${fmt(simpleSeconds)} — Momentum` : `${fmt(pomElapsedSeconds)} — Momentum`
     return () => { document.title = 'Momentum' }
   }, [isRunning, simpleSeconds, pomSeconds])
 
@@ -596,8 +718,12 @@ export function PomodoroTimer() {
             if (subjectId || projectId) startSimple()
           }
         } else {
-          // Don't start if no subject selected (match UI disabled state)
-          if (subjectId || projectId) startPomodoro()
+          // Pomodoro: resume if paused (some time elapsed), else start fresh.
+          if (pomSeconds < pomGoalSeconds) {
+            resumePomodoro()
+          } else if (subjectId || projectId) {
+            startPomodoro()
+          }
         }
       }
     }
@@ -940,6 +1066,30 @@ export function PomodoroTimer() {
     saveTimerState(state)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
   }
+  function resumePomodoro() {
+    // Resume from the paused position: shift pomStartedAt backwards so that
+    // wall-clock elapsed (Date.now() − pomStartedAt) equals the previously
+    // accumulated elapsed seconds (goal − remaining).
+    setSafetyMessage('')
+    pomSafetyFiredRef.current = false
+    const elapsedSeconds = Math.max(0, pomGoalSeconds - pomSeconds)
+    const resumedAt = Date.now() - elapsedSeconds * 1000
+    setPomStartedAt(resumedAt)
+    const state: PersistedTimerState = {
+      mode: 'pomodoro',
+      subjectId: subjectId,
+      parentSubjectId: selectedParentId || null,
+      simplePausedOffset: 0,
+      startedAt: resumedAt,
+      phaseRemaining: pomSeconds,
+      phase: pomPhase,
+      cyclesCompleted: pomCycles,
+      config: configRef.current,
+      notes: timerNotes,
+      routineId: timerRoutineId || undefined,
+    }
+    saveTimerState(state)
+  }
   function pausePomodoro() {
     pomSafetyFiredRef.current = false
     setPomStartedAt(null)
@@ -958,40 +1108,44 @@ export function PomodoroTimer() {
     }
     saveTimerState(state)
   }
-
   async function resetPomodoro() {
     setSafetyMessage('')
     pomSafetyFiredRef.current = false
-    // Save partial focus session before discarding
-    if (pomPhase === 'focus' && pomStartedAt) {
-      const actualSubjId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
-      if (actualSubjId) {
-        const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
-        const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
-        const startMs = pomStartedAt
-        const elapsedMs = Date.now() - startMs
-        const partialSeconds = Math.max(10, Math.round(elapsedMs / 1000))
-        const partialMinutes = Math.max(1, Math.round(elapsedMs / 60000))
-        const start = new Date(startMs)
-        const end = new Date()
-        const startAt = start.toISOString()
-        saveSessionWithMidnightCheck({
-          id: sessionIdFor(startAt, actualSubjId, partialMinutes),
-          subjectId: actualSubjId,
-          projectId: project?.id ?? null,
-          assignmentId: task?.id ?? null,
-          routineId: timerRoutineId || null,
-          startAt,
-          endAt: end.toISOString(),
-          durationMinutes: partialMinutes,
-          durationSeconds: partialSeconds,
-          note: timerNotes || (task ? `Task: ${task.title}` : undefined),
-          source: 'pomodoro',
-          focusTag: timerFocusTag ?? undefined,
-          createdAt: isoNow(),
-          updatedAt: isoNow(),
-        })
-          clearPendingSession()
+    // Save partial focus session before discarding. Works whether the timer is
+    // running (elapsed from wall clock) or paused (elapsed = goal − remaining,
+    // since pomStartedAt is null while paused).
+    if (pomPhase === 'focus') {
+      const elapsedSeconds = pomStartedAt != null
+        ? Math.floor((Date.now() - pomStartedAt) / 1000)
+        : Math.max(0, pomGoalSeconds - pomSeconds)
+      if (elapsedSeconds >= 10) {
+        const actualSubjId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
+        if (actualSubjId) {
+          const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
+          const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
+          const end = new Date()
+          const start = new Date(end.getTime() - elapsedSeconds * 1000)
+          const partialSeconds = Math.max(10, elapsedSeconds)
+          const partialMinutes = Math.max(1, Math.round(elapsedSeconds / 60))
+          const startAt = start.toISOString()
+          saveSessionWithMidnightCheck({
+            id: sessionIdFor(startAt, actualSubjId, partialMinutes),
+            subjectId: actualSubjId,
+            projectId: project?.id ?? null,
+            assignmentId: task?.id ?? null,
+            routineId: timerRoutineId || null,
+            startAt,
+            endAt: end.toISOString(),
+            durationMinutes: partialMinutes,
+            durationSeconds: partialSeconds,
+            note: timerNotes || (task ? `Task: ${task.title}` : undefined),
+            source: 'pomodoro',
+            focusTag: timerFocusTag ?? undefined,
+            createdAt: isoNow(),
+            updatedAt: isoNow(),
+          })
+            clearPendingSession()
+        }
       }
     }
     setPomStartedAt(null)
@@ -1022,10 +1176,51 @@ export function PomodoroTimer() {
   }
 
   const currentSeconds = mode === 'simple' ? simpleSeconds : pomSeconds
+  // Pomodoro counts up: display elapsed within the current phase, with the
+  // phase goal shown alongside in brackets. Internally `pomSeconds` still
+  // tracks remaining (so the phase-transition effect that fires at 0 is
+  // untouched); we only swap the *rendered* value to (goal - remaining).
+  const pomGoalSeconds = mode === 'pomodoro' && settings.pomodoroEnabled
+    ? getPhaseDuration(pomPhase, config)
+    : 0
+  const pomElapsedSeconds = mode === 'pomodoro' && settings.pomodoroEnabled
+    ? Math.max(0, pomGoalSeconds - pomSeconds)
+    : 0
   const cycleLabel = mode === 'pomodoro' && settings.pomodoroEnabled
     ? `Cycle ${(pomCycles % config.cycles) + 1} of ${config.cycles}`
     : ''
   const isTimerActive = simpleStartedAt != null || pomStartedAt != null
+
+  // Re-read persisted settings whenever they change (same tab via the custom
+  // event dispatched from saveSettings(), cross-tab via the browser storage
+  // event). Without this, edits made on the Settings page appear stale on the
+  // dashboard until remount. While the timer is running, only `settings` is
+  // refreshed (so the cycle label and pomodoroEnabled toggle stay in sync);
+  // when idle, the local `config` is re-derived so the next phase uses the
+  // new durations.
+  useEffect(() => {
+    function onSettingsChanged() {
+      const latest = loadSettings()
+      setSettings(latest)
+      if (!isTimerActive) {
+        const nextConfig = {
+          focusMinutes: latest.pomodoroFocusMinutes,
+          breakMinutes: latest.pomodoroBreakMinutes,
+          longBreakMinutes: latest.pomodoroLongBreakMinutes,
+          cycles: latest.pomodoroCyclesBeforeLongBreak,
+          soundEnabled: latest.soundEnabled,
+        }
+        setConfig(nextConfig)
+      }
+    }
+    window.addEventListener('momentum:settings-changed', onSettingsChanged)
+    window.addEventListener('storage', onSettingsChanged)
+    return () => {
+      window.removeEventListener('momentum:settings-changed', onSettingsChanged)
+      window.removeEventListener('storage', onSettingsChanged)
+    }
+  }, [isTimerActive])
+
   // YPT-style: total minutes studied today (committed sessions + current live session)
   const totalTodayMinutes = useMemo(() => {
     return getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
@@ -1041,7 +1236,7 @@ export function PomodoroTimer() {
             <CardTitle>⏱️ Study Timer</CardTitle>
             {mode === 'pomodoro' && settings.pomodoroEnabled && (
               <button
-                onClick={() => { setShowConfig(!showConfig) }}
+                onClick={() => setShowConfig(true)}
                 className={cn(
                   'rounded p-1.5 text-sm transition-colors',
                   'text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300'
@@ -1054,89 +1249,18 @@ export function PomodoroTimer() {
           </div>
         </CardHeader>
       )}
-      {/* Config panel (gear) */}
-      {showConfig && mode === 'pomodoro' && !isTimerActive && (
-        <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-600 dark:bg-slate-800/50">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Focus</label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={String(config.focusMinutes)}
-                  onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ focusMinutes: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ focusMinutes: Math.max(1, n) }) }}
-                  className="input w-16 text-center"
-                />
-                <span className="text-xs text-slate-500">min</span>
-              </div>
-            </div>
-            <div>
-              <label className="label">Short Break</label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={String(config.breakMinutes)}
-                  onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ breakMinutes: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ breakMinutes: Math.max(1, n) }) }}
-                  className="input w-16 text-center"
-                />
-                <span className="text-xs text-slate-500">min</span>
-              </div>
-            </div>
-            <div>
-              <label className="label">Long Break</label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={String(config.longBreakMinutes)}
-                  onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ longBreakMinutes: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ longBreakMinutes: Math.max(1, n) }) }}
-                  className="input w-16 text-center"
-                />
-                <span className="text-xs text-slate-500">min</span>
-              </div>
-            </div>
-            <div>
-              <label className="label">Cycles</label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  max={12}
-                  value={String(config.cycles)}
-                  onChange={(e) => { const v = e.target.value; if (v === '') { saveConfig({ cycles: 1 }); return }; const n = Number(v); if (isNaN(n)) return; saveConfig({ cycles: Math.max(1, Math.min(12, n)) }) }}
-                  className="input w-16 text-center"
-                />
-                <span className="text-xs text-slate-500">× then long</span>
-              </div>
-            </div>
-          </div>
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-slate-500">Sound</span>
-            <button
-              onClick={() => saveConfig({ soundEnabled: !config.soundEnabled })}
-              className={cn(
-                'relative h-5 w-9 rounded-full transition-colors',
-                config.soundEnabled ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'
-              )}
-            >
-              <span
-                className={cn(
-                  'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
-                  config.soundEnabled && 'translate-x-4'
-                )}
-              />
-            </button>
-          </div>
-          <p className="mt-2 text-[10px] text-slate-400">
-            Also editable in <a href="/settings" className="underline">Settings</a>
-          </p>
-        </div>
+      {/* Config popup (gear) — values are committed only when Save is pressed */}
+      {showConfig && mode === 'pomodoro' && (
+        <Modal open={showConfig} onClose={() => setShowConfig(false)} title="Pomodoro Settings">
+          <PomodoroConfigForm
+            initial={config}
+            onSave={(next) => {
+              saveConfig(next)
+              setShowConfig(false)
+            }}
+            onCancel={() => setShowConfig(false)}
+          />
+        </Modal>
       )}
       {/* Mode toggle — only show when idle */}
       {!isTimerActive && (
@@ -1200,9 +1324,13 @@ export function PomodoroTimer() {
         </div>
       )}
 
-      {/* Timer display — always visible */}
+      {/* Timer display — always visible. Pomodoro counts up to the phase goal
+          shown in brackets; simple mode continues its existing count-up. */}
       <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
-        {fmt(currentSeconds)}
+        {mode === 'pomodoro' && settings.pomodoroEnabled ? fmt(pomElapsedSeconds) : fmt(currentSeconds)}
+        {mode === 'pomodoro' && settings.pomodoroEnabled && (
+          <span className="ml-2 text-2xl font-medium text-slate-400 dark:text-slate-500">({fmt(pomGoalSeconds)})</span>
+        )}
       </div>
 
       {/* Cycle dots + recent sessions — only when idle in pomodoro mode */}
@@ -1393,7 +1521,7 @@ export function PomodoroTimer() {
                   ) : pomStartedAt !== null ? (
                     <Button variant="secondary" onClick={pausePomodoro}>Pause</Button>
                   ) : (
-                    <Button variant="primary" onClick={mode === 'simple' ? resumeSimple : () => {}}>Resume</Button>
+                    <Button variant="primary" onClick={mode === 'simple' ? resumeSimple : resumePomodoro}>Resume</Button>
                   )}
                   <Button variant="danger" onClick={mode === 'simple' ? () => void stopSimple() : () => void resetPomodoro()}>
                     Stop &amp; Save

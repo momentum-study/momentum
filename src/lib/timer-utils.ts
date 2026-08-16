@@ -51,7 +51,12 @@ export function getLiveTimerSeconds(
         } else {
           total += state.simplePausedOffset
         }
-      } else if (state.mode === 'pomodoro' && state.startedAt !== null && state.phaseRemaining !== null) {
+      } else if (
+        state.mode === 'pomodoro'
+        && state.phase === 'focus'
+        && state.startedAt !== null
+        && state.phaseRemaining !== null
+      ) {
         const elapsed = Math.floor((Date.now() - state.startedAt) / 1000)
         total += Math.max(0, elapsed)
       }

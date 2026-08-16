@@ -54,6 +54,11 @@ export function loadSettings(): Settings {
 export function saveSettings(settings: Settings) {
   const toSave: Settings = { ...settings, settingsUpdatedAt: new Date().toISOString() }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
+  // Notify in-app listeners (e.g. the Study Timer) so they can re-read the
+  // new values immediately instead of waiting for a remount or cross-tab
+  // `storage` event. The timer previously only read settings at mount, so
+  // changes made on the Settings page were stale on the dashboard.
+  window.dispatchEvent(new CustomEvent('momentum:settings-changed'))
 }
 
 export function applyDarkMode(enabled: boolean) {

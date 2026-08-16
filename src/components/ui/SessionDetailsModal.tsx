@@ -152,6 +152,23 @@ export function SessionDetailsModal({
                 />
               </div>
               <div>
+                <label className="block text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">End</label>
+                <input
+                  type="datetime-local"
+                  className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-2 py-1.5 text-sm"
+                  value={form.endAt}
+                  onChange={(e) => {
+                    const newEnd = e.target.value
+                    const diffMs = new Date(newEnd).getTime() - new Date(form.startAt).getTime()
+                    const newMins = Math.max(0, Math.round(diffMs / 60_000))
+                    setForm({ ...form, endAt: newEnd, durationMinutes: newMins })
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
                 <label className="block text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">Duration (min)</label>
                 <input
                   type="number"

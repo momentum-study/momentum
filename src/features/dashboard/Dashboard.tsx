@@ -36,7 +36,37 @@ import { DndContext, PointerSensor, useSensor, useSensors, pointerWithin, useDro
 import { useSortable, SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { SessionDetailsModal } from '../../components/ui/SessionDetailsModal'
-function CustomizeRow({
+
+/**
+ * Human-readable "last session" line for the Today card.
+ * Long gaps (>7 days) collapse into a gentle re-engagement message rather
+ * than a discouraging duration, per spec.
+ */
+function formatLastSessionText(lastSession: { endAt: string } | null): string {
+  if (!lastSession) return 'No sessions yet — log your first one!'
+  const sinceMs = Date.now() - new Date(lastSession.endAt).getTime()
+  const MIN = 60_000
+  const HOUR = 60 * MIN
+  const DAY = 24 * HOUR
+  if (sinceMs < MIN) return 'Last session just now'
+  if (sinceMs < HOUR) {
+    const m = Math.floor(sinceMs / MIN)
+    return `Last session ${m}m ago`
+  }
+  if (sinceMs < DAY) {
+    const h = Math.floor(sinceMs / HOUR)
+    return `Last session ${h}h ago`
+  }
+  if (sinceMs < 7 * DAY) {
+    const days = Math.floor(sinceMs / DAY)
+    if (days === 1) return 'No sessions yet today — last was yesterday'
+    return `No sessions yet today — last was ${days}d ago`
+  }
+  // Long gap: gentle re-engagement, no specific duration shown.
+  return "It's been a while since your last session — let's get back to it!"
+}
+
+ function CustomizeRow({
   id, label, visible, cols, onToggle, onSetSize,
 }: {
   id: string
@@ -329,12 +359,18 @@ export default function Dashboard() {
     }
     return widgetConfigs[id]?.column ?? DEFAULT_CONFIGS[id]?.column ?? 0
   }
-  // Memoized per-column item lists. During a cross-column drag the active
-  // widget is injected into the target column's items so dnd-kit's
-  // useDerivedTransform animates the surrounding widgets (FLIP). The source
-  // column keeps its original items — the active widget stays visible at
-  // reduced opacity.
-  const columnItems = useMemo(() => {
+  // Per-column item lists. During a cross-column drag the active widget is
+  // injected into the target column's items so dnd-kit's useDerivedTransform
+  // animates the surrounding widgets (FLIP). The source column keeps its
+  // original items — the active widget stays visible at reduced opacity.
+  //
+  // The result is cached by content: `overColumn`/`overId` change on every
+  // pointer move during a drag, but for a same-column reorder the column
+  // membership is unchanged, so we return the previous arrays. Returning
+  // fresh array references would make SortableContext re-register its items
+  // and re-fire the 200ms transform transitions — the source of the flicker.
+  const columnItemsRef = useRef<string[][] | null>(null)
+  const columnItems = (() => {
     const cols: string[][] = [[], [], []]
     const fromCol = activeId != null ? (widgetConfigs[activeId]?.column ?? DEFAULT_CONFIGS[activeId]?.column ?? 0) : -1
     const isCrossCol = activeId != null && overColumn != null && fromCol !== overColumn
@@ -358,8 +394,17 @@ export default function Dashboard() {
       }
       target.splice(insertIdx, 0, activeId)
     }
+    const prev = columnItemsRef.current
+    if (
+      prev
+      && prev.length === cols.length
+      && prev.every((arr, i) => arr.length === cols[i].length && arr.every((id, j) => id === cols[i][j]))
+    ) {
+      return prev
+    }
+    columnItemsRef.current = cols
     return cols
-  }, [visibleWidgets, widgetConfigs, activeId, overColumn, overId])
+  })()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -890,6 +935,14 @@ export default function Dashboard() {
 
 
   if (isLoading) return <PageSpinner />
+  // ---- Last-session indicator (Today card) ----
+  const lastSession = academicSessions.length > 0
+    ? academicSessions.reduce((a, b) =>
+        new Date(b.endAt).getTime() > new Date(a.endAt).getTime() ? b : a
+      )
+    : null
+  const lastSessionText = formatLastSessionText(lastSession)
+
   const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
   const goalPct = Math.min(100, Math.round((liveTotalTodayMinutes / settings.dailyTargetMinutes) * 100))
   const allRecent = academicSessions
@@ -943,6 +996,9 @@ export default function Dashboard() {
                     ? <span className="text-green-600 dark:text-green-400 font-medium">Target reached! (+{formatMinutes(Math.round(liveTotalTodayMinutes - settings.dailyTargetMinutes))} over)</span>
                     : `${formatMinutes(Math.max(0, settings.dailyTargetMinutes - Math.round(liveTotalTodayMinutes)))} left of ${formatMinutes(settings.dailyTargetMinutes)} goal`
                   }
+                </div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {lastSessionText}
                 </div>
               </div>
               <div>

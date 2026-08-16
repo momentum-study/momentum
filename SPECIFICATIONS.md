@@ -193,7 +193,7 @@ type Settings = {
 ## 6. Features
 
 ### 6.1 Dashboard (`src/features/dashboard/Dashboard.tsx`)
-- Stat cards (Today, This Week, Total, Sessions) — all filtered to `!deletedAt`.
+- Stat cards (Today, This Week, Total, Sessions) — all filtered to `!deletedAt`. The Today card also shows a **last-session line** below the goal text via `formatLastSessionText()`: `Last session {Xh/Xm} ago` when recent, `No sessions yet today — last was {yesterday/Xd} ago` when ≥1 day but <7 days since the last session, a gentle re-engagement message (no specific duration) when the gap is ≥7 days, and `No sessions yet — log your first one!` when no sessions exist. Long gaps collapse to the gentle message to avoid discouraging the user.
 - Study streak with weekly fire view. **Best streak** persisted in localStorage `momentum-best-streak`; display = max(computed longest, persisted record).
 - Daily goal progress bar (default 120 min), green on completion.
 - Study timer widget (see §6.8).
@@ -226,11 +226,11 @@ Monthly grid with colored dots per type (homework=blue, assignment=purple, exam=
 Academic/General sections. Add/Edit modal with name, scope, ColorPicker. Shows subject count per category. Delete warns about orphaned subjects. **Category delete MUST cascade soft-delete to subjects, projects, sessions, assignments, routineLogs, activityLogs in a single Dexie transaction, and recompute streak days** (H4, H6).
 
 ### 6.8 Pomodoro / Study Timer — `src/components/widgets/PomodoroTimer.tsx`
-- **Two modes**: Simple (count-up) and Pomodoro (countdown focus/break). Pomodoro shown only when `settings.pomodoroEnabled`.
+- **Two modes**: Simple (count-up) and Pomodoro (count-up focus/break with the phase goal shown in brackets, e.g. `12:34 (25:00)`). Pomodoro shown only when `settings.pomodoroEnabled`.
 - **Simple mode**: Start → live elapsed → Stop & Save (logs a Session, min 1 min; <1 min rounds up to 1).
 - **Safety guard**: auto-pauses after 12h continuous running, notifies user.
 - **Background persistence**: timer MUST NOT pause on tab hide/focus loss. Uses wall-clock timestamps (`startedAt` in localStorage `momentum-timer-state`) and recomputes elapsed on resume. Crash-safety save on `visibilitychange`/`beforeunload` via `momentum-pending-session` (see `timer-persistence.ts`).
-- **Pomodoro mode**: focus → auto-logs Session; short/long break phases; Start/Pause/Reset; cycle indicator dots; sound on phase change (when `soundEnabled`); inline config gear (disabled while running).
+- **Pomodoro mode**: focus → auto-logs Session; short/long break phases; Start/Pause/Reset; cycle indicator dots; sound on phase change (when `soundEnabled`); config gear opens a **popup Modal** (`PomodoroConfigForm`) with a **Save** button — draft values commit to `config`/settings only on Save (disabled while running). The timer **counts up** to the phase goal: internally `pomSeconds` still tracks remaining (so the phase-transition effect that fires at 0 is unchanged), but the rendered value is `goal − remaining` with the goal in brackets.
 - **Subject selector**: required to start either mode.
 - **Focus tags**: optional `focused | distracted | group | revision`.
 - **Midnight split**: `splitSessionAtMidnight` in `timer-persistence.ts` splits a session crossing local midnight into two.
@@ -445,6 +445,18 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 - **Fix applied**: initialise `lastPeerTsRef` to `0` so an existing owner key is treated as stale until a real heartbeat arrives. The reclaim effect then clears/claims it. A genuinely live peer still broadcasts every 2s, so real multi-tab ownership is unaffected.
 - **Stall trap**: "the lock is broken, remove it" → don't. The lock prevents duplicate session saves across tabs. The bug was only the initial-staleness assumption, not the ownership mechanism.
 
+### 10.35 Pomodoro timer settings go stale — FIXED
+- **Symptom**: changing pomodoro focus / break / cycle / sound settings on the Settings page didn't update the Study Timer on the dashboard; the timer still showed the old cycle durations until a hard reload.
+- **Root cause**: `PomodoroTimer` read `loadSettings()` exactly once at mount and stored the result in `useState`. Settings written by `SettingsPage` after mount never reached this component, because `localStorage` updates inside the same tab do not fire the browser `storage` event.
+- **Fix applied**: `settings-store.saveSettings()` now dispatches a `momentum:settings-changed` `CustomEvent` after every write. `PomodoroTimer` listens to both that event and the cross-tab `storage` event; on either, it re-reads settings via `loadSettings()`, updates the local `settings` state, and (when idle) re-derives the local `config` so subsequent phases use the new durations. While running, only `settings` is refreshed (cycle label / `pomodoroEnabled` toggle) — durations don't change mid-session. The config was also moved out of an inline panel into a popup `Modal` (`PomodoroConfigForm`) with a Save button, so edits are committed only when the user confirms (the `PomodoroConfigForm` is the source of truth for the modal session and re-syncs from `initial` after each Save).
+- **Stall trap**: "just add `useEffect(loadSettings, [])` again" → that won't help; the issue is that no event triggered a re-read. The fix is a `saveSettings()` event + listener, not more reads at mount.
+
+### 10.36 Pomodoro break time counted toward study — FIXED
+- **Symptom**: while a pomodoro break timer was running, the dashboard "Today" total inflated by the break duration. After completing a 25-min focus + 5-min break cycle, the study total jumped by ~30 min instead of ~25 min.
+- **Root cause**: `getLiveTimerSeconds()` in `timer-utils.ts` added elapsed seconds for any active pomodoro timer regardless of phase. During a break the timer's `startedAt` was reset (break start), and `phaseRemaining` was non-null, so the break elapsed time was included in the academic "Today" total.
+- **Fix applied**: `getLiveTimerSeconds()` now checks `state.phase === 'focus'` before adding pomodoro elapsed seconds. During `shortBreak`/`longBreak` phases, it returns 0. The dashboard "Today" card, streak-at-risk indicator, and the GroupDetailPage live minutes all derive from this function, so all are now correct. Two regression tests (`shortBreak` + `longBreak`) added to `timer-utils.test.ts`.
+- **Stall trap**: "the timer saves a session when the break finishes" → no; the session is saved when the *focus* phase completes (phase-transition effect, `pomPhase === 'focus'`). Break-to-focus transitions don't write a session. The bug was only in the live counting, not in session persistence.
+
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -544,6 +556,16 @@ Update this file when you:
 The code is the source of truth. If this file and the code disagree, the code wins — and you MUST update this file to match. Never trust a stale spec over the actual implementation. When you read the code and find this file wrong, fix the file, don't work around the code.
 
 ### 14.4 Version stamp
+**SPEC_VERSION: 13** — 2026-08-16 pomodoro "Stop & Save" now works while paused: `resetPomodoro()` saves partial focus progress using `goal − remaining` when `pomStartedAt` is null, so users no longer have to discard a paused session to stop the timer; added `resumePomodoro()` so the Resume button and the timer-toggle keyboard shortcut actually resume the paused phase instead of resetting it (§6.8).
+
+**SPEC_VERSION: 12** — 2026-08-16 dashboard Today card gained a last-session line (`formatLastSessionText`, §6.1); fixed grid-reorder flicker by caching `columnItems` by content so SortableContext doesn't re-register on every drag-over; added an editable End field to the session edit modal (editing End recomputes Duration).
+
+**SPEC_VERSION: 11** — 2026-08-16 pomodoro timer now counts up instead of down: `pomSeconds` still tracks remaining internally (phase-transition effect unchanged), display shows `goal − remaining` with the goal in brackets (§6.8).
+
+**SPEC_VERSION: 10** — 2026-08-16 fixed pomodoro break time being counted toward study: `getLiveTimerSeconds()` now only counts elapsed seconds when `phase === 'focus'` (§10.36); added shortBreak/longBreak regression tests.
+
+**SPEC_VERSION: 9** — 2026-08-16 pomodoro config moved from inline panel to a popup `Modal` (`PomodoroConfigForm`) with a Save button (§6.8, §10.35); added `momentum:settings-changed` event dispatched by `settings-store.saveSettings()` so `PomodoroTimer` re-reads settings immediately instead of only at mount.
+
 When you make a substantive update, bump the `SPEC_VERSION` marker below so instances can tell at a glance whether the file is current.
 **SPEC_VERSION: 8** — 2026-08-15 added §0.1 "Read specs for momentum" response protocol: a new instance told to read specs must read this file + README + .bugfix-plan, then reply with a short confirmation (app description, SPEC_VERSION, live URL, open-bug status) and wait — no work, no full recap, no unprompted audit.
 **SPEC_VERSION: 5** — 2026-08-15 closed L4 (subject picker orphaned children), L6 (verified modal drag-to-dismiss already correct), BUG-185 (build-id reload guard added in `main.tsx`); updated §12 pending bugs list; added §10.32 (log-modal projected total); §10.31 status flipped to "fixed".

@@ -222,6 +222,35 @@ describe('getLiveTimerSeconds', () => {
     expect(getLiveTimerSeconds()).toBe(90)
   })
 
+  it('returns 0 for a running pomodoro during a break phase', () => {
+    const started = Date.now() - 90_000 // 90 seconds ago
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      mode: 'pomodoro',
+      startedAt: started,
+      phaseRemaining: 300,
+      phase: 'shortBreak',
+      cyclesCompleted: 1,
+      config: { focusMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, cycles: 4 },
+      simplePausedOffset: 0,
+    }))
+    // Break time must NOT count toward study time.
+    expect(getLiveTimerSeconds()).toBe(0)
+  })
+
+  it('returns 0 for a running pomodoro during a long break phase', () => {
+    const started = Date.now() - 60_000 // 60 seconds ago
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      mode: 'pomodoro',
+      startedAt: started,
+      phaseRemaining: 900,
+      phase: 'longBreak',
+      cyclesCompleted: 4,
+      config: { focusMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, cycles: 4 },
+      simplePausedOffset: 0,
+    }))
+    expect(getLiveTimerSeconds()).toBe(0)
+  })
+
   it('returns 0 for a stopped pomodoro (startedAt null)', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       mode: 'pomodoro',

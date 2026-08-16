@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
 import { TodayChecklist } from '../../components/widgets/TodayChecklist'
 import { ActivityConfirmationCard } from '../../components/widgets/ActivityConfirmationCard'
@@ -31,8 +31,8 @@ import type { Session, DayOfWeek, RoutineLog, Routine, Activity, ActivityLog } f
 import { Link, useNavigate } from 'react-router-dom'
 import { DashboardWidget } from '../../components/widgets/DashboardWidget'
 import { useDashboardWidgets, DASHBOARD_WIDGETS_METADATA, DEFAULT_CONFIGS, DEFAULT_WIDGET_IDS } from '../../lib/use-dashboard-widgets'
-import { activeWidgetSize$, resetDragState } from '../../lib/dashboard-drag-store'
-import { DndContext, PointerSensor, useSensor, useSensors, pointerWithin, type DragEndEvent, DragOverlay } from '@dnd-kit/core'
+import { overColumn$, overId$, activeWidgetSize$, subscribeDragHover, emitDragHover, resetDragState } from '../../lib/dashboard-drag-store'
+import { DndContext, PointerSensor, useSensor, useSensors, pointerWithin, useDroppable, type DragEndEvent, DragOverlay } from '@dnd-kit/core'
 import { useSortable, SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { SessionDetailsModal } from '../../components/ui/SessionDetailsModal'
@@ -67,14 +67,12 @@ function formatLastSessionText(lastSession: { endAt: string } | null): string {
 }
 
  function CustomizeRow({
-  id, label, visible, cols, onToggle, onSetSize,
+  id, label, visible, onToggle,
 }: {
   id: string
   label: string
   visible: boolean
-  cols: number
   onToggle: () => void
-  onSetSize: (cols: number) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const style: React.CSSProperties = {
@@ -111,12 +109,6 @@ function formatLastSessionText(lastSession: { endAt: string } | null): string {
         aria-label={visible ? `Hide ${label}` : `Show ${label}`}
       />
       <span className={cn('flex-1 text-sm min-w-[8rem]', !visible && 'text-slate-400 dark:text-slate-500')}>{label}</span>
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-slate-500">Width</span>
-        <button onClick={() => onSetSize(cols - 1)} disabled={cols <= 1} className="rounded px-1 text-xs border border-slate-300 disabled:opacity-30">−</button>
-        <span className="text-xs w-6 text-center">{cols}</span>
-        <button onClick={() => onSetSize(cols + 1)} disabled={cols >= 3} className="rounded px-1 text-xs border border-slate-300 disabled:opacity-30">+</button>
-      </div>
     </div>
   )
 }
@@ -125,6 +117,51 @@ function copySessionInfo(session: Session & { subjectName: string }) {
   const time = format(new Date(session.startAt), 'h:mm a')
   const src = session.source === 'timer' ? 'timer' : session.source === 'pomodoro' ? 'pomodoro' : session.source === 'quickLog' ? 'quick log' : session.source === 'autoRoutine' ? 'routine' : 'manual'
   navigator.clipboard.writeText(`${session.subjectName} · ${formatMinutes(session.durationMinutes)} · ${time} · ${src}`).catch(() => {})
+}
+// Bottom-of-column drop target. Rendered as a real droppable so users can
+// drop a widget at the end of any column (including empty columns). Only
+// visible while a drag is in progress.
+function ColumnFloor({ colIdx, active, isTarget }: { colIdx: number; active: boolean; isTarget: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `__col-floor__${colIdx}` })
+  const highlighted = active && (isTarget || isOver)
+  return (
+    <div
+      ref={setNodeRef}
+      data-floor-col={colIdx}
+      className={cn(
+        'flex h-10 items-center justify-center rounded-lg border-2 border-dashed text-xs font-medium transition-all',
+        highlighted
+          ? 'border-primary-400 bg-primary-100/70 text-primary-700 dark:border-primary-500 dark:bg-primary-900/30 dark:text-primary-300'
+          : active
+            ? 'border-slate-200 text-slate-300 dark:border-slate-700 dark:text-slate-600'
+            : 'border-transparent text-transparent'
+      )}
+    >
+      {active ? 'Drop at bottom' : ''}
+    </div>
+  )
+}
+// Ghost placeholder rendered in the target column during a cross-column drag.
+// It uses useSortable with the active ID so dnd-kit's strategy animates
+// surrounding widgets around it (useDerivedTransform handles the FLIP).
+// The DragOverlay shows the actual widget following the pointer.
+function GhostWidget({ id, label }: { id: string; label: string }) {
+  const { transform, transition } = useSortable({ id, disabled: { draggable: true } })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+  return (
+    <div
+      style={style}
+      className="rounded-lg border-2 border-dashed border-primary-400 bg-primary-50/30 dark:border-primary-500 dark:bg-primary-900/10 p-3"
+    >
+      <div className="flex items-center gap-2 text-sm font-medium text-primary-700 dark:text-primary-300">
+        <span className="inline-block h-2 w-2 rounded-full bg-primary-400" />
+        {label}
+      </div>
+    </div>
+  )
 }
 function SessionRow({
   session, project, menuSessionId, setMenuSessionId,
@@ -243,7 +280,7 @@ export default function Dashboard() {
   const { data, isLoading, loadData, mutate } = useData()
   const { syncSession, syncSessionDelete } = useSessionSync()
   const { push } = useUndo()
-  const { visibleWidgets, setVisibleWidgets, widgetConfigs, setWidgetConfigs, setWidgetSize } = useDashboardWidgets()
+  const { visibleWidgets, setVisibleWidgets, widgetConfigs, setWidgetConfigs, moveWidgetToColumn } = useDashboardWidgets()
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [logModalOpen, setLogModalOpen] = useState(false)
   const [recentLimit, setRecentLimit] = useState(10)
@@ -251,6 +288,13 @@ export default function Dashboard() {
   const [showCelebration, setShowCelebration] = useState(false)
   const navigate = useNavigate()
   const [activeId, setActiveId] = useState<string | null>(null)
+  // Composite snapshot forces a re-render when the hovered column, hovered
+  // widget, or measured active-widget size changes — all three drive the
+  // column layout. overColumn/overId read the ref directly so they stay
+  // typed (number | null) for the downstream checks.
+  useSyncExternalStore(subscribeDragHover, () => `${overColumn$.current}:${overId$.current ?? ''}:${activeWidgetSize$.current?.height ?? 0}`)
+  const overColumn = overColumn$.current
+  const overId = overId$.current
   // Viewport auto-scroll while dragging: when the pointer is near the top or
   // bottom edge of the window, scroll the page so the user can reach widgets
   // that are off-screen without releasing the drag. Also lets the user scroll
@@ -292,6 +336,67 @@ export default function Dashboard() {
   const [batchSubjectId, setBatchSubjectId] = useState('')
   const [showActivityConfirmation, setShowActivityConfirmation] = useState(true)
   const [fabOpen, setFabOpen] = useState(false)
+  // Synthetic droppable id appended to each column's SortableContext so users
+  // can drop a widget at the bottom of any column (including empty columns).
+  // The dnd-kit SortableContext requires all sortable ids to be unique within
+  // the DndContext, so we use a column-suffixed prefix instead of a single
+  // shared "floor" id.
+  const FLOOR_PREFIX = '__col-floor__'
+
+  // Resolve the column for any droppable id (real widget or floor).
+  function columnFor(id: string): number | null {
+    if (id.startsWith(FLOOR_PREFIX)) {
+      const n = Number(id.slice(FLOOR_PREFIX.length))
+      return Number.isFinite(n) ? n : null
+    }
+    return widgetConfigs[id]?.column ?? DEFAULT_CONFIGS[id]?.column ?? 0
+  }
+  // Per-column item lists. During a cross-column drag the active widget is
+  // injected into the target column's items so dnd-kit's useDerivedTransform
+  // animates the surrounding widgets (FLIP). The source column keeps its
+  // original items — the active widget stays visible at reduced opacity.
+  //
+  // The result is cached by content: `overColumn`/`overId` change on every
+  // pointer move during a drag, but for a same-column reorder the column
+  // membership is unchanged, so we return the previous arrays. Returning
+  // fresh array references would make SortableContext re-register its items
+  // and re-fire the 200ms transform transitions — the source of the flicker.
+  const columnItemsRef = useRef<string[][] | null>(null)
+  const columnItems = (() => {
+    const cols: string[][] = [[], [], []]
+    const fromCol = activeId != null ? (widgetConfigs[activeId]?.column ?? DEFAULT_CONFIGS[activeId]?.column ?? 0) : -1
+    const isCrossCol = activeId != null && overColumn != null && fromCol !== overColumn
+    for (const id of visibleWidgets) {
+      const c = widgetConfigs[id]?.column ?? DEFAULT_CONFIGS[id]?.column ?? 0
+      // Skip the active widget from its source column during cross-column
+      // drag — it will appear in the target column instead.
+      if (isCrossCol && id === activeId) continue
+      cols[c] = cols[c] || []
+      cols[c].push(id)
+    }
+    // Inject the active widget into the target column at the correct
+    // position so the strategy can animate surrounding widgets around it.
+    if (isCrossCol && overColumn != null) {
+      const isOverFloor = overId != null && overId.startsWith(FLOOR_PREFIX)
+      const target = cols[overColumn]
+      let insertIdx = target.length
+      if (overId && !isOverFloor) {
+        const i = target.indexOf(overId)
+        if (i !== -1) insertIdx = i
+      }
+      target.splice(insertIdx, 0, activeId)
+    }
+    const prev = columnItemsRef.current
+    if (
+      prev
+      && prev.length === cols.length
+      && prev.every((arr, i) => arr.length === cols[i].length && arr.every((id, j) => id === cols[i][j]))
+    ) {
+      return prev
+    }
+    columnItemsRef.current = cols
+    return cols
+  })()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -302,26 +407,49 @@ export default function Dashboard() {
     const fromWidget = fromId
     const toWidget = toId
 
-    // Flat grid: reorder the single visible list.
-    const fromIdx = visibleWidgets.indexOf(fromId)
-    const toIdx = visibleWidgets.indexOf(toId)
-    if (fromIdx === -1 || toIdx === -1) return
-    setVisibleWidgets(arrayMove(visibleWidgets, fromIdx, toIdx))
-    push({
-      description: 'Reordered widgets',
-      undo: async () => setVisibleWidgets(prev => {
-        const newIdx = prev.indexOf(toWidget)
-        const oldIdx = prev.indexOf(fromWidget)
-        if (newIdx === -1 || oldIdx === -1) return prev
-        return arrayMove(prev, newIdx, oldIdx)
-      }),
-      redo: async () => setVisibleWidgets(prev => {
-        const newIdx = prev.indexOf(fromWidget)
-        const oldIdx = prev.indexOf(toWidget)
-        if (newIdx === -1 || oldIdx === -1) return prev
-        return arrayMove(prev, newIdx, oldIdx)
-      }),
-    })
+    // Determine source / destination columns. Floor items are per-column
+    // synthetic droppables used to drop at the bottom (or into empty cols).
+    const isOverFloor = toId.startsWith(FLOOR_PREFIX)
+    const overCol = isOverFloor ? columnFor(toId)! : columnFor(toId) ?? 0
+    const fromCol = columnFor(fromId) ?? 0
+
+    if (fromCol !== overCol) {
+      // Cross-column drop: move the widget to the new column.
+      // Floor = append; otherwise insert before the over widget.
+      const beforeId = isOverFloor ? null : toId
+      moveWidgetToColumn(fromId, overCol, beforeId)
+      push({
+        description: `Moved widget to column ${overCol + 1}`,
+        undo: async () => moveWidgetToColumn(fromId, fromCol, null),
+        redo: async () => moveWidgetToColumn(fromId, overCol, beforeId),
+      })
+    } else if (isOverFloor) {
+      // Same-column floor drop → append.
+      moveWidgetToColumn(fromId, overCol, null)
+      push({
+        description: 'Moved widget to bottom',
+        undo: async () => moveWidgetToColumn(fromId, fromCol, null),
+        redo: async () => moveWidgetToColumn(fromId, overCol, null),
+      })
+    } else {
+      // Same-column reorder.
+      setVisibleWidgets(arrayMove(visibleWidgets, visibleWidgets.indexOf(fromId), visibleWidgets.indexOf(toId)))
+      push({
+        description: 'Reordered widgets',
+        undo: async () => setVisibleWidgets(prev => {
+          const newIdx = prev.indexOf(toWidget)
+          const oldIdx = prev.indexOf(fromWidget)
+          if (newIdx === -1 || oldIdx === -1) return prev
+          return arrayMove(prev, newIdx, oldIdx)
+        }),
+        redo: async () => setVisibleWidgets(prev => {
+          const newIdx = prev.indexOf(fromWidget)
+          const oldIdx = prev.indexOf(toWidget)
+          if (newIdx === -1 || oldIdx === -1) return prev
+          return arrayMove(prev, newIdx, oldIdx)
+        }),
+      })
+    }
   }
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
@@ -1637,7 +1765,19 @@ export default function Dashboard() {
           setActiveId(event.active.id as string)
           resetDragState()
         }}
-        onDragOver={() => {}}
+        onDragOver={(event) => {
+          const overId = event.over ? (event.over.id as string) : null
+          const prevCol = overColumn$.current
+          const prevId = overId$.current
+          overId$.current = overId
+          overColumn$.current = overId ? columnFor(overId) : null
+          // Emit when the column changes OR the hovered widget changes, so the
+          // target column's placeholder tracks the pointer. SortableContext
+          // items are memoized (columnItems), so re-rendering here does not
+          // re-register the context and does not re-trigger the transform
+          // transitions — that was the source of the earlier flicker.
+          if (overColumn$.current !== prevCol || overId$.current !== prevId) emitDragHover()
+        }}
         onDragEnd={(event) => {
           setActiveId(null)
           resetDragState()
@@ -1648,43 +1788,52 @@ export default function Dashboard() {
           resetDragState()
         }}
       >
-        <div className="grid grid-flow-dense grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 items-start">
-          <SortableContext
-            items={visibleWidgets}
-            strategy={verticalListSortingStrategy}
-          >
-            {visibleWidgets.map((id) => (
-              <div
-                key={id}
-                data-widget-column={widgetConfigs[id]?.column ?? DEFAULT_CONFIGS[id]?.column ?? 0}
-                className="break-inside-avoid"
-                style={{ gridColumn: `span ${Math.min(3, Math.max(1, widgetConfigs[id]?.cols ?? 1))}` }}
-              >
-                {id === activeId ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 items-start">
+            {[0, 1, 2].map((colIdx) => {
+              const colItems = columnItems[colIdx]
+              const isTarget = overColumn === colIdx
+              const isCrossCol = activeId != null && overColumn != null &&
+                (widgetConfigs[activeId]?.column ?? DEFAULT_CONFIGS[activeId]?.column ?? 0) !== overColumn
+              return (
+                <SortableContext
+                  key={colIdx}
+                  items={colItems}
+                  id={`col-${colIdx}`}
+                  strategy={verticalListSortingStrategy}
+                >
                   <div
-                    aria-hidden
-                    className="rounded-lg border-2 border-dashed border-primary-400 bg-primary-50/30 p-3 dark:border-primary-500 dark:bg-primary-900/10"
-                    style={{ minHeight: activeWidgetSize$.current?.height ?? 80 }}
+                    data-column={colIdx}
+                    data-testid={`dashboard-col-${colIdx}`}
+                    className={cn(
+                      'flex flex-col gap-2 min-h-[100px] rounded-lg p-1 transition-colors border-2',
+                      isTarget && activeId
+                        ? 'bg-primary-50/60 border-primary-400 dark:bg-primary-900/15 dark:border-primary-600'
+                        : 'border-transparent'
+                    )}
                   >
-                    <div className="flex items-center gap-2 text-sm font-medium text-primary-700 dark:text-primary-300">
-                      <span className="inline-block h-2 w-2 rounded-full bg-primary-400" />
-                      {DASHBOARD_WIDGETS_METADATA.find(w => w.id === id)?.label || id}
-                    </div>
+                    {colItems.map((id) => (
+                      <div key={id} className="break-inside-avoid">
+                        {id === activeId && isTarget && isCrossCol ? (
+                          <GhostWidget
+                            id={id}
+                            label={DASHBOARD_WIDGETS_METADATA.find(w => w.id === id)?.label || id}
+                          />
+                        ) : (
+                          <DashboardWidget
+                            id={id}
+                            label={DASHBOARD_WIDGETS_METADATA.find(w => w.id === id)?.label || id}
+                            onRemove={() => removeWidgetWithUndo(id)}
+                          >
+                            {renderWidget(id)}
+                          </DashboardWidget>
+                        )}
+                      </div>
+                    ))}
+                    <ColumnFloor colIdx={colIdx} active={!!activeId} isTarget={isTarget} />
                   </div>
-                ) : (
-                  <DashboardWidget
-                    id={id}
-                    label={DASHBOARD_WIDGETS_METADATA.find(w => w.id === id)?.label || id}
-                    cols={widgetConfigs[id]?.cols ?? 1}
-                    onResizeGrid={(c) => setWidgetSize(id, c, 1)}
-                    onRemove={() => removeWidgetWithUndo(id)}
-                  >
-                    {renderWidget(id)}
-                  </DashboardWidget>
-                )}
-              </div>
-            ))}
-          </SortableContext>
+                </SortableContext>
+              )
+            })}
         </div>
         <DragOverlay dropAnimation={null}>
           {activeId ? (() => {
@@ -1710,9 +1859,7 @@ export default function Dashboard() {
                     id={w.id}
                     label={w.label}
                     visible={isVisible}
-                    cols={widgetConfigs[w.id]?.cols ?? 1}
                     onToggle={() => toggleWidget(w.id)}
-                    onSetSize={(c) => setWidgetSize(w.id, c, 1)}
                   />
                 )
               })}

@@ -7,9 +7,6 @@ import { activeWidgetSize$, emitDragMeasure } from '../../lib/dashboard-drag-sto
 interface DashboardWidgetProps {
   id: string
   label: string
-  /** Grid-mode width in columns (1-3). */
-  cols: number
-  onResizeGrid?: (cols: number) => void
   onRemove?: () => void
   children: ReactNode
   className?: string
@@ -28,8 +25,6 @@ interface DashboardWidgetProps {
 export function DashboardWidget({
   id,
   label,
-  cols,
-  onResizeGrid,
   onRemove,
   children,
   className,
@@ -86,19 +81,6 @@ export function DashboardWidget({
           </h3>
         </div>
         <div className="flex items-center gap-1">
-          {onResizeGrid && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onResizeGrid(cols >= 3 ? 1 : cols + 1)
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="rounded p-1 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
-              title={`Width: ${cols} of 3`}
-            >
-              {cols}w
-            </button>
-          )}
           {onRemove && (
             <button
               onClick={(e) => {

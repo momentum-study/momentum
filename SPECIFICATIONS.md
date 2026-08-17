@@ -541,6 +541,7 @@ cd momentum && npx vitest run                 # tests
 - Canonical repo: `https://github.com/momentum-study/momentum.git` (remote `org`).
 - Canonical live URL: `https://momentum-study.github.io/momentum/`.
 - `origin` = personal fork `leightonmascord/momentum` (development only).
+- **Every commit to `org/main` SHOULD be deployed** to `https://momentum-study.github.io/momentum/`. Run `npm run deploy` after pushing — this is not optional for substantive changes.
 - Release flow:
   ```bash
   git push org main
@@ -579,7 +580,8 @@ Update this file when you:
 The code is the source of truth. If this file and the code disagree, the code wins — and you MUST update this file to match. Never trust a stale spec over the actual implementation. When you read the code and find this file wrong, fix the file, don't work around the code.
 
 ### 14.4 Version stamp
-**SPEC_VERSION: 18** — 2026-08-17 added §14.5 "Decision & Pitfall Logging (REQUIRED)" — instances MUST document logic pitfalls in §10 (Symptom → Fix → Stall trap format) and durable user decisions in §15; added §15 "User Decisions & Preferences" to record versioning, UI conventions, and feature-specific logic (categories → focus areas, "any subject" mode, streak freeze rule, etc.).
+
+**SPEC_VERSION: 19** — 2026-08-17 added §13 deployment requirement: every commit to `org/main` SHOULD be deployed to `https://momentum-study.github.io/momentum/`; `npm run deploy` is not optional for substantive changes.
   - *Dashboard*: removed "(+Xm over)" goal-exceeded text (§6.1); capped recent sessions at 3 with a "Show all (N)" modal containing a full scrollable table; streak info moved to an ⓘ button next to the streak number (HoverCard) instead of always-visible text.
   - *Habits*: deduplicated optimistic local log additions vs persisted logs (fixes "2 today" bug); tick mode is now explicit per habit kind (good: green ✓ "Done"; bad: red ✗ "Lapsed") with text labels; auto-archive at N days is gone — habit instead shows a "Have you finished it?" prompt that triggers "Mark as Done" (which sets `finishedAt`); archived habits are no longer auto-archived.
   - *Schedule*: catch-up prompts are now activities-only (routines removed from `catchUpItems`); activity auto-log duration falls back to `activity.duration` when `dayMinutes[dow]` is 0; Weekly Plan grid gained a daily-totals footer row + weekly-total label and rows are now auto-sorted by `scheduledTime`.

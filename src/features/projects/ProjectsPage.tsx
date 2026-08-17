@@ -5,6 +5,7 @@ import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, formatMinutes, isoNow, getSubjectPickerOptions, getSubjectPathLabel, toLocalDateString } from '../../lib/utils'
+import { ANY_SUBJECT_ID } from '../../lib/subject-mode'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -340,6 +341,7 @@ export default function ProjectsPage() {
               required
             >
               <option value="">Select a focus area</option>
+              <option value={ANY_SUBJECT_ID}>Any subject</option>
               {getSubjectPickerOptions(data.subjects).map((subject) => (
                 <option key={subject.id} value={subject.id}>
                   {subject.label}

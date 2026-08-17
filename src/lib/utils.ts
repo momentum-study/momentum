@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { isAnySubject } from './subject-mode'
 import type { Session, Subject, Category, Scope } from '../domain/types'
 import type { Table } from 'dexie'
 
@@ -118,7 +119,7 @@ export function getTopLevelSubject(subjectId: string, subjects: Subject[]): Subj
 }
 
 export function getSubjectPathLabel(subjectId: string | null | undefined, subjects: Subject[]): string {
-  if (!subjectId) return ''
+  if (isAnySubject(subjectId)) return 'Any subject'
   const subject = subjects.find((s) => s.id === subjectId && !s.deletedAt)
   if (!subject) return 'Unknown'
   if (!subject.parentSubjectId) return subject.name

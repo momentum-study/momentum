@@ -1,11 +1,12 @@
 import { useMemo, useState, useEffect } from 'react'
 import { v4 as uuid } from 'uuid'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, isoNow, isTopLevelSubject, getChildSubjects, formatMinutes, toLocalDateString } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { ContextMenu } from '../../components/ui/ContextMenu'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
@@ -13,7 +14,7 @@ import { ColorPicker, COLOR_NAMES } from '../../components/ui/ColorPicker'
 import { useUndo } from '../../lib/use-undo'
 import { sessionLocalDate } from '../../lib/utils'
 import { recomputeStreakDaysForDates } from '../../lib/routine-tracker'
-import type { Subject } from '../../domain/types'
+import type { Subject, Category } from '../../domain/types'
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DEFAULT_COLOR = '#6366f1'
@@ -51,6 +52,10 @@ export default function SubjectsPage() {
   const [formData, setFormData] = useState<SubjectFormData>(emptyFormData)
   const [isSaving, setIsSaving] = useState(false)
   const [filterCategory, setFilterCategory] = useState('')
+  const [showCategoriesModal, setShowCategoriesModal] = useState(false)
+  const [catForm, setCatForm] = useState<{ name: string; scope: Category['scope']; color: string }>({ name: '', scope: 'academic', color: DEFAULT_COLOR })
+  const [catSaving, setCatSaving] = useState(false)
+  const [catDeleteConfirm, setCatDeleteConfirm] = useState<Category | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const activeSubjects = data.subjects.filter((s) => !s.deletedAt)
   const topLevelSubjects = activeSubjects
@@ -258,6 +263,58 @@ export default function SubjectsPage() {
         : [...prev.routine, day].sort(),
     }))
   }
+  async function saveCategory() {
+    if (!catForm.name.trim()) return
+    setCatSaving(true)
+    try {
+      const now = isoNow()
+      const newCat: Category = {
+        id: uuid(),
+        name: catForm.name.trim(),
+        scope: catForm.scope,
+        color: catForm.color,
+        createdAt: now,
+        updatedAt: now,
+      }
+      await db.categories.add(newCat)
+      await loadData()
+      setCatForm({ name: '', scope: 'academic', color: DEFAULT_COLOR })
+    } finally {
+      setCatSaving(false)
+    }
+  }
+
+  async function deleteCategory(cat: Category) {
+    setCatSaving(true)
+    try {
+      const now = isoNow()
+      // Cascade soft-delete to subjects, projects, sessions, assignments,
+      // routineLogs, activityLogs in a single transaction (H4, H6).
+      const subjects = await db.subjects.where('categoryId').equals(cat.id).toArray()
+      const subjectIds = subjects.map((s) => s.id)
+      const projects = await db.projects.where('subjectId').anyOf(subjectIds).toArray()
+      const sessions = await db.sessions.where('subjectId').anyOf(subjectIds).toArray()
+      const assignments = await db.assignments.where('subjectId').anyOf(subjectIds).toArray()
+      await db.transaction(
+        'rw',
+        [db.categories, db.subjects, db.projects, db.sessions, db.assignments],
+        async () => {
+          await db.categories.update(cat.id, { deletedAt: now, updatedAt: now })
+          for (const s of subjects) await db.subjects.update(s.id, { deletedAt: now, updatedAt: now })
+          for (const p of projects) await db.projects.update(p.id, { deletedAt: now, updatedAt: now })
+          for (const s of sessions) await db.sessions.update(s.id, { deletedAt: now, updatedAt: now })
+          for (const a of assignments) await db.assignments.update(a.id, { deletedAt: now, updatedAt: now })
+        }
+      )
+      const affectedDates = new Set(sessions.map((s) => sessionLocalDate(s.startAt)))
+      await recomputeStreakDaysForDates(Array.from(affectedDates))
+      await loadData()
+      setCatDeleteConfirm(null)
+    } finally {
+      setCatSaving(false)
+    }
+  }
+
   // Keyboard shortcuts for subject management
   useEffect(() => {
     function onAdd() { handleOpenModal(null) }
@@ -321,7 +378,7 @@ export default function SubjectsPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Focus Areas</h2>
         <div className="flex gap-2">
-          <Link to="/categories" className="btn-secondary text-sm">Manage Categories</Link>
+          <Button variant="secondary" size="sm" onClick={() => setShowCategoriesModal(true)}>Manage Categories</Button>
           <Button variant="primary" size="sm" onClick={() => handleOpenModal()}>
             Add Focus Area
           </Button>
@@ -360,7 +417,9 @@ export default function SubjectsPage() {
 
       {activeCategories.length === 0 && (
         <div className="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-          No categories yet. <Link to="/categories" className="font-medium underline">Create a category</Link> first so you can assign focus areas.
+          No categories yet.{' '}
+          <button onClick={() => setShowCategoriesModal(true)} className="font-medium underline">Create a category</button>{' '}
+          first so you can assign focus areas.
         </div>
       )}
 
@@ -378,56 +437,62 @@ export default function SubjectsPage() {
               .sort((a, b) => a.name.localeCompare(b.name))
             return (
               <div key={subject.id} className="space-y-1.5">
-                <Card className="!p-2.5">
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/subjects/${subject.id}`)}
-                    className="flex w-full items-center gap-2.5 text-left"
-                  >
-                    <div
-                      className="h-3 w-3 shrink-0 rounded-full"
-                      title={colorName(subject.color || DEFAULT_COLOR)}
-                      style={{ backgroundColor: subject.color || DEFAULT_COLOR }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="truncate font-medium text-slate-800 dark:text-slate-100">
-                          {subject.name}
-                        </span>
-                        <span className="shrink-0 text-xs text-slate-400">
-                          {data.categories.find((c) => c.id === subject.categoryId)?.name ?? 'Uncategorized'}
-                        </span>
-                      </div>
-                      {subject.routine && subject.routine.length > 0 && (
-                        <div className="text-[11px] text-slate-400">
-                          {subject.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}
-                        </div>
-                      )}
-                    </div>
-                    {stats && (
-                      <div className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                          {formatMinutes(stats.today)}
-                        </span>
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                          {formatMinutes(stats.week)}
-                        </span>
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                          {formatMinutes(stats.total)}
-                        </span>
-                        {stats.childIds.length > 0 && (
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                            {stats.childIds.length} sub
+                <ContextMenu items={[
+                  { label: 'View', action: () => navigate(`/subjects/${subject.id}`) },
+                  { label: 'Edit', action: () => handleOpenModal(subject) },
+                  { label: 'Delete', action: () => setDeleteSubject(subject), danger: true },
+                ]}>
+                  <Card className="!p-2.5">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/subjects/${subject.id}`)}
+                      className="flex w-full items-center gap-2.5 text-left"
+                    >
+                      <div
+                        className="h-3 w-3 shrink-0 rounded-full"
+                        title={colorName(subject.color || DEFAULT_COLOR)}
+                        style={{ backgroundColor: subject.color || DEFAULT_COLOR }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="truncate font-medium text-slate-800 dark:text-slate-100">
+                            {subject.name}
                           </span>
+                          <span className="shrink-0 text-xs text-slate-400">
+                            {data.categories.find((c) => c.id === subject.categoryId)?.name ?? 'Uncategorized'}
+                          </span>
+                        </div>
+                        {subject.routine && subject.routine.length > 0 && (
+                          <div className="text-[11px] text-slate-400">
+                            {subject.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}
+                          </div>
                         )}
                       </div>
-                    )}
-                    <div className="flex shrink-0 gap-0.5" onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="sm" onClick={() => handleOpenModal(subject)} aria-label={`Edit ${subject.name}`}>✎</Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteSubject(subject)} aria-label={`Delete ${subject.name}`}>🗑</Button>
-                    </div>
-                  </button>
-                </Card>
+                      {stats && (
+                        <div className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                            {formatMinutes(stats.today)}
+                          </span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                            {formatMinutes(stats.week)}
+                          </span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                            {formatMinutes(stats.total)}
+                          </span>
+                          {stats.childIds.length > 0 && (
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                              {stats.childIds.length} sub
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex shrink-0 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="sm" onClick={() => handleOpenModal(subject)} aria-label={`Edit ${subject.name}`}>✎</Button>
+                        <Button variant="ghost" size="sm" onClick={() => setDeleteSubject(subject)} aria-label={`Delete ${subject.name}`}>🗑</Button>
+                      </div>
+                    </button>
+                  </Card>
+                </ContextMenu>
                 {children.length > 0 && (
                   <div className="ml-5 space-y-px">
                     {children.map((child) => (
@@ -487,7 +552,7 @@ export default function SubjectsPage() {
                   </option>
                 ))}
               </select>
-              <Link to="/categories" className="btn-secondary text-xs">+ New</Link>
+              <button type="button" onClick={() => { handleCloseModal(); setShowCategoriesModal(true) }} className="btn-secondary text-xs">+ New</button>
             </div>
           </div>
 
@@ -588,6 +653,66 @@ export default function SubjectsPage() {
             </Button>
             <Button variant="danger" onClick={handleDelete} disabled={isSaving}>
               {isSaving ? 'Deleting...' : 'Delete'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Manage Categories Modal (formerly a separate /categories page) */}
+      <Modal open={showCategoriesModal} onClose={() => setShowCategoriesModal(false)} title="Manage Categories" className="max-w-xl">
+        <div className="space-y-4">
+          <div className="rounded-md border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-700 max-h-64 overflow-y-auto">
+            {activeCategories.length === 0 && (
+              <p className="text-sm text-slate-500 p-3">No categories yet. Add one below.</p>
+            )}
+            {activeCategories.map((cat) => (
+              <div key={cat.id} className="flex items-center gap-2 p-2">
+                <div className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: cat.color }} />
+                <span className="flex-1 truncate text-sm text-slate-700 dark:text-slate-200">{cat.name}</span>
+                <span className="text-xs text-slate-400">{cat.scope === 'academic' ? 'Academic' : 'General'}</span>
+                <Button size="sm" variant="danger" onClick={() => setCatDeleteConfirm(cat)}>Delete</Button>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-md border border-slate-200 p-3 dark:border-slate-700 space-y-3">
+            <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100">Add category</h3>
+            <div className="grid grid-cols-3 gap-2">
+              <input
+                type="text"
+                placeholder="Name"
+                className="input col-span-2"
+                value={catForm.name}
+                onChange={(e) => setCatForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
+              <select
+                className="input"
+                value={catForm.scope}
+                onChange={(e) => setCatForm((prev) => ({ ...prev, scope: e.target.value as Category['scope'] }))}
+              >
+                <option value="academic">Academic</option>
+                <option value="nonAcademic">General</option>
+              </select>
+            </div>
+            <ColorPicker value={catForm.color} onChange={(c) => setCatForm((prev) => ({ ...prev, color: c }))} />
+            <div className="flex justify-end">
+              <Button variant="primary" size="sm" onClick={saveCategory} disabled={catSaving || !catForm.name.trim()}>
+                {catSaving ? 'Adding…' : 'Add Category'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!catDeleteConfirm} onClose={() => setCatDeleteConfirm(null)} title="Delete Category">
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Delete <span className="font-semibold">{catDeleteConfirm?.name}</span>?
+            All focus areas in this category and their sessions will be soft-deleted (and recoverable via Undo).
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setCatDeleteConfirm(null)}>Cancel</Button>
+            <Button variant="danger" onClick={() => catDeleteConfirm && deleteCategory(catDeleteConfirm)} disabled={catSaving}>
+              {catSaving ? 'Deleting…' : 'Delete'}
             </Button>
           </div>
         </div>

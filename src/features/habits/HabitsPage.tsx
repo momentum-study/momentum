@@ -13,6 +13,7 @@ import { ColorPicker } from '../../components/ui/ColorPicker'
 import { v4 as uuid } from 'uuid'
 import { Collapsible } from '../../components/ui/Collapsible'
 import type { Habit, HabitLog } from '../../domain/types'
+import { ContextMenu } from '../../components/ui/ContextMenu'
 
 const DEFAULT_COLOR = '#6366f1'
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -26,12 +27,15 @@ export default function HabitsPage() {
   // here instantly so the UI updates before loadData() finishes.
   const [localLogAdditions, setLocalLogAdditions] = useState<HabitLog[]>([])
   const [localLogDeletions, setLocalLogDeletions] = useState<Set<string>>(new Set())
-  const effectiveHabitLogs = useMemo(
-    () => data.habitLogs
-      .filter((l) => !l.deletedAt && !localLogDeletions.has(l.id))
-      .concat(localLogAdditions),
-    [data.habitLogs, localLogAdditions, localLogDeletions],
-  )
+  // Dedupe: filter out local additions that have already been persisted to the DB.
+  // Without this, localLogAdditions can double-count with data.habitLogs after a log
+  // gets persisted but before localLogAdditions is cleared.
+  const effectiveHabitLogs = useMemo(() => {
+    const persisted = data.habitLogs.filter((l) => !l.deletedAt && !localLogDeletions.has(l.id))
+    const localIds = new Set(localLogAdditions.map((l) => l.id))
+    const persistedMinusLocal = persisted.filter((l) => !localIds.has(l.id))
+    return persistedMinusLocal.concat(localLogAdditions)
+  }, [data.habitLogs, localLogAdditions, localLogDeletions])
   // Debounce guard for quickLogToday: prevents double-click race conditions
   // when toggling tick-mode habits.
   const quickLogInFlightRef = useRef<Set<string>>(new Set())
@@ -506,103 +510,112 @@ export default function HabitsPage() {
       ? (streak > 0 ? `✓ ${streak} day streak of avoiding` : 'No streak yet')
       : (streak > 0 ? `🔥 ${streak} day streak` : 'No streak yet')
     return (
-      <Card
-        className={cn('cursor-pointer transition-shadow hover:shadow-md', selectedId === habit.id && 'ring-2 ring-primary-500')}
-        onClick={() => setSelectedId(habit.id === selectedId ? null : habit.id)}
+      <ContextMenu
+        items={[
+          { label: 'Mark as Done', action: () => setFinishConfirm(habit.id) },
+          { label: 'Pause', action: () => setArchiveConfirm(habit.id) },
+          { label: 'Edit', action: () => openEditHabit(habit) },
+          { label: 'Reset Data', action: () => setResetConfirm(habit.id) },
+          { label: 'Delete', action: () => setDeleteConfirm(habit.id), danger: true },
+        ]}
       >
-        <div className="flex items-center gap-3">
-          <div className="h-3 w-3 rounded-full" style={{ backgroundColor: habit.color }} />
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-slate-800 dark:text-slate-100">{habit.name}</span>
-              {isBad && (
-                <span
-                  className="cursor-help text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                  title="For bad habits, the streak counts days you DIDN'T do it. Logging a bad habit means logging that you did the bad thing. The goal is to keep the streak growing."
-                  aria-label="About bad habit streaks"
-                >ⓘ</span>
-              )}
-              {isTickMode && (
-                <span
-                  className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                  title="Tick mode: one log per day"
-                >tick</span>
-              )}
-            </div>
-            <div className="mt-0.5 text-xs text-slate-500">
-              {streakLabel}
-              <span className="mx-1">·</span>
-              {daysLogged} {isBad ? 'lapses' : 'days logged'}
-              {!isBad && streak > 0 && (
-                <>
-                  <span className="mx-1">·</span>
-                  {STREAK_MILESTONES.filter((m) => streak >= m).map((m) => (
-                    <span key={m} className="mx-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">{m}d</span>
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-          {!isTickMode && todayCount > 0 && (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{todayCount} today</span>
-          )}
-          {/* Kebab menu */}
-          <div className="relative" ref={menuRef}>
-            <button
-              type="button"
-              aria-label="Habit actions"
-              aria-haspopup="menu"
-              aria-expanded={isMenuOpen}
-              onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : habit.id) }}
-              className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                <circle cx="3" cy="8" r="1.5" />
-                <circle cx="8" cy="8" r="1.5" />
-                <circle cx="13" cy="8" r="1.5" />
-              </svg>
-            </button>
-            {isMenuOpen && (
-              <div
-                role="menu"
-                className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                  onClick={() => { setOpenMenuId(null); setFinishConfirm(habit.id) }}
-                >Mark as Done</button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                  onClick={() => { setOpenMenuId(null); setArchiveConfirm(habit.id) }}
-                >Pause</button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                  onClick={() => { setOpenMenuId(null); openEditHabit(habit) }}
-                >Edit</button>
-                <div className="my-1 border-t border-slate-200 dark:border-slate-700" />
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                  onClick={() => { setOpenMenuId(null); setResetConfirm(habit.id) }}
-                >Reset Data</button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                  onClick={() => { setOpenMenuId(null); setDeleteConfirm(habit.id) }}
-                >Delete</button>
+        <Card
+          className={cn('cursor-pointer transition-shadow hover:shadow-md', selectedId === habit.id && 'ring-2 ring-primary-500')}
+          onClick={() => setSelectedId(habit.id === selectedId ? null : habit.id)}
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-3 w-3 rounded-full" style={{ backgroundColor: habit.color }} />
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-slate-800 dark:text-slate-100">{habit.name}</span>
+                {isBad && (
+                  <span
+                    className="cursor-help text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    title="For bad habits, the streak counts days you DIDN'T do it. Logging a bad habit means logging that you did the bad thing. The goal is to keep the streak growing."
+                    aria-label="About bad habit streaks"
+                  >ⓘ</span>
+                )}
+                {isTickMode && (
+                  <span
+                    className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                    title="Tick mode: one log per day"
+                  >tick</span>
+                )}
               </div>
+              <div className="mt-0.5 text-xs text-slate-500">
+                {streakLabel}
+                <span className="mx-1">·</span>
+                {daysLogged} {isBad ? 'lapses' : 'days logged'}
+                {!isBad && streak > 0 && (
+                  <>
+                    <span className="mx-1">·</span>
+                    {STREAK_MILESTONES.filter((m) => streak >= m).map((m) => (
+                      <span key={m} className="mx-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">{m}d</span>
+                    ))}
+                  </>
+                )}
+              </div>
+            </div>
+            {!isTickMode && todayCount > 0 && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{todayCount} today</span>
             )}
+            {/* Kebab menu */}
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                aria-label="Habit actions"
+                aria-haspopup="menu"
+                aria-expanded={isMenuOpen}
+                onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : habit.id) }}
+                className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="8" r="1.5" />
+                  <circle cx="8" cy="8" r="1.5" />
+                  <circle cx="13" cy="8" r="1.5" />
+                </svg>
+              </button>
+              {isMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                    onClick={() => { setOpenMenuId(null); setFinishConfirm(habit.id) }}
+                  >Mark as Done</button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                    onClick={() => { setOpenMenuId(null); setArchiveConfirm(habit.id) }}
+                  >Pause</button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                    onClick={() => { setOpenMenuId(null); openEditHabit(habit) }}
+                  >Edit</button>
+                  <div className="my-1 border-t border-slate-200 dark:border-slate-700" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                    onClick={() => { setOpenMenuId(null); setResetConfirm(habit.id) }}
+                  >Reset Data</button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                    onClick={() => { setOpenMenuId(null); setDeleteConfirm(habit.id) }}
+                  >Delete</button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
         <div className="mt-2 flex items-center justify-between">
           <div className="flex gap-1">
             {last7.map((d) => (
@@ -614,31 +627,41 @@ export default function HabitsPage() {
               />
             ))}
           </div>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
             {isTickMode ? (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}
-                aria-pressed={isTickedToday}
-                className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded border-2 text-base font-bold transition-colors',
-                  isTickedToday
-                    ? 'border-primary-600 bg-primary-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-400 hover:border-primary-400 hover:text-primary-500 dark:border-slate-600 dark:bg-slate-800'
-                )}
-                title={isTickedToday ? 'Uncheck for today' : 'Check for today'}
-              >
-                ✓
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}
+                  aria-pressed={isTickMode && isTickedToday}
+                  aria-label={isBad ? (isTickedToday ? 'Mark lapse (done today)' : 'Clear lapse (not done today)') : (isTickedToday ? 'Mark done' : 'Mark undone')}
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center rounded border-2 text-sm font-bold transition-colors',
+                    isTickedToday
+                      ? isBad
+                        ? 'border-red-500 bg-red-500 text-white'
+                        : 'border-primary-600 bg-primary-600 text-white'
+                      : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400 dark:border-slate-600 dark:bg-slate-800'
+                  )}
+                  title={isTickedToday ? (isBad ? 'Remove lapse' : 'Mark undone') : (isBad ? 'Mark lapse (bad thing happened)' : 'Mark done')}
+                >
+                  {isTickedToday ? (isBad ? '✗' : '✓') : ''}
+                </button>
+                <span className="text-xs text-slate-400 dark:text-slate-500 select-none">
+                  {isTickedToday
+                    ? (isBad ? 'Lapsed' : 'Done')
+                    : (isBad ? 'Avoided' : 'Not yet')}
+                </span>
+              </>
             ) : (
-              <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}>
-                Quick Log
-              </Button>
-            )}
-            {!isTickMode && (
-              <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
-                {isBad ? 'Log lapse' : 'Log with note'}
-              </Button>
+              <>
+                <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}>
+                  {isBad ? 'Mark lapse' : 'Quick Log'}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
+                  {isBad ? 'Log lapse' : 'Log with note'}
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -646,14 +669,15 @@ export default function HabitsPage() {
         {/* Suggestion to archive for good habits only */}
         {!isBad && reachedThreshold && (
           <p className="mt-2 text-xs text-green-600 dark:text-green-400">
-            🎉 {archiveThreshold} day{archiveThreshold === 1 ? '' : 's'} done — this habit may now be automatic. Consider{' '}
+            🎉 {archiveThreshold} days done — this habit might be a permanent part of your life now. Have you finished it?{' '}
             <button
-              onClick={(e) => { e.stopPropagation(); setArchiveConfirm(habit.id) }}
+              onClick={(e) => { e.stopPropagation(); setFinishConfirm(habit.id) }}
               className="underline hover:text-green-800"
-            >archiving</button>.
+            >Mark as Done</button>.
           </p>
         )}
-      </Card>
+        </Card>
+      </ContextMenu>
     )
   }
   // N — Add new habit

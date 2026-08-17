@@ -45,6 +45,17 @@ npm run build         # production build
 npm run dev           # dev server on :5173
 ```
 
+### 0.2 Workflow — read first, plan before doing
+
+When you receive a bug report, fix request, or feature ticket with a medium-to-large list of things to do:
+1. **Read the code comprehensively.** Understand the relevant code paths before writing anything.
+2. **Make a plan.** Break the work into logical steps and order them correctly (e.g., data-layer changes before UI, migrations before the code that uses them).
+3. **Execute in plan order.** Don't start work until you understand it.
+
+For small, self-contained tasks (a single fix, a quick feature), you can skip formal planning — just read what's needed and do it.
+
+**Why this matters:** Jumping into code without understanding it leads to missed edge cases, wrong abstractions, and bugs that could have been caught with upfront analysis.
+
 ---
 
 ## 1. Architecture
@@ -456,6 +467,17 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 - **Root cause**: `getLiveTimerSeconds()` in `timer-utils.ts` added elapsed seconds for any active pomodoro timer regardless of phase. During a break the timer's `startedAt` was reset (break start), and `phaseRemaining` was non-null, so the break elapsed time was included in the academic "Today" total.
 - **Fix applied**: `getLiveTimerSeconds()` now checks `state.phase === 'focus'` before adding pomodoro elapsed seconds. During `shortBreak`/`longBreak` phases, it returns 0. The dashboard "Today" card, streak-at-risk indicator, and the GroupDetailPage live minutes all derive from this function, so all are now correct. Two regression tests (`shortBreak` + `longBreak`) added to `timer-utils.test.ts`.
 - **Stall trap**: "the timer saves a session when the break finishes" → no; the session is saved when the *focus* phase completes (phase-transition effect, `pomPhase === 'focus'`). Break-to-focus transitions don't write a session. The bug was only in the live counting, not in session persistence.
+### 10.37 Habit log "2 today" — double-counting optimistic + persisted logs
+- **Symptom**: a habit in count mode (not tick mode) showed "2 today" after the user logged it once. Re-opening the page also showed the inflated count.
+- **Root cause**: `HabitsPage` keeps an optimistic overlay (`localLogAdditions`) for instant UX. The `effectiveHabitLogs` memo was `data.habitLogs.filter(notDeleted).concat(localLogAdditions)` — but `localLogAdditions` was never cleared after the Dexie write persisted the same log. After a `mutate` triggered a re-load, the data array had the persisted log AND the local addition was still there, so the count was doubled.
+- **Fix applied**: `effectiveHabitLogs` now subtracts `localLogAdditions` IDs from the persisted list before concatenation. `localLogAdditions` is the source of truth until the next reload, so the persisted branch is forced to exclude any IDs still in the overlay. The `quickLogInFlightRef` Set already prevents double-add races for tick mode; this fix handles the persisted-vs-optimistic case for count mode.
+- **Stall trap**: "just clear `localLogAdditions` after `mutate`" → no, the optimistic overlay exists specifically so the UI updates before the DB write completes. Clearing it eagerly would cause flicker. The fix is to deduplicate the *combination*, not to throw away the optimistic update.
+- **Lesson for any domain with optimistic overlays** (sessions, assignments, marks): always filter the persisted list by the overlay's IDs before merging; otherwise the same record gets counted twice after the next reload.
+### 10.38 Inserting a new JSX block into the middle of a table — broken markup
+- **Symptom**: adding a new `<Card>` (e.g. "Time by Project") to `ReportsPage` produced `TS17008: JSX element 'Card' has no corresponding closing tag` and a broken table render.
+- **Root cause**: the new block was inserted at a line number that fell *inside* an existing `<table>`/`<tbody>`/`<tr>` region (the "Time by Focus Area" table). The `insert after N` landed mid-table, so the new `<Card>` was nested inside a `<tr>`, and the table's closing tags were left dangling.
+- **Fix applied**: re-read the surrounding JSX, removed the misplaced block, and re-inserted it *after* the enclosing `</Card>` of the focus-area card (a clean sibling boundary), then re-verified the table's `</tr></tbody></table></div>` closing sequence.
+- **Stall trap**: "just add a closing tag" → no; the real problem is the insertion point. When adding a sibling JSX block, anchor the insert on the *closing tag* of the previous sibling (or the blank line after it), never on a line number that could be mid-element. Always re-read the target region before inserting, and verify the enclosing element's closing tags are intact afterward.
 
 ---
 
@@ -548,6 +570,7 @@ Update this file when you:
 ### 14.2 How to update
 - Keep sections numbered and stable. Append, don't rewrite, unless a section is factually wrong.
 - When you close a bug, move it from §12 (Pending) to §10 (Pitfalls) as a "fixed" note, or delete it if it's no longer relevant. Update `.bugfix-plan.md` too.
+- Record significant user architectural and behavioral decisions in §15.
 - When you add a pitfall, write it as: **Symptom** → **Fix** → **Stall trap** (the wrong conclusion a future instance might jump to). This format is what saves time.
 - Keep the "Stale-spec warning" callouts when you correct something that was previously wrong — they prevent future instances from reintroducing the old behavior.
 - If you change a default or a type, update the inline code blocks in §4/§5 to match exactly.
@@ -556,6 +579,22 @@ Update this file when you:
 The code is the source of truth. If this file and the code disagree, the code wins — and you MUST update this file to match. Never trust a stale spec over the actual implementation. When you read the code and find this file wrong, fix the file, don't work around the code.
 
 ### 14.4 Version stamp
+**SPEC_VERSION: 18** — 2026-08-17 added §14.5 "Decision & Pitfall Logging (REQUIRED)" — instances MUST document logic pitfalls in §10 (Symptom → Fix → Stall trap format) and durable user decisions in §15; added §15 "User Decisions & Preferences" to record versioning, UI conventions, and feature-specific logic (categories → focus areas, "any subject" mode, streak freeze rule, etc.).
+  - *Dashboard*: removed "(+Xm over)" goal-exceeded text (§6.1); capped recent sessions at 3 with a "Show all (N)" modal containing a full scrollable table; streak info moved to an ⓘ button next to the streak number (HoverCard) instead of always-visible text.
+  - *Habits*: deduplicated optimistic local log additions vs persisted logs (fixes "2 today" bug); tick mode is now explicit per habit kind (good: green ✓ "Done"; bad: red ✗ "Lapsed") with text labels; auto-archive at N days is gone — habit instead shows a "Have you finished it?" prompt that triggers "Mark as Done" (which sets `finishedAt`); archived habits are no longer auto-archived.
+  - *Schedule*: catch-up prompts are now activities-only (routines removed from `catchUpItems`); activity auto-log duration falls back to `activity.duration` when `dayMinutes[dow]` is 0; Weekly Plan grid gained a daily-totals footer row + weekly-total label and rows are now auto-sorted by `scheduledTime`.
+  - *Streak freeze rule* (`use-streak.ts` rewritten): every 5 consecutive logged days earns 1 missed-day freeze. The new rule consumes a freeze per missed day; chain breaks when freezes run out. The old "1 missed day per chain" rule is gone.
+  - *Categories merged into Focus Areas*: `/categories` route now redirects to `/subjects`; subjects page has a "Manage Categories" button + modal (inline CRUD + cascade delete) and a "+ New" link in the subject form. Categories are still stored as a separate table — migration is not needed.
+  - *"Any subject" mode* (`src/lib/subject-mode.ts`): projects and routines can now select "Any subject" (sentinel `ANY_SUBJECT_ID = "__any__"`). The routine-tracker match predicate treats this as a wildcard, so its totals accumulate time from every subject. `getSubjectPathLabel` renders the label "Any subject".
+  - *Marks page*: multi-select checkboxes (header + per-row), "Compare N marks" button + modal with side-by-side comparison table + weighted average footer.
+  - *Reports*: added Consistency score (%), Current Streak 🔥, Best streak, and a new "Time by Project" card.
+  - *AI Review* (`src/features/reviews/AIReviewPage.tsx`): prompt now explicitly distinguishes `[future]` days from `[missed]` days so the AI doesn't recommend catch-up plans for days that haven't happened yet; new sections added for marks this period, open assignments (next 7 days), routine adherence, and routine auto-logs. Explicit output-format instructions to produce at most 4 short sections (Headline / What went well / What to improve / Next-week plan).
+  - *Rollback infrastructure*: `momentum/CHANGELOG.md` created; `npm run release` script added (tags current version, pushes to `org`, deploys). To rollback: `git checkout v0.20.0 && npm run deploy`.
+  - *Right-click context menus*: existing `ContextMenu` component now wired into Subject cards (View/Edit/Delete) and Habit cards (Mark as Done/Pause/Edit/Reset/Delete).
+  - *TasksHub sidebar*: removed `/categories` from `NAV_ITEMS` and `DEFAULT_PREFS.hidden` (no longer reachable from the sidebar; `/categories` is a redirect alias).
+
+**SPEC_VERSION: 16** — 2026-08-17 added §0.2 workflow instruction: for medium-to-large task lists, always read the code comprehensively and make a plan before executing; small self-contained tasks may skip planning.
+
 **SPEC_VERSION: 15** — 2026-08-16 reverted the flattened-grid width-button experiment; dashboard restored to the three-column grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`) with `ColumnFloor`/`GhostWidget`. Per-widget width controls (the `{cols}w` button in `DashboardWidget` and the Width −/+ controls in the Customise modal) removed entirely — every widget is one column wide and falls upward into the shortest column (§6.1).
 
 **SPEC_VERSION: 14** — 2026-08-16 Study Timer notes textarea now shows the previous note for the selected subject as gray placeholder text when empty; focusing/clicking activates it as this session's note, typing overwrites it. Per-subject last notes persist in localStorage via `getLastNote`/`setLastNote` in `timer-persistence.ts` (§6.8).
@@ -574,3 +613,27 @@ When you make a substantive update, bump the `SPEC_VERSION` marker below so inst
 **SPEC_VERSION: 8** — 2026-08-15 added §0.1 "Read specs for momentum" response protocol: a new instance told to read specs must read this file + README + .bugfix-plan, then reply with a short confirmation (app description, SPEC_VERSION, live URL, open-bug status) and wait — no work, no full recap, no unprompted audit.
 **SPEC_VERSION: 5** — 2026-08-15 closed L4 (subject picker orphaned children), L6 (verified modal drag-to-dismiss already correct), BUG-185 (build-id reload guard added in `main.tsx`); updated §12 pending bugs list; added §10.32 (log-modal projected total); §10.31 status flipped to "fixed".
 **SPEC_VERSION: 4** — 2026-08-13 added §10.23 (freeform removal status), §10.31 (React #185 / stale SW cache), BUG-185 to §12 open items, freeform re-implement to feature backlog; updated §0 step 10 and §6.1 layout line.
+
+### 14.5 Decision & Pitfall Logging (REQUIRED)
+
+Every instance MUST document significant logic pitfalls and durable user decisions as they happen. This is what prevents the same mistake from being repeated by the next instance.
+
+- **Logic pitfalls** (race conditions, duplicate-count bugs, wrong date math, optimistic-state mismatches, etc.) MUST be documented in §10 ("Common Pitfalls, Stalls & Misimplementations") as **Symptom** → **Fix** → **Stall trap** (the wrong conclusion a future instance might jump to). This format is what saves time.
+- **User decisions** (architectural choices, behavioral rules, renaming, scope changes, infra conventions) MUST be recorded in §15 ("User Decisions & Preferences") with a concise rationale. Decisions persist across instances and are referenced, not re-litigated.
+- **When to add an entry**: as soon as the pitfall is identified or the decision is made, before yielding. Do not batch these for later — they will be forgotten.
+
+
+
+---
+
+## 15. User Decisions & Preferences
+*This section records durable decisions, architectural constraints, and user preferences that shape the Momentum app's behavior.*
+
+- **Versioning**: No automated stable versioning. Strategy: `CHANGELOG.md` + manual `tag-before-deploy` convention.
+- **UI Conventions**:
+  - **Right-click / Long-press**: Use `ContextMenu` component for global actions.
+  - **Notifications**: Minimal browser-native implementation. Reactive triggers (timer/pomodoro only). No service-worker push (local-first/no server).
+  - **Streak Freeze Rule**: 5 consecutive logged days earns 1 missed-day freeze. Automatic consumption. Chain breaks when freezes run out.
+- **Feature-Specific Logic**:
+  - **Categories**: Merged into "Focus Areas" (subjects).
+  - **Subject Mode**: "Any subject" (sentinel `__any__`) treats projects/routines as wildcards to accumulate time from all subjects.

@@ -69,7 +69,7 @@ export function ActivityConfirmationCard({ onDismiss }: ActivityConfirmationCard
 
   const activity = pendingActivities[index]
   const pendingCount = pendingActivities.length
-  const dayMinutes = activity.dayMinutes[todayDow] ?? 0
+  const dayMinutes = activity.dayMinutes[todayDow] || activity.duration || 0
 
   const handleYes = async () => {
     const now = isoNow()

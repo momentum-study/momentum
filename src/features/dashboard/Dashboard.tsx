@@ -27,7 +27,7 @@ import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakD
 import { sessionIdFor } from '../../lib/timer-persistence'
 import { getDueCount } from '../../lib/fsrs-scheduler'
 import { useSessionSync } from '../../lib/use-session-sync'
-import type { Session, DayOfWeek, RoutineLog, Routine, Activity, ActivityLog } from '../../domain/types'
+import type { Session, DayOfWeek, RoutineLog, Routine, Activity, ActivityLog, Project } from '../../domain/types'
 import { Link, useNavigate } from 'react-router-dom'
 import { DashboardWidget } from '../../components/widgets/DashboardWidget'
 import { useDashboardWidgets, DASHBOARD_WIDGETS_METADATA, DEFAULT_CONFIGS, DEFAULT_WIDGET_IDS } from '../../lib/use-dashboard-widgets'
@@ -275,6 +275,88 @@ function SessionRow({
     </ContextMenu>
   )
 }
+interface AllSessionsModalProps {
+  allRecent: (Session & { subjectName: string; subjectColor: string })[];
+  open: boolean;
+  onClose: () => void;
+  menuSessionId: string | null;
+  setMenuSessionId: (id: string | null) => void;
+  setEditLog: (s: Session | null) => void;
+  setEditDuration: (n: number) => void;
+  setEditDate: (s: string) => void;
+  setEditSubjectId: (s: string) => void;
+  deleteSession: (id: string) => void;
+  selectedSessionIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  selectionMode: boolean;
+  setViewSession: (s: Session | null) => void;
+  setViewModalOpen: (open: boolean) => void;
+  projects: Project[];
+}
+
+function AllSessionsModal({
+  allRecent, open, onClose,
+  menuSessionId, setMenuSessionId,
+  setEditLog, setEditDuration, setEditDate, setEditSubjectId,
+  deleteSession, selectedSessionIds, onToggleSelect, selectionMode,
+  setViewSession, setViewModalOpen, projects
+}: AllSessionsModalProps) {
+  if (!open) return null;
+
+  const groups: { label: string; items: (Session & { subjectName: string; subjectColor: string })[] }[] = [];
+  const todayKey = format(new Date(), 'yyyy-MM-dd');
+  const yesterdayKey = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+
+  for (const s of allRecent) {
+    const ds = toLocalDateString(s.startAt);
+    let label: string;
+    if (ds === todayKey) label = 'Today';
+    else if (ds === yesterdayKey) label = 'Yesterday';
+    else label = format(new Date(s.startAt), 'EEE d MMM');
+    let g = groups.find((x) => x.label === label);
+    if (!g) {
+      g = { label, items: [] };
+      groups.push(g);
+    }
+    g.items.push(s);
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="All Recent Sessions" className="max-w-2xl">
+      <div className="divide-y divide-slate-200 dark:divide-slate-700 max-h-[70vh] overflow-y-auto -mx-6 px-6">
+        {groups.map((g) => (
+          <div key={g.label} className="py-2">
+            <div className="sticky top-0 z-10 -mx-1 bg-white/90 px-1 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500 backdrop-blur dark:bg-slate-800/90">{g.label}</div>
+            <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+              {g.items.map((session) => {
+                const project = session.projectId ? projects.find((p) => p.id === session.projectId) : undefined;
+                return (
+                  <SessionRow
+                    key={session.id}
+                    session={session}
+                    project={project}
+                    menuSessionId={menuSessionId}
+                    setMenuSessionId={setMenuSessionId}
+                    setEditLog={setEditLog}
+                    setEditDuration={setEditDuration}
+                    setEditDate={setEditDate}
+                    setEditSubjectId={setEditSubjectId}
+                    deleteSession={deleteSession}
+                    selected={selectedSessionIds.has(session.id)}
+                    onToggleSelect={onToggleSelect}
+                    selectionMode={selectionMode || selectedSessionIds.size > 0}
+                    setViewSession={setViewSession}
+                    setViewModalOpen={setViewModalOpen}
+                  />
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
 
 export default function Dashboard() {
   const { data, isLoading, loadData, mutate } = useData()
@@ -283,7 +365,8 @@ export default function Dashboard() {
   const { visibleWidgets, setVisibleWidgets, widgetConfigs, setWidgetConfigs, moveWidgetToColumn } = useDashboardWidgets()
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [logModalOpen, setLogModalOpen] = useState(false)
-  const [recentLimit, setRecentLimit] = useState(10)
+  const recentLimit = 3
+  const [allSessionsModalOpen, setAllSessionsModalOpen] = useState(false)
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
   const [showCelebration, setShowCelebration] = useState(false)
   const navigate = useNavigate()
@@ -294,7 +377,6 @@ export default function Dashboard() {
   // typed (number | null) for the downstream checks.
   useSyncExternalStore(subscribeDragHover, () => `${overColumn$.current}:${overId$.current ?? ''}:${activeWidgetSize$.current?.height ?? 0}`)
   const overColumn = overColumn$.current
-  const overId = overId$.current
   // Viewport auto-scroll while dragging: when the pointer is near the top or
   // bottom edge of the window, scroll the page so the user can reach widgets
   // that are off-screen without releasing the drag. Also lets the user scroll
@@ -374,17 +456,16 @@ export default function Dashboard() {
       cols[c] = cols[c] || []
       cols[c].push(id)
     }
-    // Inject the active widget into the target column at the correct
-    // position so the strategy can animate surrounding widgets around it.
+    // Append the active widget to the end of the target column so dnd-kit's
+    // verticalListSortingStrategy can animate surrounding widgets around it.
+    // We intentionally do NOT insert at a specific position based on overId —
+    // doing so would change the items array on every pointer move within the
+    // same column, invalidating the content cache below and causing
+    // SortableContext to re-register (re-firing the 200ms transform
+    // transitions that manifest as flicker). The strategy uses DOM rects,
+    // not the items array order, to determine visual position.
     if (isCrossCol && overColumn != null) {
-      const isOverFloor = overId != null && overId.startsWith(FLOOR_PREFIX)
-      const target = cols[overColumn]
-      let insertIdx = target.length
-      if (overId && !isOverFloor) {
-        const i = target.indexOf(overId)
-        if (i !== -1) insertIdx = i
-      }
-      target.splice(insertIdx, 0, activeId)
+      cols[overColumn].push(activeId)
     }
     const prev = columnItemsRef.current
     if (
@@ -984,10 +1065,11 @@ export default function Dashboard() {
                   {formatTotalToday(liveTotalTodayMinutes, isTimerActive())}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  {goalPct >= 100
-                    ? <span className="text-green-600 dark:text-green-400 font-medium">Target reached! (+{formatMinutes(Math.round(liveTotalTodayMinutes - settings.dailyTargetMinutes))} over)</span>
-                    : `${formatMinutes(Math.max(0, settings.dailyTargetMinutes - Math.round(liveTotalTodayMinutes)))} left of ${formatMinutes(settings.dailyTargetMinutes)} goal`
-                  }
+                  {goalPct >= 100 ? (
+                    <span className="text-green-600 dark:text-green-400 font-medium">Target reached!</span>
+                  ) : (
+                    `${formatMinutes(Math.max(0, settings.dailyTargetMinutes - Math.round(liveTotalTodayMinutes)))} left of ${formatMinutes(settings.dailyTargetMinutes)} goal`
+                  )}
                 </div>
                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   {lastSessionText}
@@ -1130,7 +1212,26 @@ export default function Dashboard() {
                     {streak > 0 && liveTotalTodayMinutes === 0 && <span className="text-[8px] text-amber-500/70 leading-none mt-0.5">at risk</span>}
                   </div>
                 </div>
-                <span className="text-sm text-slate-500">day{streak !== 1 ? 's' : ''}</span>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm text-slate-500">day{streak !== 1 ? 's' : ''}</span>
+                  <HoverCard
+                    content={
+                      <div className="space-y-1 text-xs">
+                        <div className="font-medium text-slate-800 dark:text-slate-100">How streaks work</div>
+                        <div>Counts one per consecutive day.</div>
+                        <div>One missed day per chain is allowed — the next logged day after that continues the streak.</div>
+                        <div>Two consecutive missed days break the chain.</div>
+                        <div>Best: {longestStreak} day{longestStreak !== 1 ? 's' : ''}</div>
+                      </div>
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+                      aria-label="Streak info"
+                    >ⓘ</button>
+                  </HoverCard>
+                </div>
               </div>
               <div className="flex items-start gap-2 text-right text-xs text-slate-500">
                 <div>Best <span className="font-semibold text-slate-700 dark:text-slate-200">{longestStreak}</span></div>
@@ -1154,12 +1255,6 @@ export default function Dashboard() {
                 If you miss two days in a row, the chain breaks.
               </p>
             )}
-            <p
-              className="text-[10px] text-slate-500 cursor-help"
-              title="How streaks work: count one per consecutive day. One missed day per chain is allowed — the next logged day after that continues the streak. Two consecutive missed days break the chain. Daily target is the bar set in Settings → Timer."
-            >
-              ⓘ One missed day per chain is allowed — log the next day to continue.
-            </p>
             <div>
               <div className="mb-1 grid grid-cols-7 gap-px text-[10px] font-medium text-slate-400">
                 {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((l, i) => (
@@ -1402,9 +1497,9 @@ export default function Dashboard() {
                     <button
                       type="button"
                       className="text-xs font-medium text-primary-600 hover:underline"
-                      onClick={() => setRecentLimit((n) => n + 10)}
+                      onClick={() => setAllSessionsModalOpen(true)}
                     >
-                      Load more
+                      Show all ({allRecent.length})
                     </button>
                   </div>
                 )}
@@ -1522,7 +1617,7 @@ export default function Dashboard() {
               return (
                 <div className="space-y-2">
                   {todaysActivities.map((activity) => {
-                    const dayMinutes = activity.dayMinutes[todayDow] ?? 0
+                    const dayMinutes = activity.dayMinutes[todayDow] || activity.duration || 0
                     const subject = data.subjects.find((s) => s.id === activity.subjectId)
                     const existingLog = data.activityLogs.find(l => l.activityId === activity.id && l.date === todayStr)
                     const isHandled = existingLog && (existingLog.status === 'completed' || existingLog.status === 'skipped')
@@ -1584,7 +1679,7 @@ export default function Dashboard() {
                                   let session: Session | null = null
                                   if (activity.subjectId) {
                                     session = {
-                                      id: sessionIdFor(now, activity.subjectId, dayMinutes),
+                                      id: sessionIdFor(now, activity.subjectId, dayMinutes || activity.duration || 0),
                                       subjectId: activity.subjectId,
                                       startAt: now,
                                       endAt: now,
@@ -2128,6 +2223,24 @@ export default function Dashboard() {
         }}
         subjectName={viewSession ? data.subjects.find((s) => s.id === viewSession.subjectId)?.name : undefined}
         projectName={viewSession?.projectId ? data.projects.find((p) => p.id === viewSession.projectId)?.name : undefined}
+      />
+      <AllSessionsModal
+        allRecent={allRecent}
+        open={allSessionsModalOpen}
+        onClose={() => setAllSessionsModalOpen(false)}
+        menuSessionId={menuSessionId}
+        setMenuSessionId={setMenuSessionId}
+        setEditLog={setEditLog}
+        setEditDuration={setEditDuration}
+        setEditDate={setEditDate}
+        setEditSubjectId={setEditSubjectId}
+        deleteSession={deleteSession}
+        selectedSessionIds={selectedSessionIds}
+        onToggleSelect={(id) => setSelectedSessionIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })}
+        selectionMode={false}
+        setViewSession={setViewSession}
+        setViewModalOpen={setViewModalOpen}
+        projects={data.projects}
       />
     </div>
   )

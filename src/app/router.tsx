@@ -17,7 +17,6 @@ const SettingsPage = lazy(() => import('../features/settings/SettingsPage'))
 const MarksPage = lazy(() => import('../features/marks/MarksPage'))
 const HabitsPage = lazy(() => import('../features/habits/HabitsPage'))
 const CalendarPage = lazy(() => import('../features/calendar/CalendarPage'))
-const CategoriesPage = lazy(() => import('../features/categories/CategoriesPage'))
 const GroupsPage = lazy(() => import('../features/groups/GroupsPage'))
 const GroupDetailPage = lazy(() => import('../features/groups/GroupDetailPage'))
 const AIReviewPage = lazy(() => import('../features/reviews/AIReviewPage'))
@@ -39,7 +38,7 @@ function RouterContent() {
         <Route path="/marks" element={<MarksPage />} />
         <Route path="/habits" element={<HabitsPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
-        <Route path="/categories" element={<CategoriesPage />} />
+        <Route path="/categories" element={<Navigate to="/subjects" replace />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/reviews" element={<AIReviewPage />} />
         <Route path="/study" element={<StudyPage />} />

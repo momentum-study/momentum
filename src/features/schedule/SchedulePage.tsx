@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { ANY_SUBJECT_ID } from '../../lib/subject-mode'
 import { format } from 'date-fns'
 import { useData } from '../../app/providers'
 import { useUndo } from '../../lib/use-undo'
@@ -116,19 +117,13 @@ export function SchedulePage() {
     try { return JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? '{}') } catch { return {} }
   })
 
+  // Only ACTIVITIES get a "Did you complete it?" catch-up prompt.
+  // Routines are self-directed study blocks — they show progress on the
+  // dashboard from session logs; we do NOT ask the user to retroactively
+  // confirm them. Activities are external commitments (events, classes) that
+  // need a yes/no answer.
   const catchUpItems = useMemo(() => {
     const items: CatchUpItem[] = []
-    for (const r of data.routines.filter(r => !r.deletedAt)) {
-      const missedDate = findMissedDate(
-        dow => (r.dayMinutes[dow] ?? 0) > 0,
-        ds => data.routineLogs.some(l => l.routineId === r.id && l.date === ds)
-      )
-      if (!missedDate) continue
-      const dismissKey = `${r.id}:${missedDate}`
-      if (dismissed[dismissKey]) continue
-      items.push({ kind: 'routine', id: r.id, name: r.name, date: missedDate, color: r.color })
-    }
-
     for (const a of data.activities.filter(a => !a.deletedAt)) {
       const missedDate = findMissedDate(
         dow => (a.dayMinutes[dow] ?? 0) > 0,
@@ -141,7 +136,7 @@ export function SchedulePage() {
     }
 
     return items
-  }, [data.routines, data.routineLogs, data.activities, data.activityLogs, dismissed])
+  }, [data.activities, data.activityLogs, dismissed])
 
   function dismissCatchUp(id: string, date: string) {
     const next = { ...dismissed, [`${id}:${date}`]: date }
@@ -381,7 +376,7 @@ export function SchedulePage() {
   function attendActivity(activity: Activity) {
     const existingLog = getActivityLogForToday(activity.id)
     if (existingLog) return
-    const mins = activity.dayMinutes[dow] ?? activity.duration ?? 0
+    const mins = activity.dayMinutes[dow] || activity.duration || 0
     const log: ActivityLog = {
       id: uuid(),
       activityId: activity.id,
@@ -998,6 +993,20 @@ function WeeklyPlanGrid(props: {
     return `${Math.max(24, Math.round(ratio * 72))}px`
   }
 
+  // Compute daily totals across routines and activities.
+  const dailyTotals: number[] = WEEKDAYS.map((_, i) => {
+    const dow = i as DayOfWeek
+    const routineTotal = routines.reduce((s, r) => s + (r.dayMinutes[dow] ?? 0), 0)
+    const activityTotal = activities.reduce((s, a) => s + (a.dayMinutes[dow] ?? 0), 0)
+    return routineTotal + activityTotal
+  })
+  const weeklyTotal = dailyTotals.reduce((a, b) => a + b, 0)
+  // Sort routines and activities by scheduledTime so users can plan a day
+  // in time order. Items without a scheduledTime come last.
+  const timeKey = (t?: string) => t ?? '99:99'
+  const sortedRoutines = [...routines].sort((a, b) => timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime)))
+  const sortedActivities = [...activities].sort((a, b) => timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime)))
+
   return (
     <div className="overflow-x-auto">
       <div className="grid min-w-[640px]" style={{ gridTemplateColumns: '200px repeat(7, minmax(70px, 1fr))' }}>
@@ -1007,7 +1016,7 @@ function WeeklyPlanGrid(props: {
             {d}
           </div>
         ))}
-        {routines.map(r => (
+        {sortedRoutines.map(r => (
           <RoutineGridRow
             key={r.id}
             routine={r}
@@ -1017,7 +1026,7 @@ function WeeklyPlanGrid(props: {
             blockHeight={blockHeight}
           />
         ))}
-        {activities.map(a => (
+        {sortedActivities.map(a => (
           <ActivityGridRow
             key={a.id}
             activity={a}
@@ -1026,6 +1035,15 @@ function WeeklyPlanGrid(props: {
             onEditCell={onEditCell}
             blockHeight={blockHeight}
           />
+        ))}
+        {/* Daily totals row */}
+        <div className="text-right pr-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 border-t-2 border-slate-300 dark:border-slate-600">
+          Daily total ({Math.round(weeklyTotal / 60)}h {weeklyTotal % 60}m / week)
+        </div>
+        {dailyTotals.map((total, i) => (
+          <div key={i} className="text-center py-2 text-xs font-bold text-primary-700 dark:text-primary-300 border-t-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
+            {total > 0 ? `${total}m` : '—'}
+          </div>
         ))}
       </div>
     </div>
@@ -1184,7 +1202,7 @@ function RoutineEditModal(props: {
   const [scheduledTime, setScheduledTime] = useState(routine?.scheduledTime ?? '')
   const [notes, setNotes] = useState(routine?.notes ?? '')
 
-  const subjectProjects = useMemo(() => projects.filter(p => p.subjectId === subjectId), [projects, subjectId])
+  const subjectProjects = useMemo(() => projects.filter(p => p.subjectId === subjectId || p.subjectId === ANY_SUBJECT_ID), [projects, subjectId])
 
   function setDay(dow: DayOfWeek, mins: number) {
     const next = { ...dayMinutes }
@@ -1220,6 +1238,7 @@ function RoutineEditModal(props: {
           </Field>
           <Field label="Subject">
             <select value={subjectId} onChange={e => { setSubjectId(e.target.value); setProjectId('') }} className={inputCls}>
+              <option value={ANY_SUBJECT_ID}>Any subject</option>
               {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </Field>

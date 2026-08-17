@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { cn, formatHours, formatMinutes, getSessionScope, pctToGrade, gradeColor, sessionLocalDate, toLocalDateString } from '../../lib/utils'
 import type { Session, DayOfWeek } from '../../domain/types'
+import { useStreak } from '../../lib/use-streak'
 import { Link } from 'react-router-dom'
 import { loadSettings } from '../../lib/settings-store'
 
@@ -100,8 +101,8 @@ export default function ReportsPage() {
       return d >= prevStart && d <= prevEnd
     })
   }, [scopeFiltered, period])
-
   const subjectsById = useMemo(() => new Map(data.subjects.map((s) => [s.id, s])), [data.subjects])
+  const { streak: currentStreak, longestStreak } = useStreak(scopeFiltered)
 
   // ── Overview metrics ──
   const overview = useMemo(() => {
@@ -112,16 +113,20 @@ export default function ReportsPage() {
     const daySet = new Set(sessions.map((s) => toLocalDateString(s.startAt)))
     const avgPerDay = daySet.size > 0 ? totalMinutes / daySet.size : 0
 
+    // Consistency: % of days in the selected period that had at least 1 session.
+    const periodDaysCount = periodDays(period) || daySet.size || 1
+    const consistencyPct = Math.round((daySet.size / periodDaysCount) * 100)
+
     // Previous period
     const prevTotal = prevSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
     const prevCount = prevSessions.length
     const prevAvgLen = prevCount > 0 ? prevTotal / prevCount : 0
     const prevDaySet = new Set(prevSessions.map((s) => toLocalDateString(s.startAt)))
     const prevAvgPerDay = prevDaySet.size > 0 ? prevTotal / prevDaySet.size : 0
-    return { totalMinutes, sessionCount, avgSessionLength, avgPerDay, longestSession, prevTotal, prevCount, prevAvgLen, prevAvgPerDay }
-  }, [sessions, prevSessions])
+    return { totalMinutes, sessionCount, avgSessionLength, avgPerDay, longestSession, consistencyPct, dayCount: daySet.size, prevTotal, prevCount, prevAvgLen, prevAvgPerDay }
+  }, [sessions, prevSessions, period])
 
-  const { totalMinutes, sessionCount, avgSessionLength, avgPerDay, longestSession, prevTotal, prevAvgLen, prevAvgPerDay } = overview
+  const { totalMinutes, sessionCount, avgSessionLength, avgPerDay, longestSession, consistencyPct, dayCount, prevTotal, prevAvgLen, prevAvgPerDay } = overview
 
   const pctChange = prevTotal > 0 ? Math.round(((totalMinutes - prevTotal) / prevTotal) * 100) : null
   const avgLenChange = prevAvgLen > 0 ? Math.round(((avgSessionLength - prevAvgLen) / prevAvgLen) * 100) : null
@@ -138,6 +143,17 @@ export default function ReportsPage() {
     return [...acc.entries()].sort((a, b) => b[1] - a[1])
   }, [sessions, subjectsById])
 
+  // ── Time by Project ──
+  const byProject = useMemo(() => {
+    const acc = new Map<string, number>()
+    for (const s of sessions) {
+      if (!s.projectId) continue
+      const project = data.projects.find((p) => p.id === s.projectId)
+      const name = project?.name ?? 'Unknown project'
+      acc.set(name, (acc.get(name) ?? 0) + s.durationMinutes)
+    }
+    return [...acc.entries()].sort((a, b) => b[1] - a[1])
+  }, [sessions, data.projects])
 
   // ── Schedule adherence (planned vs actual) ──
   const scheduleAdherence = useMemo(() => {
@@ -365,6 +381,16 @@ export default function ReportsPage() {
             <div className="text-sm text-slate-500">Longest Session</div>
             <div className="text-2xl font-semibold text-slate-800 dark:text-slate-100">{formatHours(longestSession)}</div>
           </div>
+          <div>
+            <div className="text-sm text-slate-500">Consistency</div>
+            <div className="text-2xl font-semibold text-slate-800 dark:text-slate-100">{consistencyPct}%</div>
+            <div className="text-xs text-slate-500">{dayCount} active day{dayCount !== 1 ? 's' : ''}</div>
+          </div>
+          <div>
+            <div className="text-sm text-slate-500">Current Streak</div>
+            <div className="text-2xl font-semibold text-orange-500">🔥 {currentStreak}</div>
+            <div className="text-xs text-slate-500">Best: {longestStreak}</div>
+          </div>
         </div>
       </Card>
 
@@ -456,6 +482,30 @@ export default function ReportsPage() {
             </div>
           </div>
         )}
+      </Card>
+
+      {/* Time by Project */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Time by Project</CardTitle>
+        </CardHeader>
+        <div className="space-y-3">
+          {byProject.length === 0 ? (
+            <p className="text-sm text-slate-500">No projects logged this period.</p>
+          ) : (
+            byProject.map(([name, minutes]) => (
+              <div key={name} className="flex items-center justify-between gap-4">
+                <span className="text-sm text-slate-700 dark:text-slate-300 truncate">{name}</span>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-32 rounded-full bg-slate-100 dark:bg-slate-700">
+                    <div className="h-2 rounded-full bg-primary-500" style={{ width: `${Math.min(100, (minutes / (totalMinutes || 1)) * 100)}%` }} />
+                  </div>
+                  <span className="w-16 text-right text-sm font-medium text-slate-800 dark:text-slate-100">{formatMinutes(minutes)}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </Card>
 
       {/* 4. Daily Trend bar chart */}

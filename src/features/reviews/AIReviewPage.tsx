@@ -6,9 +6,9 @@ import { Button } from '../../components/ui/Button'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { cn, formatMinutes } from '../../lib/utils'
 import { loadSettings } from '../../lib/settings-store'
+import type { DayOfWeek } from '../../domain/types'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const DAY_ABBREVS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 type DatePreset = 'thisWeek' | 'lastWeek' | 'last2Weeks'
 
@@ -109,6 +109,16 @@ export default function AIReviewPage() {
 
     // Days target met
     const daysTargetMet = dailyMinutes.filter((m) => m >= settings.dailyTargetMinutes).length
+    const autoRoutineSessions = weekSessions.filter((s) => s.source === 'autoRoutine').length
+    // Routine adherence: planned vs actual minutes across routines in range.
+    const routineAdherence: Record<string, { planned: number; actual: number }> = {}
+    for (const routine of data.routines.filter((r) => !r.deletedAt)) {
+      const planned = days.reduce((sum, day) => sum + (routine.dayMinutes[day.getDay() as DayOfWeek] ?? 0), 0)
+      if (planned <= 0) continue
+      const logs = data.routineLogs.filter((l) => l.routineId === routine.id && l.date >= format(dateRange.start, 'yyyy-MM-dd') && l.date <= format(dateRange.end, 'yyyy-MM-dd'))
+      const actual = logs.reduce((sum, l) => sum + (l.actualMinutes ?? 0), 0)
+      routineAdherence[routine.name] = { planned, actual }
+    }
 
 
     // Total streak (consecutive days up to end of range)
@@ -151,8 +161,10 @@ export default function AIReviewPage() {
       daysTargetMet,
       daysInRange: days.length,
       currentStreak,
+      autoRoutineSessions,
+      routineAdherence,
     }
-  }, [weekSessions, data.subjects, data.streakDays, dateRange, settings.dailyTargetMinutes])
+  }, [weekSessions, data.subjects, data.streakDays, data.routines, data.routineLogs, dateRange, settings.dailyTargetMinutes])
 
   // Generate the AI prompt
   const aiPrompt = useMemo(() => {
@@ -160,85 +172,114 @@ export default function AIReviewPage() {
     const endStr = format(dateRange.end, 'MMM d, yyyy')
     const dateRangeStr = `${startStr} - ${endStr}`
 
+    // Distinguish "elapsed days with no data" from "future days not yet occurred".
+    // The AI would otherwise see 0s for the rest of the week and recommend
+    // unrealistic catch-up plans.
+    const today = new Date()
+    const todayKey = format(today, 'yyyy-MM-dd')
+    const isToday = (d: Date) => format(d, 'yyyy-MM-dd') === todayKey
+    const isFuture = (d: Date) => d.getTime() > today.getTime()
+
     const lines: string[] = []
 
-    lines.push(`I'm a student using a study tracker app called Momentum. Here are my study statistics for the week of ${dateRangeStr}. Please give me a detailed review of my study habits, strengths, weaknesses, and suggestions for improvement.`)
+    lines.push(`I'm a student using a study tracker app called Momentum. Here are my study statistics for the period ${dateRangeStr} (today is ${format(today, 'EEE, MMM d')}). Please give me a structured but concise review.`)
     lines.push('')
-    lines.push('## Weekly Overview')
-    lines.push(`- Total study time: ${formatMinutes(stats.totalMinutes)}`)
-    lines.push(`- Total sessions: ${stats.totalSessions}`)
-    lines.push(`- Average session length: ${stats.avgSessionLength} minutes`)
-    lines.push(`- Longest session: ${stats.longestSession} minutes`)
-    if (stats.mostProductiveDay) {
-      lines.push(`- Most productive day: ${stats.mostProductiveDay} (${stats.mostProductiveDayMinutes}m)`)
-    } else {
-      lines.push(`- Most productive day: N/A`)
-    }
+    lines.push('## Output format')
+    lines.push('Reply in AT MOST 4 short sections, with these EXACT headings:')
+    lines.push('### Headline (1 sentence)')
+    lines.push('### What went well (2-4 bullets, max 1 line each)')
+    lines.push('### What to improve (2-4 bullets, max 1 line each)')
+    lines.push('### Next-week plan (3-5 bullets, concrete actions)')
+    lines.push('Do NOT add any other sections. Do NOT include filler. Be specific to my data.')
     lines.push('')
-    lines.push('## Daily Breakdown')
-
+    lines.push('## My data')
+    lines.push(`Weekly totals: ${formatMinutes(stats.totalMinutes)} across ${stats.totalSessions} sessions (avg ${stats.avgSessionLength}m, longest ${stats.longestSession}m). Most productive day: ${stats.mostProductiveDay ?? 'N/A'}${stats.mostProductiveDay ? ` (${stats.mostProductiveDayMinutes}m)` : ''}.`)
+    lines.push(`Daily target: ${settings.dailyTargetMinutes}m. Days target met: ${stats.daysTargetMet}/${stats.daysInRange}. Current streak: ${stats.currentStreak} days.`)
+    lines.push('')
+    lines.push('### Daily breakdown (note: future days in the range are marked `[future]`, do NOT treat them as missed days)')
     const days = eachDayOfInterval({ start: dateRange.start, end: dateRange.end })
     days.forEach((day, idx) => {
-      const dayName = DAY_ABBREVS[day.getDay()]
       const minutes = stats.dailyMinutes[idx] ?? 0
-      lines.push(`- ${dayName}: ${minutes}m`)
+      let marker = ''
+      if (isFuture(day)) marker = ' [future]'
+      else if (isToday(day) && minutes === 0) marker = ' [today, not yet]'
+      else if (minutes === 0) marker = ' [missed]'
+      lines.push(`- ${format(day, 'EEE, MMM d')}: ${minutes}m${marker}`)
     })
     lines.push('')
-    lines.push('## Focus Area Breakdown')
-
+    lines.push('### Focus area time')
     const sortedSubjects = Object.entries(stats.subjectTime).sort((a, b) => b[1].minutes - a[1].minutes)
     if (sortedSubjects.length === 0) {
-      lines.push('- No focus area data available')
+      lines.push('- No focus area data')
     } else {
-      sortedSubjects.forEach(([name, data]) => {
-        lines.push(`- ${name}: ${formatMinutes(data.minutes)} (${data.sessions} sessions)`)
+      sortedSubjects.forEach(([name, subj]) => {
+        lines.push(`- ${name}: ${formatMinutes(subj.minutes)} (${subj.sessions} sessions)`)
       })
     }
     lines.push('')
-    lines.push('## Session Types')
-    lines.push(`- Pomodoro sessions: ${stats.pomodoroSessions} (${formatMinutes(stats.pomodoroMinutes)} total)`)
-    lines.push(`- Simple timer sessions: ${stats.timerSessions} (${formatMinutes(stats.timerMinutes)} total)`)
-    lines.push(`- Manual logs: ${stats.manualSessions} (${formatMinutes(stats.manualMinutes)} total)`)
-    lines.push('')
-    lines.push('## Goals')
-    lines.push(`- Daily target: ${settings.dailyTargetMinutes} minutes`)
-    lines.push(`- Days target met: ${stats.daysTargetMet}/${stats.daysInRange}`)
-    lines.push('')
-    lines.push('## Streak')
-    lines.push(`- Current streak: ${stats.currentStreak} days`)
+    lines.push('### Session types')
+    lines.push(`- Pomodoro: ${stats.pomodoroSessions} (${formatMinutes(stats.pomodoroMinutes)})`)
+    lines.push(`- Simple timer: ${stats.timerSessions} (${formatMinutes(stats.timerMinutes)})`)
+    lines.push(`- Manual: ${stats.manualSessions} (${formatMinutes(stats.manualMinutes)})`)
+    lines.push(`- Routine auto-logs: ${stats.autoRoutineSessions ?? 0}`)
     lines.push('')
 
-    // Active Habits
+    // Habits
     const activeHabits = data.habits.filter(h => !h.archivedAt && h.status !== 'potential')
     if (activeHabits.length > 0) {
-      lines.push('## Active Habits')
+      lines.push('### Habits')
       activeHabits.forEach(habit => {
-        const logs = data.habitLogs.filter(l => l.habitId === habit.id)
-        const uniqueDays = new Set(logs.map(l => l.date)).size
-        lines.push(`- ${habit.name} (${habit.kind}): ${uniqueDays} days logged, target ${habit.targetPerDay ?? 1}/day`)
+        const periodLogs = data.habitLogs.filter(l => l.habitId === habit.id && l.date >= startStr && l.date <= endStr)
+        const uniqueDays = new Set(periodLogs.map(l => l.date)).size
+        lines.push(`- ${habit.name} (${habit.kind}): ${uniqueDays} day${uniqueDays === 1 ? '' : 's'} in this period, target ${habit.targetPerDay ?? 1}/day`)
       })
       lines.push('')
     }
 
-    // Pending Tasks
-    const pendingTasks = data.assignments.filter(a => !a.completed && !a.deletedAt)
-    if (pendingTasks.length > 0) {
-      lines.push('## Pending Tasks')
-      pendingTasks.sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
-      pendingTasks.slice(0, 15).forEach(task => {
-        const dueStr = task.dueDate ? ` (due ${task.dueDate})` : ''
-        const subject = data.subjects.find(s => s.id === task.subjectId)
-        lines.push(`- ${task.title}${dueStr} [${subject?.name ?? 'Unknown'}]`)
+    // Marks
+    const periodMarks = data.marks.filter(m => !m.deletedAt && m.date >= format(dateRange.start, 'yyyy-MM-dd') && m.date <= format(dateRange.end, 'yyyy-MM-dd'))
+    if (periodMarks.length > 0) {
+      lines.push('### Marks this period')
+      periodMarks.forEach(m => {
+        const subj = data.subjects.find(s => s.id === m.subjectId)
+        const pct = m.total > 0 ? (m.score / m.total) * 100 : 0
+        const avgStr = m.averageMark != null && m.total > 0 ? `, vs avg ${((m.averageMark / m.total) * 100).toFixed(1)}%` : ''
+        lines.push(`- ${m.name} [${subj?.name ?? 'Unknown'}]: ${m.score}/${m.total} (${pct.toFixed(1)}%, weight ${m.weight}%${avgStr})`)
       })
-      if (pendingTasks.length > 15) lines.push(`- ... and ${pendingTasks.length - 15} more`)
+      lines.push('')
+    }
+
+    // Upcoming assignments (this week + next 7 days)
+    const upcomingAssignments = data.assignments.filter(a => !a.completed && !a.deletedAt)
+    if (upcomingAssignments.length > 0) {
+      lines.push('### Open assignments (next 7 days)')
+      const upcoming7 = upcomingAssignments
+        .filter(a => a.dueDate && a.dueDate <= format(subDays(today, -7), 'yyyy-MM-dd'))
+        .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
+        .slice(0, 15)
+      upcoming7.forEach(task => {
+        const subj = data.subjects.find(s => s.id === task.subjectId)
+        lines.push(`- ${task.title} (due ${task.dueDate}) [${subj?.name ?? 'Unknown'}]`)
+      })
+      lines.push('')
+    }
+
+    // Routines adherence
+    const routineAdherence: Array<[string, { planned: number; actual: number }]> = Object.entries((stats.routineAdherence ?? {}) as Record<string, { planned: number; actual: number }>)
+    if (routineAdherence.length > 0) {
+      lines.push('### Routine adherence this period')
+      routineAdherence.forEach(([name, info]) => {
+        const pct = info.planned > 0 ? Math.round((info.actual / info.planned) * 100) : 0
+        lines.push(`- ${name}: ${info.actual}m of ${info.planned}m planned (${pct}%)`)
+      })
       lines.push('')
     }
 
     // Session notes (recent sessions with notes or focus tags)
     const detailedSessions = weekSessions.filter(s => (s.note && s.note.trim() !== '') || s.focusTag)
     if (detailedSessions.length > 0) {
-      lines.push('## Session Notes & Focus Quality')
-      detailedSessions.forEach(s => {
+      lines.push('### Session notes & focus quality')
+      detailedSessions.slice(0, 25).forEach(s => {
         const subj = data.subjects.find(sub => sub.id === s.subjectId)
         const subjName = subj?.name ?? 'Unknown'
         const date = format(parseISO(s.startAt), 'MMM d')
@@ -251,16 +292,9 @@ export default function AIReviewPage() {
       lines.push('')
     }
 
-    lines.push('Please analyse:')
-    lines.push('1. Overall productivity and consistency')
-    lines.push('2. Balance across subjects')
-    lines.push('3. Session length patterns')
-    lines.push('4. Suggestions for improving study habits')
-    lines.push('5. Any areas where I\'m over/under-investing time')
-    lines.push('6. Recommendations for next week\'s study schedule')
-    lines.push('7. Patterns from session notes and focus quality (e.g. recurring challenges, strengths, problem topics)')
+    lines.push('Now produce the 4-section review.')
     return lines.join('\n')
-  }, [dateRange, stats, settings.dailyTargetMinutes, data.habits, data.habitLogs, data.assignments, data.subjects, weekSessions])
+  }, [dateRange, stats, settings.dailyTargetMinutes, data.habits, data.habitLogs, data.assignments, data.subjects, data.marks, weekSessions])
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(aiPrompt)

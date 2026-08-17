@@ -28,7 +28,6 @@ import { format } from 'date-fns'
     { to: '/schedule', label: 'Schedule', icon: '📋' },
     { to: '/marks', label: 'Marks', icon: '📝' },
     { to: '/groups', label: 'Groups', icon: '👥' },
-    { to: '/categories', label: 'Categories', icon: '🗂️' },
     { to: '/reviews', label: 'AI Review', icon: '🤖' },
     { to: '/settings', label: 'Settings', icon: '⚙️' },
   ]
@@ -39,7 +38,7 @@ interface NavPrefs {
   order: string[]
   hidden: string[]
 }
-const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/marks', '/groups', '/categories', '/reviews'] }
+const DEFAULT_PREFS: NavPrefs = { order: [], hidden: ['/marks', '/groups', '/reviews'] }
 
 function loadPrefs(): NavPrefs {
   if (typeof localStorage === 'undefined') return { ...DEFAULT_PREFS }

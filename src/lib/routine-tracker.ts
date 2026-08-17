@@ -1,6 +1,7 @@
 // Auto-tracking: when a study session is saved, update today's RoutineLog
 // for any Routine whose day + subject (+project) matches the session.
 import { v4 as uuid } from 'uuid'
+import { matchesAnySubject } from './subject-mode'
 import { db } from '../db/app-db'
 import type { Session, RoutineLog, StreakDay, DayOfWeek } from '../domain/types'
 import { getSessionScope, isoNow, sessionLocalDate } from './utils'
@@ -23,7 +24,7 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
   const autoMatch = allRoutines.filter((r) => {
     if (r.deletedAt) return false
     if (!r.dayMinutes[sessionDow] || r.dayMinutes[sessionDow]! <= 0) return false
-    if (r.subjectId !== session.subjectId) return false
+    if (!matchesAnySubject(r.subjectId) && r.subjectId !== session.subjectId) return false
     if (r.projectId && r.projectId !== session.projectId) return false
     return true
   })
@@ -83,7 +84,7 @@ export async function revertRoutineLogsForSession(session: Session): Promise<voi
   const matching = allRoutines.filter((r) => {
     if (r.deletedAt) return false
     if (!r.dayMinutes[sessionDow] || r.dayMinutes[sessionDow]! <= 0) return false
-    if (r.subjectId !== session.subjectId) return false
+    if (!matchesAnySubject(r.subjectId) && r.subjectId !== session.subjectId) return false
     if (r.projectId && r.projectId !== session.projectId) return false
     return true
   })

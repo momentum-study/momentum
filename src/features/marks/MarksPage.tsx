@@ -71,6 +71,8 @@ export default function MarksPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [visibleCount, setVisibleCount] = useState(20)
   const marks = data.marks.filter((m) => !m.deletedAt)
+  const [selectedMarkIds, setSelectedMarkIds] = useState<Set<string>>(new Set())
+  const [compareOpen, setCompareOpen] = useState(false)
   const subjects = filterActive(data.subjects)
   const categories = filterActive(data.categories)
 
@@ -224,12 +226,18 @@ export default function MarksPage() {
   const SortIcon = ({ column }: { column: SortKey }) => (
     <span className="ml-1 text-xs">{sortKey === column ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</span>
   )
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Marks</h2>
-        <Button variant="primary" size="sm" onClick={openAdd}>Add Mark</Button>
+        <div className="flex gap-2">
+          {selectedMarkIds.size > 1 && (
+            <Button variant="secondary" size="sm" onClick={() => setCompareOpen(true)}>
+              Compare {selectedMarkIds.size} marks
+            </Button>
+          )}
+          <Button variant="primary" size="sm" onClick={openAdd}>Add Mark</Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -259,6 +267,21 @@ export default function MarksPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-700 text-left text-slate-500 dark:text-slate-400">
+                <th className="pb-2 pr-2 w-8">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible"
+                    checked={visibleMarks.length > 0 && visibleMarks.every((m) => selectedMarkIds.has(m.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedMarkIds(new Set(visibleMarks.map((m) => m.id)))
+                      } else {
+                        setSelectedMarkIds(new Set())
+                      }
+                    }}
+                    className="h-4 w-4 cursor-pointer rounded border-slate-300 text-primary-600 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700"
+                  />
+                </th>
                 <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('name')}>Name<SortIcon column="name" /></th>
                 <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('subject')}>Subject<SortIcon column="subject" /></th>
                 <th className="pb-2 pr-4 font-medium">Score</th>
@@ -283,6 +306,20 @@ export default function MarksPage() {
                 const vsAvg = hasAvg ? pct - (avgPct as number) : null
                 return (
                   <tr key={m.id} className="border-b border-slate-100 dark:border-slate-700/50">
+                    <td className="py-2.5 pr-2">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${m.name}`}
+                        checked={selectedMarkIds.has(m.id)}
+                        onChange={() => setSelectedMarkIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(m.id)) next.delete(m.id)
+                          else next.add(m.id)
+                          return next
+                        })}
+                        className="h-4 w-4 cursor-pointer rounded border-slate-300 text-primary-600 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700"
+                      />
+                    </td>
                     <td className="py-2.5 pr-4 font-medium text-slate-800 dark:text-slate-100">{m.name}</td>
                     <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{subjectName(m.subjectId)}</td>
                     <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{m.score}/{m.total}</td>
@@ -377,6 +414,53 @@ export default function MarksPage() {
           </div>
         </div>
       </Modal>
+
+      <Modal open={compareOpen} onClose={() => setCompareOpen(false)} title={`Compare ${selectedMarkIds.size} marks`} className="max-w-2xl">
+        <div className="overflow-x-auto max-h-[70vh]">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-slate-700 text-left text-slate-500">
+                <th className="pb-2 pr-4 font-medium">Name</th>
+                <th className="pb-2 pr-4 font-medium">Subject</th>
+                <th className="pb-2 pr-4 font-medium">%</th>
+                <th className="pb-2 pr-4 font-medium">Grade</th>
+                <th className="pb-2 pr-4 font-medium">Weight</th>
+                <th className="pb-2 pr-4 font-medium">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.marks.filter(m => selectedMarkIds.has(m.id)).map(m => {
+                const pct = weightedPct(m)
+                const grade = getGrade(m)
+                return (
+                  <tr key={m.id} className="border-b border-slate-100 dark:border-slate-700/50">
+                    <td className="py-2 pr-4 font-medium text-slate-800 dark:text-slate-100">{m.name}</td>
+                    <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{subjectName(m.subjectId)}</td>
+                    <td className={cn('py-2 pr-4 font-medium', pct >= 80 ? 'text-green-600' : pct >= 50 ? 'text-yellow-600' : 'text-red-600')}>{pct.toFixed(1)}%</td>
+                    <td className={cn('py-2 pr-4 font-medium', gradeColor(grade))}>{grade}</td>
+                    <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{m.weight}%</td>
+                    <td className="py-2 pr-4 text-slate-500">{m.date}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {(() => {
+            const selectedMarks = data.marks.filter(m => selectedMarkIds.has(m.id))
+            const totalWeight = selectedMarks.reduce((sum, m) => sum + m.weight, 0)
+            const weightedAvg = totalWeight > 0
+              ? selectedMarks.reduce((sum, m) => sum + weightedPct(m) * m.weight, 0) / totalWeight
+              : 0
+            return (
+              <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-800 dark:text-slate-100">
+                Weighted average: {weightedAvg.toFixed(1)}% <span className={cn('ml-2', gradeColor(pctToGrade(weightedAvg)))}>({pctToGrade(weightedAvg)})</span>
+                <span className="ml-2 text-xs font-normal text-slate-500">across {selectedMarks.length} marks</span>
+              </div>
+            )
+          })()}
+        </div>
+      </Modal>
+
     </div>
   )
 }

@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "preview": "vite preview",
-    "deploy": "gh-pages -d dist --remote org"
+    "deploy": "gh-pages -d dist --remote org",
+    "release": "npm version patch -m 'release: v%s' && git push org main && npm run deploy"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

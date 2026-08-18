@@ -477,7 +477,27 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 - **Symptom**: adding a new `<Card>` (e.g. "Time by Project") to `ReportsPage` produced `TS17008: JSX element 'Card' has no corresponding closing tag` and a broken table render.
 - **Root cause**: the new block was inserted at a line number that fell *inside* an existing `<table>`/`<tbody>`/`<tr>` region (the "Time by Focus Area" table). The `insert after N` landed mid-table, so the new `<Card>` was nested inside a `<tr>`, and the table's closing tags were left dangling.
 - **Fix applied**: re-read the surrounding JSX, removed the misplaced block, and re-inserted it *after* the enclosing `</Card>` of the focus-area card (a clean sibling boundary), then re-verified the table's `</tr></tbody></table></div>` closing sequence.
-- **Stall trap**: "just add a closing tag" → no; the real problem is the insertion point. When adding a sibling JSX block, anchor the insert on the *closing tag* of the previous sibling (or the blank line after it), never on a line number that could be mid-element. Always re-read the target region before inserting, and verify the enclosing element's closing tags are intact afterward.
+### 10.39 Habit untick visually stuck "on" after fast tick→untick
+- **Symptom**: clicking the tick button on a habit immediately removes the ✓ from the state but the button still shows ✓ / "Done" after the next render.
+- **Root cause**: `effectiveHabitLogs` filtered `data.habitLogs` by `localLogDeletions`, but `localLogAdditions` was concatenated *unfiltered*. When a tick was added optimistically (`localLogAdditions`) and then unticked within the same render cycle (before `mutate` cleared it from `localLogAdditions`), the deleted log survived via the unfiltered `localLogAdditions` branch.
+- **Fix applied**: `effectiveHabitLogs` now also filters `localLogAdditions` by `localLogDeletions` before concatenation: `localMinusDeletions = localLogAdditions.filter(l => !localLogDeletions.has(l.id))`. The dedup against `data.habitLogs` is unchanged.
+- **Stall trap**: "the delete call failed silently" → no; the issue is that the optimistic overlay was never cleaned up. Always ensure every consumer of `localLogAdditions` also subtracts `localLogDeletions`.
+
+### 10.40 FloatingTimerBanner intercepts clicks behind it
+- **Symptom**: the "Studying: subject TIME" pill at bottom-center blocks clicks on UI elements underneath it (FAB, footer, page-end buttons).
+- **Root cause**: the outer `<div>` had `pointer-events-auto`, which made the entire bounding box intercept clicks even though the only interactive child is the inner `<button>`.
+- **Fix applied**: outer `<div>` is now `pointer-events-none`; the inner `<button>` keeps `pointer-events-auto`. Clicks pass through the banner except directly on the button.
+
+### 10.41 `useStreak` longestStreak undercounted runs with mid- run gap
+- **Symptom**: current streak shows 10 but best/longest streak shows 8 (or any case where current > best, which should be impossible).
+- **Root cause**: `longestStreak` iterated *chronologically* through sorted days, consuming freezes only for gaps that came *after* the freeze was earned in chronological order. The current-streak loop iterates *backwards from today*, so it could use a freeze earned mid-run (e.g. day 14 of a run) to cover an earlier gap (e.g. day 10) — yielding 10 — while the chronological pass couldn't, so it found only 8.
+- **Fix applied**: `longestStreak` now mirrors the current-streak loop — for each logged day, it that the anchor and walks backwards using the same freeze logic (5 consecutive logged → +1 freeze, miss with freeze → consume, double miss → break). The max across all anchors is the true longest streak. The invariant `longestStreak ≥ currentStreak` now holds.
+- **Stall trap**: "just `Math.max(longestStreak, currentStreak)`" → masks the bug but the displayed `bestStreak` (persisted to localStorage) would still be wrong on first render after the fix lands. Fix the computation, not the consumer.
+
+### 10.42 HabitsPage renders with empty data during initial load
+- **Symptom**: after Ctrl+R, the Habits page briefly shows "No good habits / No bad habits" before the data populates.
+- **Root cause**: `useData()` starts with `emptyData`; `loadData()` runs in a `useEffect` and only fires after cloud pull completes. HabitsPage never checked `isLoading` and rendered immediately.
+- **Fix applied**: HabitsPage now reads `isLoading` from `useData()` and returns `<PageSpinner />` during initial load.
 
 ---
 
@@ -601,8 +621,7 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 **SPEC_VERSION: 15** — 2026-08-16 reverted the flattened-grid width-button experiment; dashboard restored to the three-column grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`) with `ColumnFloor`/`GhostWidget`. Per-widget width controls (the `{cols}w` button in `DashboardWidget` and the Width −/+ controls in the Customise modal) removed entirely — every widget is one column wide and falls upward into the shortest column (§6.1).
 
-**SPEC_VERSION: 14** — 2026-08-16 Study Timer notes textarea now shows the previous note for the selected subject as gray placeholder text when empty; focusing/clicking activates it as this session's note, typing overwrites it. Per-subject last notes persist in localStorage via `getLastNote`/`setLastNote` in `timer-persistence.ts` (§6.8).
-
+**SPEC_VERSION: 21** — 2026-08-18 Fixed three bugs: (1) `FloatingTimerBanner` no longer blocks clicks behind it (pointer-events-none wrapper, §10.40). (2) Habit untick now visually updates — `effectiveHabitLogs` also filters `localLogAdditions` by `localLogDeletions` (§10.39). (3) `longestStreak` in `useStreak` now uses backwards-from-anchor logic matching the current-streak loop, so invariants like longest ≥ current hold (§10.41). (4) HabitsPage shows `<PageSpinner />` during initial load instead of rendering empty state flicker (§10.42). Added regression tests for freeze-cover streak behavior.
 **SPEC_VERSION: 13** — 2026-08-16 pomodoro "Stop & Save" now works while paused: `resetPomodoro()` saves partial focus progress using `goal − remaining` when `pomStartedAt` is null, so users no longer have to discard a paused session to stop the timer; added `resumePomodoro()` so the Resume button and the timer-toggle keyboard shortcut actually resume the paused phase instead of resetting it (§6.8).
 
 **SPEC_VERSION: 12** — 2026-08-16 dashboard Today card gained a last-session line (`formatLastSessionText`, §6.1); fixed grid-reorder flicker by caching `columnItems` by content so SortableContext doesn't re-register on every drag-over; added an editable End field to the session edit modal (editing End recomputes Duration).

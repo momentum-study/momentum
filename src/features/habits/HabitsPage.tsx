@@ -8,6 +8,7 @@ import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { PageSpinner } from '../../components/ui/Spinner'
 import { Modal } from '../../components/ui/Modal'
 import { ColorPicker } from '../../components/ui/ColorPicker'
 import { v4 as uuid } from 'uuid'
@@ -20,7 +21,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 
 export default function HabitsPage() {
-  const { data, mutate } = useData()
+  const { data, mutate, isLoading } = useData()
   const { push: pushUndo } = useUndo()
   const settings = loadSettings()
   // Local optimistic overlay for habit logs — written to Dexie, then reflected
@@ -31,10 +32,15 @@ export default function HabitsPage() {
   // Without this, localLogAdditions can double-count with data.habitLogs after a log
   // gets persisted but before localLogAdditions is cleared.
   const effectiveHabitLogs = useMemo(() => {
+    // B1 fix — also filter localLogAdditions by localLogDeletions so that
+    // unticking a habit whose log is still in the optimistic overlay removes
+    // it from the visible count. Without this, a tick→untick within the
+    // optimistic window leaves the tick button stuck "on".
     const persisted = data.habitLogs.filter((l) => !l.deletedAt && !localLogDeletions.has(l.id))
     const localIds = new Set(localLogAdditions.map((l) => l.id))
     const persistedMinusLocal = persisted.filter((l) => !localIds.has(l.id))
-    return persistedMinusLocal.concat(localLogAdditions)
+    const localMinusDeletions = localLogAdditions.filter((l) => !localLogDeletions.has(l.id))
+    return persistedMinusLocal.concat(localMinusDeletions)
   }, [data.habitLogs, localLogAdditions, localLogDeletions])
   // Debounce guard for quickLogToday: prevents double-click race conditions
   // when toggling tick-mode habits.
@@ -729,6 +735,7 @@ export default function HabitsPage() {
     return () => window.removeEventListener('momentum:habits-select', onSelect)
   }, [currentHabits.length])
 
+  if (isLoading) return <PageSpinner />
 
   return (
     <div className="space-y-6">

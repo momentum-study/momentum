@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { format, subDays, differenceInCalendarDays } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { toLocalDateString } from './utils';
 import type { Session } from '../domain/types';
 
@@ -44,41 +44,41 @@ export function useStreak(sessions: Session[], previewDates: Set<string> = new S
   const longestStreak = useMemo(() => {
     const daySet = new Set<string>();
     for (const s of sessions) daySet.add(toLocalDateString(s.startAt));
+    if (daySet.size === 0) return 0;
+    if (daySet.size === 1) return 1;
+
+    // B2 fix — compute the longest streak by trying each logged day as the
+    // "anchor" and counting backwards from it using the same freeze logic as
+    // the current-streak loop. The previous chronological approach was
+    // inconsistent: it couldn't use a freeze earned mid-run for a gap that
+    // occurred earlier (chronologically) in that run, so it undercounted
+    // streaks that included a frozen day before the 5th consecutive day.
     const sortedDays = Array.from(daySet).sort();
-    if (sortedDays.length <= 1) return sortedDays.length;
-
-    let max = 1;
-    let current = 1;
-    let consecutiveLogged = 1;
-    let freezes = 0;
-
-    for (let i = 1; i < sortedDays.length; i++) {
-      const gapDays = differenceInCalendarDays(
-        new Date(sortedDays[i]),
-        new Date(sortedDays[i - 1])
-      ) - 1;
-
-      if (gapDays <= 0) {
-        current++;
-        consecutiveLogged++;
-      } else if (freezes >= gapDays) {
-        freezes -= gapDays;
-        current++;
-        consecutiveLogged = 1;
-      } else {
-        if (current > max) max = current;
-        current = 1;
-        consecutiveLogged = 1;
-        freezes = 0;
+    let max = 0;
+    for (const anchor of sortedDays) {
+      let count = 0;
+      let consecutiveLogged = 0;
+      let freezes = 0;
+      let d = new Date(anchor + 'T00:00:00');
+      while (true) {
+        const ds = format(d, 'yyyy-MM-dd');
+        if (daySet.has(ds)) {
+          count++;
+          consecutiveLogged++;
+          if (consecutiveLogged === 5) {
+            freezes++;
+            consecutiveLogged = 0;
+          }
+        } else if (freezes > 0) {
+          freezes--;
+          consecutiveLogged = 0;
+        } else {
+          break;
+        }
+        d = subDays(d, 1);
       }
-
-      if (consecutiveLogged === 5) {
-        freezes++;
-        consecutiveLogged = 0;
-      }
+      if (count > max) max = count;
     }
-
-    if (current > max) max = current;
     return max;
   }, [sessions]);
 

@@ -62,11 +62,14 @@ export function FloatingTimerBanner() {
 
   return (
     <div
-      className="pointer-events-auto fixed bottom-4 left-1/2 z-50 -translate-x-1/2"
+      className="pointer-events-none fixed bottom-4 left-1/2 z-50 -translate-x-1/2"
       aria-live="polite"
       aria-label="Active study timer"
     >
-      <button onClick={() => navigate('/')} className="flex items-center gap-2 rounded-full bg-primary-600 px-5 py-2 shadow-lg">
+      <button
+        onClick={() => navigate('/')}
+        className="pointer-events-auto flex items-center gap-2 rounded-full bg-primary-600 px-5 py-2 shadow-lg"
+      >
         <span className="text-sm font-medium text-white">
           Studying{subjectName ? `: ${subjectName}` : ''}
         </span>

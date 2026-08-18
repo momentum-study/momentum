@@ -1,40 +1,56 @@
 import { describe, it, expect } from 'vitest'
-import { format, subDays, differenceInCalendarDays } from 'date-fns'
+import { format, subDays } from 'date-fns'
 
 function computeStreak(studyDates: string[], today = '2026-07-21'): number {
   const daySet = new Set(studyDates)
   let count = 0
-  let missed = 0
-  let d = new Date(today)
+  let consecutiveLogged = 0
+  let freezes = 0
+  let d = new Date(today + 'T00:00:00')
   while (true) {
     const ds = format(d, 'yyyy-MM-dd')
     if (daySet.has(ds)) {
       count++
-      d = subDays(d, 1)
+      consecutiveLogged++
+      if (consecutiveLogged === 5) { freezes++; consecutiveLogged = 0 }
+    } else if (freezes > 0) {
+      freezes--
+      consecutiveLogged = 0
     } else {
-      missed++
-      if (missed > 1) break
-      d = subDays(d, 1)
+      break
     }
+    d = subDays(d, 1)
   }
   return count
 }
 
 function computeLongestStreak(studyDates: string[]): number {
-  const sortedDays = [...new Set(studyDates)].sort()
-  if (sortedDays.length <= 1) return 0
+  const daySet = new Set(studyDates)
+  const sortedDays = [...daySet].sort()
+  if (sortedDays.length === 0) return 0
+  if (sortedDays.length === 1) return 1
   let max = 0
-  let cur = 1
-  for (let i = 1; i < sortedDays.length; i++) {
-    const diff = differenceInCalendarDays(new Date(sortedDays[i]), new Date(sortedDays[i - 1]))
-    if (diff <= 2) {
-      cur++;
-    } else {
-      if (cur > max) max = cur;
-      cur = 1;
+  for (const anchor of sortedDays) {
+    let count = 0
+    let consecutiveLogged = 0
+    let freezes = 0
+    let d = new Date(anchor + 'T00:00:00')
+    while (true) {
+      const ds = format(d, 'yyyy-MM-dd')
+      if (daySet.has(ds)) {
+        count++
+        consecutiveLogged++
+        if (consecutiveLogged === 5) { freezes++; consecutiveLogged = 0 }
+      } else if (freezes > 0) {
+        freezes--
+        consecutiveLogged = 0
+      } else {
+        break
+      }
+      d = subDays(d, 1)
     }
+    if (count > max) max = count
   }
-  if (cur > max) max = cur
   return max
 }
 
@@ -48,84 +64,93 @@ describe('computeStreak', () => {
   })
 
   it('returns 7 for 7 consecutive days', () => {
-    const days = [
-      '2026-07-21',
-      '2026-07-20',
-      '2026-07-19',
-      '2026-07-18',
-      '2026-07-17',
-      '2026-07-16',
-      '2026-07-15',
-    ]
+    const days = ['2026-07-21', '2026-07-20', '2026-07-19', '2026-07-18', '2026-07-17', '2026-07-16', '2026-07-15']
     expect(computeStreak(days)).toBe(7)
   })
 
-  it('allows one missed day in the chain', () => {
-    // study on 21st, skip 20th, study 19th = streak 2
+  it('uses freeze from 5 consecutive days to cover one miss', () => {
+    // 5 hits → earn freeze → 1 miss (covered) → hit → total = 6 logged, 6 count
+    const days = ['2026-07-21', '2026-07-20', '2026-07-19', '2026-07-18', '2026-07-17', '2026-07-15']
+    expect(computeStreak(days)).toBe(6)
+  })
+
+  it('breaks immediately without freeze on a single miss', () => {
+    // Only 1 consecutive logged day, no freeze available
     const days = ['2026-07-21', '2026-07-19']
-    expect(computeStreak(days)).toBe(2)
-  })
-
-  it('breaks after two missed days', () => {
-    // 21st hit, 20th missed, 19th missed => streak stops at 1
-    const days = ['2026-07-21', '2026-07-18']
     expect(computeStreak(days)).toBe(1)
   })
 
-  it('alternating days produces streak of 2', () => {
-    // 21st hit, 20th missed, 19th hit, 18th missed, 17th hit
-    // hit 21st (count=1), miss 20th (missed=1), hit 19th (count=2), miss 18th (missed=2 break)
+  it('breaks after two missed days even when freeze was earned', () => {
+    // 5 hits → earn freeze → 1 miss (covered) → 2nd miss (no freeze) → break
+    const days = ['2026-07-21', '2026-07-20', '2026-07-19', '2026-07-18', '2026-07-17', '2026-07-14']
+    expect(computeStreak(days)).toBe(5)
+  })
+
+  it('alternates hit/miss without earning freeze → streak of 1', () => {
+    // Alternating days never reach 5 consecutive to earn a freeze
     const days = ['2026-07-21', '2026-07-19', '2026-07-17']
-    expect(computeStreak(days)).toBe(2)
-  })
-
-  it('counts today even when there is an earlier gap', () => {
-    const days = ['2026-07-21']
     expect(computeStreak(days)).toBe(1)
   })
 
-  it('does not extend past a missing day before a gap', () => {
-    // hits only on 21 and 19; 20 missed; streak = 2
-    expect(computeStreak(['2026-07-21', '2026-07-19'])).toBe(2)
+  it('uses one freeze and stops on second miss one day later', () => {
+    // 5 hits, miss (covered by freeze), then hit again
+    const days = ['2026-07-21', '2026-07-20', '2026-07-19', '2026-07-18', '2026-07-17', '2026-07-15', '2026-07-13']
+    expect(computeStreak(days)).toBe(6)
   })
 })
 
 describe('computeLongestStreak', () => {
-  it('returns 0 for 0 or 1 days', () => {
+  it('returns 0 for empty set', () => {
     expect(computeLongestStreak([])).toBe(0)
-    expect(computeLongestStreak(['2026-07-21'])).toBe(0)
+  })
+
+  it('returns 1 for a single day', () => {
+    expect(computeLongestStreak(['2026-07-21'])).toBe(1)
   })
 
   it('returns 2 for 2 consecutive days', () => {
     expect(computeLongestStreak(['2026-07-21', '2026-07-20'])).toBe(2)
   })
 
-  it('finds longest chain with one gap', () => {
-    // 15-17-19-20-21 => gaps of 2,2,1,1. Each gap is <= 2 (at most one
-    // missed day), so the whole run is one chain of 5.
-    const days = ['2026-07-21', '2026-07-20', '2026-07-19', '2026-07-17', '2026-07-15']
-    expect(computeLongestStreak(days)).toBe(5)
+  it('finds longest run with freeze covering a gap', () => {
+    // 5 hits → freeze earned → 1 miss covered → 1 hit → total 6 counted
+    const days = ['2026-07-21', '2026-07-20', '2026-07-19', '2026-07-18', '2026-07-17', '2026-07-15']
+    expect(computeLongestStreak(days)).toBe(6)
   })
 
-  it('L3: refreshes the one-gap budget on every logged day (hit/miss/hit/miss/hit)', () => {
-    // Mon, Wed, Fri — two single-day gaps. The one-gap budget must be
-    // replenished after each logged day, so the longest streak is 3, not 2.
-    const days = ['2026-07-13', '2026-07-15', '2026-07-17']
-    expect(computeLongestStreak(days)).toBe(3)
+  it('handles gap that splits a run into two parts', () => {
+    // Days 21,20,19,18,17,15,14,13,12,11: that's actually 10 hits with
+    // day 16 missed. First run (21→17) earns freeze, covers 16, continues.
+    const days = ['2026-07-21', '2026-07-20', '2026-07-19', '2026-07-18', '2026-07-17', '2026-07-15', '2026-07-14', '2026-07-13', '2026-07-12', '2026-07-11']
+    expect(computeLongestStreak(days)).toBe(10)
   })
 
-  it('handles gap > 2 correctly', () => {
+  it('handles gap > freeze budget correctly', () => {
     const days = ['2026-07-21', '2026-07-20', '2026-07-10']
     expect(computeLongestStreak(days)).toBe(2)
   })
 
-  it('returns length of a clean run', () => {
+  it('returns length of a clean run (no freezes needed)', () => {
     const days = ['2026-07-15', '2026-07-16', '2026-07-17', '2026-07-18', '2026-07-19']
     expect(computeLongestStreak(days)).toBe(5)
   })
 
-  it('picks the longer of two separate runs separated by a big gap', () => {
+  it('picks the longer of two separate runs', () => {
     const days = ['2026-07-10', '2026-07-11', '2026-07-20', '2026-07-21']
     expect(computeLongestStreak(days)).toBe(2)
+  })
+
+  it('regression: longest streak >= current streak for any dataset', () => {
+    // Simulates the user's data shape: Aug 8-18 run uses freeze earned on
+    // Aug 14 to cover Aug 10, yielding current streak 10.
+    // Longest streak must be at least 10.
+    const days = [
+      '2026-08-08', '2026-08-09', '2026-08-11', '2026-08-12', '2026-08-13',
+      '2026-08-14', '2026-08-15', '2026-08-16', '2026-08-17', '2026-08-18',
+    ]
+    const cur = computeStreak(days, '2026-08-18')
+    const longest = computeLongestStreak(days)
+    expect(cur).toBe(10)
+    expect(longest).toBeGreaterThanOrEqual(cur)
   })
 })

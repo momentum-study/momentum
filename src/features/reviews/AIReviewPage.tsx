@@ -47,7 +47,7 @@ function getDatePresetRange(preset: DatePreset): { start: Date; end: Date } {
 export default function AIReviewPage() {
   const { data, isLoading } = useData()
   const settings = loadSettings()
-  const [datePreset, setDatePreset] = useState<DatePreset>('thisWeek')
+  const [datePreset, setDatePreset] = useState<DatePreset>('last7Days')
   const [customStart, setCustomStart] = useState<string>('')
   const [customEnd, setCustomEnd] = useState<string>('')
   const [showCustom, setShowCustom] = useState(false)

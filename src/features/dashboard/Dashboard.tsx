@@ -759,6 +759,17 @@ export default function Dashboard() {
     }
     tick()
     interval = window.setInterval(tick, active ? 1000 : 5000)
+    // MUST clear the interval on cleanup. Without this, every change to
+    // data.subjects/data.categories (e.g. creating a new subject) re-runs this
+    // effect and spawns ANOTHER interval on top of the old one. The stale
+    // interval still closes over the OLD subjects array (missing the new
+    // subject), so its tick computes live seconds = 0 while the fresh
+    // interval computes the real value — racing each second and making the
+    // "Today by Subject" percentage flip between including and excluding the
+    // new subject. Clearing on cleanup leaves exactly one live interval.
+    return () => {
+      if (interval) clearInterval(interval)
+    }
   }, [data.subjects, data.categories])
   const [editSubjectId, setEditSubjectId] = useState('')
 
@@ -1251,8 +1262,8 @@ export default function Dashboard() {
             {streak === 0 && <p className="text-sm text-slate-500">Log a session today to start your streak!</p>}
             {streak > 0 && liveTotalTodayMinutes === 0 && (
               <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                Log today to keep your streak — one missed day is forgiven per chain.
-                If you miss two days in a row, the chain breaks.
+                Log today to keep your streak. Every 5 consecutive logged days earns 1 missed-day freeze.
+                If you miss two days in a row without a freeze, the chain breaks.
               </p>
             )}
             <div>

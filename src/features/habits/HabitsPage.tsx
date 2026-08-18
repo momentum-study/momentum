@@ -454,8 +454,9 @@ export default function HabitsPage() {
         // lag that made the page feel unresponsive during reset.
         await db.habitLogs.bulkUpdate(logs.map(l => ({ key: l.id, changes: { deletedAt: now, updatedAt: now } })))
       }
-      // Clear optimistic overlays for this habit so locally-added logs don't
-      // reappear after the reset.
+      // Re-anchor the streak and heatmap to "now" so the habit behaves as
+      // freshly-started after reset (the user explicitly asked for streak=0).
+      await db.habits.update(id, { createdAt: now, updatedAt: now })
       setLocalLogAdditions((prev) => prev.filter((l) => l.habitId !== id))
       setLocalLogDeletions((prev) => {
         const next = new Set(prev)
@@ -463,7 +464,11 @@ export default function HabitsPage() {
         return next
       })
       setResetConfirm(null)
-      mutate(prev => ({ ...prev, habitLogs: prev.habitLogs.map(l => logs.some(lo => lo.id === l.id) ? { ...l, deletedAt: now, updatedAt: now } : l) }))
+      mutate(prev => ({ 
+        ...prev, 
+        habits: prev.habits.map(h => h.id === id ? { ...h, createdAt: now, updatedAt: now } : h),
+        habitLogs: prev.habitLogs.map(l => logs.some(lo => lo.id === l.id) ? { ...l, deletedAt: now, updatedAt: now } : l) 
+      }))
     } catch (e) { console.error('Failed to reset habit data', e) }
   }
 

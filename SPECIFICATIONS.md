@@ -499,6 +499,18 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 - **Root cause**: `useData()` starts with `emptyData`; `loadData()` runs in a `useEffect` and only fires after cloud pull completes. HabitsPage never checked `isLoading` and rendered immediately.
 - **Fix applied**: HabitsPage now reads `isLoading` from `useData()` and returns `<PageSpinner />` during initial load.
 
+### 10.43 Dashboard live-timer interval leak — "Today by Subject" percentage flicker
+- **Symptom**: when you create a new subject (or otherwise change `data.subjects`/`data.categories`), the "Today by Subject" breakdown percentage for that subject flips between including and not including it once per second.
+- **Root cause**: the live-timer effect in `Dashboard.tsx` (around line 743) had **no cleanup function**. Its dependency array is `[data.subjects, data.categories]`, so every change to those arrays re-ran the effect and spawned a *new* `setInterval` on top of the old one. The stale interval still closed over the OLD `subjects` array (without the new subject), so its `tick()` computed `getLiveTimerSeconds(...) → 0` for the new subject while the fresh interval computed the real value. React received both updates per second and the UI flickered.
+- **Fix applied**: added `return () => { if (interval) clearInterval(interval) }` to the effect. Exactly one live interval now runs at a time, so `liveTimerSeconds` is stable.
+- **Stall trap**: "the `subjects` reference in the interval closure is stale, refactor to use a ref" → that would mask the leak but not fix it. The real fix is cleanup. An interval that re-reads `data.subjects` from React state still can't, because intervals don't re-run effects. Cleanup the interval on dependency change so only the new effect's interval exists.
+
+### 10.44 Habit "Reset Data" must also re-anchor `createdAt`
+- **Symptom**: clicking "Reset Data" on a habit cleared all logs but the streak counter and 90-day heatmap still showed the old history as if the habit had been running since the original `createdAt`. For a "bad" habit this was especially bad — clearing the logs made every day count as a "successful avoidance" all the way back to `createdAt`, giving the habit a phantom streak of weeks/months.
+- **Root cause**: `streakMap` and the heatmap both anchor on `habit.createdAt`. Soft-deleting the logs removes the evidence, but the anchor still points to the original creation date, so the streak loop iterates over days that the user explicitly chose to wipe.
+- **Fix applied**: `resetHabitDataFn` now calls `db.habits.update(id, { createdAt: now, updatedAt: now })` and mirrors it in the `mutate` update. After reset, the habit behaves as if it were freshly created today: streak = 0, heatmap starts from today.
+- **Stall trap**: "add a separate `lastResetAt` field, don't overload `createdAt`" → yes, but it requires a schema bump for negligible gain. The user's mental model of "reset = start fresh today" matches overloading `createdAt`. The audit trail (true creation date) is preserved in Dexie history via `updatedAt` and prior backups. Keep it simple.
+
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -601,6 +613,10 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 ### 14.4 Version stamp
 
+**SPEC_VERSION: 22** — 2026-08-18 Fixed (1) habit "Reset Data" now re-anchors `createdAt` so streaks/heatmap reset to zero instead of showing a phantom run back to the original creation date (§10.44); (2) dashboard live-timer interval leak that made the "Today by Subject" percentage flip between including and excluding a newly-created subject (§10.43); (3) dashboard streak tooltip now states the freeze rule (5 consecutive logged days → 1 freeze) instead of the outdated "one missed day forgiven per chain" (§6.1).
+
+**SPEC_VERSION: 21** — 2026-08-18 Fixed four bugs: (1) `FloatingTimerBanner` no longer blocks clicks behind it (pointer-events-none wrapper, §10.40). (2) Habit untick now visually updates — `effectiveHabitLogs` also filters `localLogAdditions` by `localLogDeletions` (§10.39). (3) `longestStreak` in `useStreak` now uses backwards-from-anchor logic matching the current-streak loop, so invariants like longest ≥ current hold (§10.41). (4) HabitsPage shows `<PageSpinner />` during initial load instead of rendering empty state flicker (§10.42). Added regression tests for freeze-cover streak behavior.
+
 **SPEC_VERSION: 20** — 2026-08-18 fixed Habits auto-archive UI (removed archive-after field/banner), added "Last 7 Days" sliding window to AI Review, added axis labels to Reports Daily Trend chart, and added manual deployment instruction to §13.
 
 **SPEC_VERSION: 19** — 2026-08-17 added §13 deployment requirement: every commit to `org/main` SHOULD be deployed to `https://momentum-study.github.io/momentum/`; `npm run deploy` is not optional for substantive changes.
@@ -621,7 +637,6 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 **SPEC_VERSION: 15** — 2026-08-16 reverted the flattened-grid width-button experiment; dashboard restored to the three-column grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`) with `ColumnFloor`/`GhostWidget`. Per-widget width controls (the `{cols}w` button in `DashboardWidget` and the Width −/+ controls in the Customise modal) removed entirely — every widget is one column wide and falls upward into the shortest column (§6.1).
 
-**SPEC_VERSION: 21** — 2026-08-18 Fixed three bugs: (1) `FloatingTimerBanner` no longer blocks clicks behind it (pointer-events-none wrapper, §10.40). (2) Habit untick now visually updates — `effectiveHabitLogs` also filters `localLogAdditions` by `localLogDeletions` (§10.39). (3) `longestStreak` in `useStreak` now uses backwards-from-anchor logic matching the current-streak loop, so invariants like longest ≥ current hold (§10.41). (4) HabitsPage shows `<PageSpinner />` during initial load instead of rendering empty state flicker (§10.42). Added regression tests for freeze-cover streak behavior.
 **SPEC_VERSION: 13** — 2026-08-16 pomodoro "Stop & Save" now works while paused: `resetPomodoro()` saves partial focus progress using `goal − remaining` when `pomStartedAt` is null, so users no longer have to discard a paused session to stop the timer; added `resumePomodoro()` so the Resume button and the timer-toggle keyboard shortcut actually resume the paused phase instead of resetting it (§6.8).
 
 **SPEC_VERSION: 12** — 2026-08-16 dashboard Today card gained a last-session line (`formatLastSessionText`, §6.1); fixed grid-reorder flicker by caching `columnItems` by content so SortableContext doesn't re-register on every drag-over; added an editable End field to the session edit modal (editing End recomputes Duration).
@@ -636,6 +651,7 @@ When you make a substantive update, bump the `SPEC_VERSION` marker below so inst
 **SPEC_VERSION: 8** — 2026-08-15 added §0.1 "Read specs for momentum" response protocol: a new instance told to read specs must read this file + README + .bugfix-plan, then reply with a short confirmation (app description, SPEC_VERSION, live URL, open-bug status) and wait — no work, no full recap, no unprompted audit.
 **SPEC_VERSION: 5** — 2026-08-15 closed L4 (subject picker orphaned children), L6 (verified modal drag-to-dismiss already correct), BUG-185 (build-id reload guard added in `main.tsx`); updated §12 pending bugs list; added §10.32 (log-modal projected total); §10.31 status flipped to "fixed".
 **SPEC_VERSION: 4** — 2026-08-13 added §10.23 (freeform removal status), §10.31 (React #185 / stale SW cache), BUG-185 to §12 open items, freeform re-implement to feature backlog; updated §0 step 10 and §6.1 layout line.
+
 ### 14.5 Decision & Pitfall Logging (REQUIRED)
 
 Every instance MUST document significant logic pitfalls and durable user decisions as they happen. This is what prevents the same mistake from being repeated by the next instance.

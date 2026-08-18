@@ -1,0 +1,1 @@
+import{a4 as d,a3 as l}from"./index-DRd4WQcg.js";function m(a,e){const[t,s]=d(a,e.start,e.end);return{start:t,end:s}}function D(a,e){const{start:t,end:s}=m(e==null?void 0:e.in,a);let n=+t>+s;const o=n?+t:+s,r=n?s:t;r.setHours(0,0,0,0);let u=1;const c=[];for(;+r<=o;)c.push(l(t,r)),r.setDate(r.getDate()+u),r.setHours(0,0,0,0);return n?c.reverse():c}export{D as e};

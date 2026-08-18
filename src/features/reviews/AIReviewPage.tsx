@@ -10,7 +10,7 @@ import type { DayOfWeek } from '../../domain/types'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-type DatePreset = 'thisWeek' | 'lastWeek' | 'last2Weeks'
+type DatePreset = 'thisWeek' | 'lastWeek' | 'last2Weeks' | 'last7Days'
 
 function getDatePresetRange(preset: DatePreset): { start: Date; end: Date } {
   const now = new Date()
@@ -32,6 +32,13 @@ function getDatePresetRange(preset: DatePreset): { start: Date; end: Date } {
       const thisWeekStart = startOfWeek(today, { weekStartsOn: 1 })
       const start = subDays(thisWeekStart, 14)
       const end = subDays(thisWeekStart, 1)
+      return { start, end }
+    }
+    case 'last7Days': {
+      // Sliding 7-day window ending today — guarantees a full week of data
+      // regardless of which weekday the user opens the page on.
+      const start = subDays(today, 6)
+      const end = today
       return { start, end }
     }
   }
@@ -319,6 +326,13 @@ export default function AIReviewPage() {
           <CardTitle>Select Date Range</CardTitle>
         </CardHeader>
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant={datePreset === 'last7Days' && !showCustom ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={() => handlePresetChange('last7Days')}
+          >
+            Last 7 Days
+          </Button>
           <Button
             variant={datePreset === 'thisWeek' && !showCustom ? 'primary' : 'secondary'}
             size="sm"

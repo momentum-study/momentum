@@ -50,7 +50,6 @@ export default function HabitsPage() {
   const [kind, setKind] = useState<Habit['kind']>('good')
   const [habitMode, setHabitMode] = useState<Habit['mode']>('count')
   const [color, setColor] = useState(DEFAULT_COLOR)
-  const [archivedAfterDays, setArchivedAfterDays] = useState<number | null>(null)
   const [targetPerDay, setTargetPerDay] = useState(1)
   const [newHabitStatus, setNewHabitStatus] = useState<'active' | 'potential'>('active')
   const [parkForLater, setParkForLater] = useState(false)
@@ -340,7 +339,6 @@ export default function HabitsPage() {
     setName('')
     setKind('good')
     setColor(DEFAULT_COLOR)
-    setArchivedAfterDays(settings.defaultArchiveDays)
     setTargetPerDay(1)
     setNewHabitStatus('active')
     setParkForLater(false)
@@ -353,7 +351,6 @@ export default function HabitsPage() {
     setName(habit.name)
     setKind(habit.kind)
     setColor(habit.color)
-    setArchivedAfterDays(habit.archivedAfterDays ?? null)
     setTargetPerDay(habit.targetPerDay ?? 1)
     setShowModal(true)
   }
@@ -364,11 +361,11 @@ export default function HabitsPage() {
       const finalName = kind === 'bad' && !trimmed.startsWith('Quitting ') ? `Quitting ${trimmed}` : trimmed
       const status: 'active' | 'potential' = parkForLater ? 'potential' : newHabitStatus
       if (editHabit) {
-        const updated = { name: finalName, kind, mode: habitMode, color, archivedAfterDays, targetPerDay, updatedAt: isoNow() }
+        const updated = { name: finalName, kind, mode: habitMode, color, targetPerDay, updatedAt: isoNow() }
         await db.habits.update(editHabit.id, updated)
         mutate(prev => ({ ...prev, habits: prev.habits.map(h => h.id === editHabit.id ? { ...h, ...updated } : h) }))
       } else {
-        const newHabit = { id: uuid(), name: finalName, kind, mode: habitMode, color, archivedAfterDays, targetPerDay, status, createdAt: isoNow(), updatedAt: isoNow() }
+        const newHabit = { id: uuid(), name: finalName, kind, mode: habitMode, color, targetPerDay, status, createdAt: isoNow(), updatedAt: isoNow() }
         await db.habits.add(newHabit)
         mutate(prev => ({ ...prev, habits: [...prev.habits, newHabit] }))
       }
@@ -477,8 +474,6 @@ export default function HabitsPage() {
     const streak = streakMap.get(habit.id) ?? 0
     const todayCount = getTodayCount(habit.id)
     const daysLogged = getDaysLogged(habit.id)
-    const archiveThreshold = habit.archivedAfterDays ?? settings.defaultArchiveDays
-    const reachedThreshold = daysLogged >= archiveThreshold
     const isTickMode = habit.mode === 'tick'
     const isTickedToday = isTickMode && todayCount > 0
     const isMenuOpen = openMenuId === habit.id
@@ -666,7 +661,9 @@ export default function HabitsPage() {
           </div>
         </div>
 
-        {/* Suggestion to archive for good habits only */}
+        {/*
+        // Archived per v0.21.0 CHANGELOG: "Habit archiving replaced with manual 'Mark as done' flow (user decides, not automatic at N days)"
+        // Keeping the code commented for reference in case we want a non-suggesting version later.
         {!isBad && reachedThreshold && (
           <p className="mt-2 text-xs text-green-600 dark:text-green-400">
             🎉 {archiveThreshold} days done — this habit might be a permanent part of your life now. Have you finished it?{' '}
@@ -676,6 +673,7 @@ export default function HabitsPage() {
             >Mark as Done</button>.
           </p>
         )}
+        */}
         </Card>
       </ContextMenu>
     )
@@ -979,19 +977,6 @@ export default function HabitsPage() {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Archive after (days, 0 = never)</label>
-            <input
-              type="number"
-              className="input"
-              min={0}
-              placeholder={String(settings.defaultArchiveDays)}
-              value={archivedAfterDays ?? ''}
-              onChange={(e) => {
-                const v = e.target.value
-                setArchivedAfterDays(v === '' ? null : Number(v))
-              }}
-            />
-          <div>
             <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Tracking mode</label>
             <select
               className="input"
@@ -1004,7 +989,6 @@ export default function HabitsPage() {
             <p className="mt-1 text-xs text-slate-500">
               {habitMode === 'tick' ? 'One log per day, with an uncheck option to remove it.' : 'Log each time the habit happens (e.g. glasses of water).'}
             </p>
-          </div>
           </div>
           {!editHabit && (
             <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">

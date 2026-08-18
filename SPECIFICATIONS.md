@@ -228,7 +228,7 @@ Grid with name, subject, description, goal minutes. Add/Edit modal. Delete with 
 Table: Name, Subject, Score/Total, Weight, Weighted %, Date. Weighted average = `sum(score/total * weight) / sum(weight)`. Score color: green ≥80%, yellow ≥50%, red <50%. Academic subjects starred in select. Case-insensitive search.
 
 ### 6.5 Habit Tracker — `src/features/habits/HabitsPage.tsx`
-Good/Bad sections. Cards: color dot, name, streak, last-7-day dots, today toggle. **Count mode** has a quick "Mark done" button; **tick mode** has a ✓ toggle. Select a habit for 90-day heatmap. Add/Edit modal with ColorPicker. **States**: Active, Potential, Finished (🎓, graduated — distinct from archive), Archived. **Finish suggestion** prompt at threshold. `maxActiveHabits` and `defaultArchiveDays` from settings.
+Good/Bad sections. Cards: color dot, name, streak, last-7-day dots, today toggle. **Count mode** has a quick "Mark done" button; **tick mode** has a ✓ toggle. Select a habit for 90-day heatmap. Add/Edit modal with ColorPicker. **States**: Active, Potential, Finished (🎓, graduated — distinct from archive), Archived. `maxActiveHabits` from settings.
 
 ### 6.6 Assignment Calendar — `src/features/calendar/CalendarPage.tsx`
 Monthly grid with colored dots per type (homework=blue, assignment=purple, exam=red, other=slate). Upcoming list (next 30 days) with type badge + completed toggle. CRUD with type select + description. **Due badge**: nav item "Tasks" shows a red badge with count of assignments due within 24h.
@@ -259,10 +259,10 @@ Dark mode, pomodoro config, sound, daily target, auto-log, habit limits, backup/
 `GroupsPage` (leaderboards + cloud session sharing), `GroupDetailPage` (per-group sessions + member stats). Presence via `use-group-presence.ts`.
 
 ### 6.13 Reports — `src/features/reports/ReportsPage.tsx`
-Overview stats + time-by-subject breakdown. Listens for `momentum:reports-period-1..4`, `momentum:reports-scope-all/academic/nonacademic` events.
+Overview stats + time-by-subject breakdown (with axis-labeled Daily Trend chart). Listens for `momentum:reports-period-1..4`, `momentum:reports-scope-all/academic/nonacademic` events.
 
 ### 6.14 AI Review — `src/features/reviews/AIReviewPage.tsx`
-AI-powered study review and feedback.
+AI-powered study review and feedback. Includes "Last 7 Days" sliding window date preset.
 
 ---
 
@@ -581,6 +581,8 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 ### 14.4 Version stamp
 
+**SPEC_VERSION: 20** — 2026-08-18 fixed Habits auto-archive UI (removed archive-after field/banner), added "Last 7 Days" sliding window to AI Review, added axis labels to Reports Daily Trend chart, and added manual deployment instruction to §13.
+
 **SPEC_VERSION: 19** — 2026-08-17 added §13 deployment requirement: every commit to `org/main` SHOULD be deployed to `https://momentum-study.github.io/momentum/`; `npm run deploy` is not optional for substantive changes.
   - *Dashboard*: removed "(+Xm over)" goal-exceeded text (§6.1); capped recent sessions at 3 with a "Show all (N)" modal containing a full scrollable table; streak info moved to an ⓘ button next to the streak number (HoverCard) instead of always-visible text.
   - *Habits*: deduplicated optimistic local log additions vs persisted logs (fixes "2 today" bug); tick mode is now explicit per habit kind (good: green ✓ "Done"; bad: red ✗ "Lapsed") with text labels; auto-archive at N days is gone — habit instead shows a "Have you finished it?" prompt that triggers "Mark as Done" (which sets `finishedAt`); archived habits are no longer auto-archived.
@@ -615,7 +617,6 @@ When you make a substantive update, bump the `SPEC_VERSION` marker below so inst
 **SPEC_VERSION: 8** — 2026-08-15 added §0.1 "Read specs for momentum" response protocol: a new instance told to read specs must read this file + README + .bugfix-plan, then reply with a short confirmation (app description, SPEC_VERSION, live URL, open-bug status) and wait — no work, no full recap, no unprompted audit.
 **SPEC_VERSION: 5** — 2026-08-15 closed L4 (subject picker orphaned children), L6 (verified modal drag-to-dismiss already correct), BUG-185 (build-id reload guard added in `main.tsx`); updated §12 pending bugs list; added §10.32 (log-modal projected total); §10.31 status flipped to "fixed".
 **SPEC_VERSION: 4** — 2026-08-13 added §10.23 (freeform removal status), §10.31 (React #185 / stale SW cache), BUG-185 to §12 open items, freeform re-implement to feature backlog; updated §0 step 10 and §6.1 layout line.
-
 ### 14.5 Decision & Pitfall Logging (REQUIRED)
 
 Every instance MUST document significant logic pitfalls and durable user decisions as they happen. This is what prevents the same mistake from being repeated by the next instance.

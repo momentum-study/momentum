@@ -520,7 +520,14 @@ export default function ReportsPage() {
             : 100
           return (
             <>
-              <div className="overflow-x-auto">
+              <div className="flex h-40 w-full">
+                {/* Y-axis minute labels */}
+                <div className="flex flex-col justify-between h-40 pr-1">
+                  <span className="text-[9px] text-slate-400 dark:text-slate-500">{chartMax}m</span>
+                  <span className="text-[9px] text-slate-400 dark:text-slate-500">{settings.dailyTargetMinutes}m</span>
+                  <span className="text-[9px] text-slate-400 dark:text-slate-500">0m</span>
+                </div>
+              <div className="flex-1 overflow-x-auto">
                 <div className="relative flex h-40 min-w-full items-end gap-1">
                   {/* Target line */}
                   <div
@@ -538,10 +545,14 @@ export default function ReportsPage() {
                   {dailyTrend.items.map(({ date, ds, minutes }) => {
                     const isToday = ds === todayStr
                     const heightPct = (minutes / chartMax) * 100
+                    const isStartOfWeek = date.getDay() === 1 // Monday
                     return (
                       <div
                         key={ds}
-                        className="flex h-full w-3 shrink-0 flex-col items-center justify-end"
+                        className={cn(
+                          "flex h-full w-3 shrink-0 flex-col items-center justify-end relative",
+                          isStartOfWeek && "border-l border-dashed border-slate-200 dark:border-slate-700"
+                        )}
                         title={`${format(date, 'd MMM')}: ${formatMinutes(minutes)}`}
                       >
                         <div
@@ -552,10 +563,15 @@ export default function ReportsPage() {
                           )}
                           style={{ height: `${heightPct}%`, minHeight: minutes > 0 ? '2px' : 0 }}
                         />
+                        {/* X-axis day label: show for today, Monday, and 1st of month */}
+                        <span className="absolute -bottom-5 text-[8px] text-slate-400 dark:text-slate-500 whitespace-nowrap rotate-0">
+                          {(isToday || isStartOfWeek || date.getDate() === 1) ? format(date, 'd/M') : ''}
+                        </span>
                       </div>
                     )
                   })}
                 </div>
+              </div>
               </div>
               <div className="mt-2 flex items-center justify-end gap-2 text-xs text-slate-500">
                 <span className="inline-flex items-center gap-1">

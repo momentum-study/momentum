@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, isoNow, getSubjectPathLabel, getSubjectPickerOptions } from '../../lib/utils'
+import { cn, isoNow, getSubjectPathLabel, getSubjectPickerOptions, softDelete } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -223,7 +223,7 @@ export default function ActivitiesPage() {
         description: `Logged ${status} activity: ${activity.name}`,
         undo: async () => {
           await db.activityLogs.delete(log.id)
-          if (sessionToUndo) await db.sessions.delete(sessionToUndo.id)
+          if (sessionToUndo) await softDelete(db.sessions, sessionToUndo.id)
           mutate(prev => ({ ...prev, activityLogs: prev.activityLogs.filter(l => l.id !== log.id), sessions: sessionToUndo ? prev.sessions.filter(s => s.id !== sessionToUndo.id) : prev.sessions }))
         },
         redo: async () => {

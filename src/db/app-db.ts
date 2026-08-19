@@ -26,7 +26,9 @@ const SEED_CATEGORIES: Omit<Category, 'id' | 'createdAt' | 'updatedAt'>[] = [
   { name: 'Hobbies', scope: 'nonAcademic', color: '#10b981' },
   { name: 'Miscellaneous', scope: 'nonAcademic', color: '#f59e0b' },
 ]
-
+const SEED_SUBJECTS: Omit<Subject, 'id' | 'createdAt' | 'updatedAt'>[] = [
+  { name: 'Misc', categoryId: 'cat-seed-2', color: '#f59e0b' },
+]
 export class AppDB extends Dexie {
   categories!: Table<Category, string>
   subjects!: Table<Subject, string>
@@ -157,6 +159,14 @@ export async function seedDefaults() {
     SEED_CATEGORIES.map((c, i) => ({
       ...c,
       id: `cat-seed-${i}`,
+      createdAt: now,
+      updatedAt: now,
+    }))
+  )
+  await db.subjects.bulkAdd(
+    SEED_SUBJECTS.map((s, i) => ({
+      ...s,
+      id: `subj-seed-${i}`,
       createdAt: now,
       updatedAt: now,
     }))

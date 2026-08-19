@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, isoNow } from '../../lib/utils'
+import { cn, isoNow, softDelete } from '../../lib/utils'
 import { Button } from '../../components/ui/Button'
 import { useUndo } from '../../lib/use-undo'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
@@ -237,7 +237,7 @@ export default function RoutinePage() {
         description: `Logged ${logMinutesValue} min for "${routine.name}"`,
         undo: async () => {
           await db.routineLogs.delete(newLogId)
-          await db.sessions.delete(session.id)
+          await softDelete(db.sessions, session.id)
           await loadData()
         },
         redo: async () => {

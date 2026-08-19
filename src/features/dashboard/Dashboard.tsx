@@ -18,7 +18,7 @@ import { HoverCard } from '../../components/ui/HoverCard'
 import { ContextMenu, type ContextMenuItem } from '../../components/ui/ContextMenu'
 import { Collapsible } from '../../components/ui/Collapsible'
 import { useSwipe } from '../../lib/use-swipe'
-import { cn, formatMinutes, getSessionScope, getSubjectPathLabel, isoNow, toLocalDateString, STREAK_MILESTONES } from '../../lib/utils'
+import { cn, formatMinutes, getSessionScope, getSubjectPathLabel, isoNow, toLocalDateString, STREAK_MILESTONES, softDelete } from '../../lib/utils'
 import { loadSettings } from '../../lib/settings-store'
 import { useStreak } from '../../lib/use-streak'
 import { useStreakPreviewDates } from '../../lib/streak-preview'
@@ -695,6 +695,7 @@ export default function Dashboard() {
         startAt,
         endAt,
         durationMinutes: logDuration,
+        durationSeconds: logDuration * 60,
         note: taskNote,
         focusTag: logFocusTag ?? undefined,
         source: 'quickLog' as const,
@@ -716,7 +717,7 @@ export default function Dashboard() {
       if (task) description += ` (${task.title})`
       push({
         description,
-        undo: async () => { await db.sessions.delete(session.id); await revertStreakDayForSession(session); mutate(prev => ({ ...prev, sessions: prev.sessions.filter(s => s.id !== session.id) })) },
+        undo: async () => { await softDelete(db.sessions, session.id); await revertStreakDayForSession(session); mutate(prev => ({ ...prev, sessions: prev.sessions.filter(s => s.id !== session.id) })) },
         redo: async () => { await db.sessions.put(session); await updateStreakDayForSession(session); mutate(prev => ({ ...prev, sessions: [...prev.sessions, session] })) },
       })
       sessionStorage.removeItem(LOG_FORM_KEY)
@@ -836,21 +837,21 @@ export default function Dashboard() {
   async function deleteSession(id: string) {
     const session = data.sessions.find((s) => s.id === id)
     if (!session) return
-    await db.sessions.delete(id)
+    await softDelete(db.sessions, id)
     mutate(prev => ({ ...prev, sessions: prev.sessions.filter(s => s.id !== id) }))
     syncSessionDelete(id)
     await Promise.all([revertRoutineLogsForSession(session), revertStreakDayForSession(session)])
     push({
       description: `Deleted session (${session.durationMinutes}m)`,
-      undo: async () => { await db.sessions.add(session); await Promise.all([updateRoutineLogsForSession(session), updateStreakDayForSession(session)]); await syncSession(session, data.subjects.find(s => s.id === session.subjectId)?.name ?? 'Unknown'); mutate(prev => ({ ...prev, sessions: [...prev.sessions, session] })) },
-      redo: async () => { await db.sessions.delete(id); await Promise.all([revertRoutineLogsForSession(session), revertStreakDayForSession(session)]); await syncSessionDelete(id); mutate(prev => ({ ...prev, sessions: prev.sessions.filter(s => s.id !== id) })) },
+      undo: async () => { await db.sessions.put(session); await Promise.all([updateRoutineLogsForSession(session), updateStreakDayForSession(session)]); await syncSession(session, data.subjects.find(s => s.id === session.subjectId)?.name ?? 'Unknown'); mutate(prev => ({ ...prev, sessions: [...prev.sessions, session] })) },
+      redo: async () => { await softDelete(db.sessions, id); await Promise.all([revertRoutineLogsForSession(session), revertStreakDayForSession(session)]); await syncSessionDelete(id); mutate(prev => ({ ...prev, sessions: prev.sessions.filter(s => s.id !== id) })) },
     })
   }
   async function deleteSelectedSessions() {
     const targets = Array.from(selectedSessionIds)
       .map(id => data.sessions.find(s => s.id === id))
       .filter((s): s is Session => !!s)
-    await Promise.all(targets.map(s => db.sessions.delete(s.id)))
+    await Promise.all(targets.map(s => softDelete(db.sessions, s.id)))
     await Promise.all(targets.map(s => syncSessionDelete(s.id)))
     await Promise.all(
       targets.flatMap(s => [revertRoutineLogsForSession(s), revertStreakDayForSession(s)])
@@ -919,7 +920,7 @@ export default function Dashboard() {
           push({
             description: `Logged ${mins}m for ${routine.name}`,
             undo: async () => {
-              await db.sessions.delete(session.id)
+              await softDelete(db.sessions, session.id)
               if (!existingLog) await db.routineLogs.delete(logId)
               await loadData()
             },
@@ -1615,7 +1616,7 @@ export default function Dashboard() {
                     ?? sessionIdFor(existingLog.createdAt, activity.subjectId, existingLog.actualMinutes)
                   const existingSession = data.sessions.find(s => s.id === sessionId)
                   if (existingSession) {
-                    await db.sessions.delete(existingSession.id)
+                    await softDelete(db.sessions, existingSession.id)
                     await revertRoutineLogsForSession(existingSession)
                     await revertStreakDayForSession(existingSession)
                     syncSessionDelete(existingSession.id)
@@ -1782,7 +1783,7 @@ export default function Dashboard() {
                     </div>
                     <div className="flex gap-2">
                       <Button size="sm" variant="secondary" onClick={async () => {
-                        await db.sessions.delete(session.id)
+                        await softDelete(db.sessions, session.id)
                         mutate(prev => ({ ...prev, sessions: prev.sessions.filter(s => s.id !== session.id) }))
                       }}>Skip</Button>
                       <Button size="sm" variant="primary" onClick={async () => {

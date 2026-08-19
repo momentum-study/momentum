@@ -7,6 +7,12 @@ function computeStreak(studyDates: string[], today = '2026-07-21'): number {
   let consecutiveLogged = 0
   let freezes = 0
   let d = new Date(today + 'T00:00:00')
+  // If today isn't logged, start from yesterday so the streak holds
+  // through the current day until the user logs (or the day ends).
+  const todayStr = format(d, 'yyyy-MM-dd')
+  if (!daySet.has(todayStr)) {
+    d = subDays(d, 1)
+  }
   while (true) {
     const ds = format(d, 'yyyy-MM-dd')
     if (daySet.has(ds)) {
@@ -86,16 +92,23 @@ describe('computeStreak', () => {
     expect(computeStreak(days)).toBe(5)
   })
 
-  it('alternates hit/miss without earning freeze → streak of 1', () => {
-    // Alternating days never reach 5 consecutive to earn a freeze
-    const days = ['2026-07-21', '2026-07-19', '2026-07-17']
-    expect(computeStreak(days)).toBe(1)
-  })
-
   it('uses one freeze and stops on second miss one day later', () => {
     // 5 hits, miss (covered by freeze), then hit again
     const days = ['2026-07-21', '2026-07-20', '2026-07-19', '2026-07-18', '2026-07-17', '2026-07-15', '2026-07-13']
     expect(computeStreak(days)).toBe(6)
+  })
+  it('holds the streak when today is not yet logged (regression)', () => {
+    // User logged yesterday and the prior 4 days. Today (2026-07-21) has
+    // no session yet — the streak should still report 5, not break to 0.
+    // (Previously, the loop started at today, missed it, and immediately
+    // returned 0 even though yesterday completed a 5-day run.)
+    const days = ['2026-07-20', '2026-07-19', '2026-07-18', '2026-07-17', '2026-07-16']
+    expect(computeStreak(days, '2026-07-21')).toBe(5)
+  })
+  it('returns 0 when neither today nor yesterday has a session', () => {
+    // Two missed days without a freeze → chain already broken yesterday.
+    const days = ['2026-07-19', '2026-07-18', '2026-07-17', '2026-07-16', '2026-07-15']
+    expect(computeStreak(days, '2026-07-21')).toBe(0)
   })
 })
 

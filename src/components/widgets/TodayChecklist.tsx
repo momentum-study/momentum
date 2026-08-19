@@ -5,7 +5,7 @@ import { format } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { isoNow, toLocalDateString } from '../../lib/utils'
+import { isoNow, toLocalDateString, softDelete } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession, revertRoutineLogsForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
@@ -99,7 +99,7 @@ export function TodayChecklist() {
       push({
         description: session ? `Logged ${mins}m for ${routine.name}` : `Completed ${routine.name}`,
         undo: async () => {
-          if (session) await db.sessions.delete(session.id)
+          if (session) await softDelete(db.sessions, session.id)
           if (!row.log) await db.routineLogs.delete(logId)
           mutate(prev => ({
             ...prev,
@@ -162,7 +162,7 @@ export function TodayChecklist() {
         description: session ? `Logged ${mins}m for ${activity.name}` : `Completed ${activity.name}`,
         undo: async () => {
           await db.activityLogs.delete(log.id)
-          if (session) await db.sessions.delete(session.id)
+          if (session) await softDelete(db.sessions, session.id)
           mutate(prev => ({
             ...prev,
             activityLogs: row.log ? prev.activityLogs : prev.activityLogs.filter(l => l.id !== log.id),
@@ -243,7 +243,7 @@ export function TodayChecklist() {
       }))
       void db.routineLogs.delete(removedLog.id).catch(err => console.error('Failed to delete routine log:', err))
       if (session) {
-        void db.sessions.delete(session.id).catch(err => console.error('Failed to delete session:', err))
+        void softDelete(db.sessions, session.id).catch(err => console.error('Failed to delete session:', err))
         void revertRoutineLogsForSession(session).catch(err => console.error('Failed to revert routine logs:', err))
         void revertStreakDayForSession(session).catch(err => console.error('Failed to revert streak:', err))
       }
@@ -262,7 +262,7 @@ export function TodayChecklist() {
         },
         redo: async () => {
           await db.routineLogs.delete(removedLog.id)
-          if (session) await db.sessions.delete(session.id)
+          if (session) await softDelete(db.sessions, session.id)
           mutate(prev => ({
             ...prev,
             routineLogs: prev.routineLogs.filter(l => l.id !== removedLog.id),
@@ -288,7 +288,7 @@ export function TodayChecklist() {
       }))
       void db.activityLogs.delete(removedLog.id).catch(err => console.error('Failed to delete activity log:', err))
       if (session) {
-        void db.sessions.delete(session.id).catch(err => console.error('Failed to delete session:', err))
+        void softDelete(db.sessions, session.id).catch(err => console.error('Failed to delete session:', err))
         void revertRoutineLogsForSession(session).catch(err => console.error('Failed to revert routine logs:', err))
         void revertStreakDayForSession(session).catch(err => console.error('Failed to revert streak:', err))
       }
@@ -307,7 +307,7 @@ export function TodayChecklist() {
         },
         redo: async () => {
           await db.activityLogs.delete(removedLog.id)
-          if (session) await db.sessions.delete(session.id)
+          if (session) await softDelete(db.sessions, session.id)
           mutate(prev => ({
             ...prev,
             activityLogs: prev.activityLogs.filter(l => l.id !== removedLog.id),

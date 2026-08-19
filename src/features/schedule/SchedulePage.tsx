@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ColorPicker } from '../../components/ui/ColorPicker'
 import { Collapsible } from '../../components/ui/Collapsible'
-import { cn, isoNow } from '../../lib/utils'
+import { cn, isoNow, softDelete } from '../../lib/utils'
 import { v4 as uuid } from 'uuid'
 import { useSessionSync } from '../../lib/use-session-sync'
 import type { Routine, RoutineLog, Activity, ActivityLog, DayOfWeek, Session, Project } from '../../domain/types'
@@ -181,7 +181,7 @@ export function SchedulePage() {
       push({
         description: `Logged ${mins}m for ${routine.name} (catch-up for ${item.date})`,
         undo: async () => {
-          await db.sessions.delete(sessionId)
+          await softDelete(db.sessions, sessionId)
           await loadData()
         },
         redo: async () => {
@@ -278,7 +278,7 @@ export function SchedulePage() {
     push({
       description: `Logged ${mins}m for ${routine.name}`,
       undo: async () => {
-        await db.sessions.delete(session.id)
+        await softDelete(db.sessions, session.id)
         if (!existingLog) await db.routineLogs.delete(logId)
         await loadData()
       },
@@ -317,7 +317,7 @@ export function SchedulePage() {
     push({
       description: `Logged ${mins}m for ${routine.name}`,
       undo: async () => {
-        await db.sessions.delete(session.id)
+        await softDelete(db.sessions, session.id)
         if (!existingLog) await db.routineLogs.delete(logId)
         else if (existingLog) await db.routineLogs.put(existingLog)
         await loadData()
@@ -420,7 +420,7 @@ export function SchedulePage() {
       description: `Attended ${activity.name}`,
       undo: async () => {
         await db.activityLogs.delete(log.id)
-        if (session) await db.sessions.delete(session.id)
+        if (session) await softDelete(db.sessions, session.id)
         await loadData()
       },
       redo: async () => {
@@ -555,7 +555,7 @@ export function SchedulePage() {
                         // H2 fix: use the persisted sessionId (H2) instead of
                         // the brittle note-string match that matched nothing.
                         const deletes: Array<Promise<unknown>> = [db.activityLogs.delete(log.id)]
-                        if (log.sessionId) deletes.push(db.sessions.delete(log.sessionId))
+                        if (log.sessionId) deletes.push(softDelete(db.sessions, log.sessionId))
                         Promise.all(deletes).then(() => loadData())
                     }
                   }}

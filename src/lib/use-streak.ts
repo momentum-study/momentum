@@ -14,12 +14,16 @@ export function useStreak(sessions: Session[], previewDates: Set<string> = new S
     const daySet = new Set<string>();
     for (const s of sessions) daySet.add(toLocalDateString(s.startAt));
     for (const d of previewDates) daySet.add(d);
-
     let count = 0;
     let consecutiveLogged = 0;
     let freezes = 0;
     let d = new Date();
-
+    // If today isn't logged, start checking from yesterday so the streak
+    // doesn't immediately break when today is empty.
+    const todayStr = format(d, 'yyyy-MM-dd');
+    if (!daySet.has(todayStr)) {
+      d = subDays(d, 1);
+    }
     while (true) {
       const ds = format(d, 'yyyy-MM-dd');
       if (daySet.has(ds)) {

@@ -530,6 +530,18 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 **Symptom**: clicking "Attended" on an activity created a session whose `startAt` was `Date.now() - duration * 60_000` and whose `endAt` was `Date.now()`. Logging a 50-min 4:30pm activity at 6pm produced a 5:10pm–6:00pm session, not a 4:30pm–5:20pm one — so the dashboard's "Today" total (filtered by `date(s.startAt) === today`) could miss the session entirely, and the session was incorrectly attributed to the wrong time block.
 **Fix**: `attendActivity` in `SchedulePage.tsx` now derives `startAt` from `scheduledTime` (parsed against `todayStr`) when present, and computes `endAt = startAt + mins`. Falls back to `Date.now() - duration * 60_000` for activities without `scheduledTime`.
 **Stall trap**: "the session isn't counted toward study time" → check whether `startAt` is anchored to the scheduled block, not the wall clock. The `actualMinutes` field on the `ActivityLog` was already correct; only the Session's `startAt`/`endAt`/`durationMinutes` were wrong.
+
+### 10.48 Today card "last session" text ignores live timer — FIXED
+**Symptom**: when a timer is running (first session of the day), the Today card shows "No sessions yet today — last was yesterday" instead of indicating a session is in progress.
+**Root cause**: `lastSession` is derived from `academicSessions` (persisted sessions only). When a timer is running but no session has been saved yet, there are no today sessions, so `formatLastSessionText` returns the stale "last was yesterday" message.
+**Fix applied**: `lastSessionText` now checks `isTimerActive()` first — when a timer is active, it shows "Currently studying..." instead of the persisted-session text.
+**Stall trap**: "the timer isn't saving sessions" → it will, when the user stops it. The issue is the text, not the save logic.
+
+### 10.49 Streak heatmap ignores live timer minutes — FIXED
+**Symptom**: starting the first session of the day shows 0 study minutes in the streak heatmap until the session is saved (clicked stop).
+**Root cause**: `minutesByDay` (used for the heatmap) only counts persisted `academicSessions`. The live timer seconds are tracked in `liveTimerWholeMinutes` but were never added to the heatmap's today entry.
+**Fix applied**: the streak heatmap now adds `liveTimerWholeMinutes / 60` to today's entry when `ds === todayStr`, so the heatmap updates in real time as the timer runs.
+**Stall trap**: "the heatmap data is stale" → check whether `minutesByDay` includes live timer minutes. The heatmap reads from a memo that only recomputes when `academicSessions` changes; the live timer state is separate and must be merged at render time.
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -642,6 +654,7 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 **SPEC_VERSION: 19** — 2026-08-17 added §13 deployment requirement: every commit to `org/main` SHOULD be deployed to `https://momentum-study.github.io/momentum/`; `npm run deploy` is not optional for substantive changes.
   - *Dashboard*: removed "(+Xm over)" goal-exceeded text (§6.1); capped recent sessions at 3 with a "Show all (N)" modal containing a full scrollable table; streak info moved to an ⓘ button next to the streak number (HoverCard) instead of always-visible text.
+**SPEC_VERSION: 29** — 2026-08-21 Fixed Today card "last session" text showing "No sessions yet today" when a timer is active (now shows "Currently studying...", §10.48). Fixed streak heatmap showing 0 study minutes until session is saved (now includes live timer minutes for today in real time, §10.49).
   - *Habits*: deduplicated optimistic local log additions vs persisted logs (fixes "2 today" bug); tick mode is now explicit per habit kind (good: green ✓ "Done"; bad: red ✗ "Lapsed") with text labels; auto-archive at N days is gone — habit instead shows a "Have you finished it?" prompt that triggers "Mark as Done" (which sets `finishedAt`); archived habits are no longer auto-archived.
   - *Schedule*: catch-up prompts are now activities-only (routines removed from `catchUpItems`); activity auto-log duration falls back to `activity.duration` when `dayMinutes[dow]` is 0; Weekly Plan grid gained a daily-totals footer row + weekly-total label and rows are now auto-sorted by `scheduledTime`.
   - *Streak freeze rule* (`use-streak.ts` rewritten): every 5 consecutive logged days earns 1 missed-day freeze. The new rule consumes a freeze per missed day; chain breaks when freezes run out. The old "1 missed day per chain" rule is gone.

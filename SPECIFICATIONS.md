@@ -542,6 +542,12 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 **Root cause**: `minutesByDay` (used for the heatmap) only counts persisted `academicSessions`. The live timer seconds are tracked in `liveTimerWholeMinutes` but were never added to the heatmap's today entry.
 **Fix applied**: the streak heatmap now adds `liveTimerWholeMinutes / 60` to today's entry when `ds === todayStr`, so the heatmap updates in real time as the timer runs.
 **Stall trap**: "the heatmap data is stale" → check whether `minutesByDay` includes live timer minutes. The heatmap reads from a memo that only recomputes when `academicSessions` changes; the live timer state is separate and must be merged at render time.
+
+### 10.50 Timer subject switch carries old notes — FIXED
+**Symptom**: changing the subject while the timer is running leaves the previous subject's text in the "What are you working on?" box.
+**Root cause**: `changeSubject` saved the old session correctly but reused the old `timerNotes` value when creating the new subject's persisted timer state. React state updates are asynchronous, so calling `setTimerNotes` alone was insufficient.
+**Fix applied**: `changeSubject` now loads the new subject's scoped last note with `getLastNote(newSubjectId)`, updates the visible notes state, and writes that same value directly into both simple and pomodoro persisted timer states.
+**Stall trap**: resetting only the React state leaves a reload path carrying the old value; the persisted `notes` field must be updated in the same subject-switch operation.
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -555,8 +561,9 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 7. **Duplicate daily goal text** — Streak & Goal widget MUST NOT repeat the Today card's copy.
 8. **Widget position persistence** — toggle off/on returns to original position.
 9. **Keyboard shortcut suppression in inputs** — typing `d`/`s`/`p`/`n` in an input does nothing but type; `Esc` and `Cmd+K`/`Ctrl+K` still work.
-10. **Shortcut registry consistency** — registry uses `Cmd+...` canonically; render-time adaptation only.
-11. **Tests and type-check** — `npx tsc --noEmit` and `npx vitest run` MUST pass.
+10. **Timer subject switch resets notes** — start a timer on Subject A, type notes, switch to Subject B. The notes box MUST reset to Subject B's last note (if any) or empty — MUST NOT carry Subject A's text.
+11. **Shortcut registry consistency** — registry uses `Cmd+...` canonically; render-time adaptation only.
+12. **Tests and type-check** — `npx tsc --noEmit` and `npx vitest run` MUST pass.
 
 ---
 
@@ -654,6 +661,7 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 **SPEC_VERSION: 19** — 2026-08-17 added §13 deployment requirement: every commit to `org/main` SHOULD be deployed to `https://momentum-study.github.io/momentum/`; `npm run deploy` is not optional for substantive changes.
   - *Dashboard*: removed "(+Xm over)" goal-exceeded text (§6.1); capped recent sessions at 3 with a "Show all (N)" modal containing a full scrollable table; streak info moved to an ⓘ button next to the streak number (HoverCard) instead of always-visible text.
+**SPEC_VERSION: 30** — 2026-08-21 Timer subject switch now resets "What are you working on?" notes to the new subject's last note instead of carrying over the old subject's text (§10.50).
 **SPEC_VERSION: 29** — 2026-08-21 Fixed Today card "last session" text showing "No sessions yet today" when a timer is active (now shows "Currently studying...", §10.48). Fixed streak heatmap showing 0 study minutes until session is saved (now includes live timer minutes for today in real time, §10.49).
   - *Habits*: deduplicated optimistic local log additions vs persisted logs (fixes "2 today" bug); tick mode is now explicit per habit kind (good: green ✓ "Done"; bad: red ✗ "Lapsed") with text labels; auto-archive at N days is gone — habit instead shows a "Have you finished it?" prompt that triggers "Mark as Done" (which sets `finishedAt`); archived habits are no longer auto-archived.
   - *Schedule*: catch-up prompts are now activities-only (routines removed from `catchUpItems`); activity auto-log duration falls back to `activity.duration` when `dayMinutes[dow]` is 0; Weekly Plan grid gained a daily-totals footer row + weekly-total label and rows are now auto-sorted by `scheduledTime`.

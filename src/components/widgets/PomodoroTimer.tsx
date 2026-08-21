@@ -1025,10 +1025,13 @@ export function PomodoroTimer() {
       }
       clearPendingSession()
     }
-    // Switch subject and start new session
+    // Switch subject and start new session. Reset notes to the new subject's
+    // last note (if any) so the old subject's notes don't carry over.
     setSubjectId(newSubjectId)
     setProjectId('')
     setTaskId('')
+    const newSubjectNotes = getLastNote(newSubjectId) ?? ''
+    setTimerNotes(newSubjectNotes)
     const now = Date.now()
     if (mode === 'simple') {
       const state: PersistedTimerState = {
@@ -1041,7 +1044,7 @@ export function PomodoroTimer() {
         phase: 'focus',
         cyclesCompleted: 0,
         config: configRef.current,
-        notes: timerNotes,
+        notes: newSubjectNotes,
         routineId: timerRoutineId || undefined,
       }
       saveTimerState(state)
@@ -1057,7 +1060,7 @@ export function PomodoroTimer() {
         phase: pomPhase,
         cyclesCompleted: pomCycles,
         config: configRef.current,
-        notes: timerNotes,
+        notes: newSubjectNotes,
         routineId: timerRoutineId || undefined,
       }
       saveTimerState(state)

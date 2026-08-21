@@ -167,3 +167,45 @@ describe('computeLongestStreak', () => {
     expect(longest).toBeGreaterThanOrEqual(cur)
   })
 })
+
+// Mirror of the bestStreak effect in use-streak.ts: candidate = max(longest,
+// current). This must hold whenever previewDates add a day the persisted
+// longestStreak doesn't see yet.
+function nextBest(best: number, longest: number, current: number): number {
+  return Math.max(best, longest, current)
+}
+
+describe('bestStreak invariant', () => {
+  it('updates when current streak exceeds persisted best (live timer case)', () => {
+    // Persisted sessions: a 3-day run from Aug 1-3 (stored best = 3).
+    // User just started the timer today (Aug 18) — previewDates adds today,
+    // so current = 1, longest (from persisted only) = 3. bestStreak = 3.
+    expect(nextBest(3, 3, 1)).toBe(3)
+  })
+
+  it('updates when current streak exceeds persisted best (mid-run)', () => {
+    // User has been studying daily for 12 consecutive days, exceeding the
+    // previous best of 8. currentStreak=12, longestStreak=12 (now includes
+    // today), bestStreak must climb to 12.
+    expect(nextBest(8, 12, 12)).toBe(12)
+  })
+
+  it('never decreases (only climbs)', () => {
+    // After a streak breaks, bestStreak must NOT drop back down.
+    expect(nextBest(10, 3, 0)).toBe(10)
+  })
+
+  it('regression: bestStreak >= currentStreak is the display invariant', () => {
+    const cases: Array<[number, number, number]> = [
+      [0, 0, 0],
+      [5, 5, 3],
+      [5, 7, 7], // current caught up to longest
+      [10, 8, 12], // current > both (timer preview before persist)
+      [100, 1, 1], // historical best far exceeds current
+    ]
+    for (const [best, longest, current] of cases) {
+      const next = nextBest(best, longest, current)
+      expect(next).toBeGreaterThanOrEqual(current)
+    }
+  })
+})

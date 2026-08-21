@@ -48,6 +48,7 @@ export function useStreak(sessions: Session[], previewDates: Set<string> = new S
   const longestStreak = useMemo(() => {
     const daySet = new Set<string>();
     for (const s of sessions) daySet.add(toLocalDateString(s.startAt));
+    for (const d of previewDates) daySet.add(d);
     if (daySet.size === 0) return 0;
     if (daySet.size === 1) return 1;
 
@@ -84,7 +85,7 @@ export function useStreak(sessions: Session[], previewDates: Set<string> = new S
       if (count > max) max = count;
     }
     return max;
-  }, [sessions]);
+  }, [sessions, previewDates]);
 
   const [bestStreak, setBestStreak] = useState(() => {
     try {
@@ -94,17 +95,21 @@ export function useStreak(sessions: Session[], previewDates: Set<string> = new S
       return 0;
     }
   });
-
   useEffect(() => {
-    if (longestStreak > bestStreak) {
-      setBestStreak(longestStreak);
+    // bestStreak MUST reflect the current streak when it exceeds the stored
+    // record — otherwise the displayed "Best" can lag behind the live "Today"
+    // count (e.g. a live timer previewing today's date), violating the
+    // invariant that bestStreak >= streak.
+    const candidate = Math.max(longestStreak, streak);
+    if (candidate > bestStreak) {
+      setBestStreak(candidate);
       try {
-        localStorage.setItem(BEST_STREAK_KEY, String(longestStreak));
+        localStorage.setItem(BEST_STREAK_KEY, String(candidate));
       } catch {
         // Ignore storage errors (e.g., private browsing)
       }
     }
-  }, [longestStreak, bestStreak]);
+  }, [longestStreak, streak, bestStreak]);
 
   return { streak, longestStreak, bestStreak, freezesAvailable };
 }

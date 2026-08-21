@@ -51,10 +51,12 @@ When you receive a bug report, fix request, or feature ticket with a medium-to-l
 1. **Read the code comprehensively.** Understand the relevant code paths before writing anything.
 2. **Make a plan.** Break the work into logical steps and order them correctly (e.g., data-layer changes before UI, migrations before the code that uses them).
 3. **Execute in plan order.** Don't start work until you understand it.
+4. **Verify, then deploy.** After the work passes type-check (`npx tsc --noEmit`), tests (`npx vitest run`), and the production build (`npm run build`), push to `org/main` and deploy live with `npm run deploy`. **Deploying is the default final step of every change** — do not leave verified work unshipped.
 
 For small, self-contained tasks (a single fix, a quick feature), you can skip formal planning — just read what's needed and do it.
 
-**Why this matters:** Jumping into code without understanding it leads to missed edge cases, wrong abstractions, and bugs that could have been caught with upfront analysis.
+**Why this matters:** Jumping into code without understanding it leads to missed edge cases, wrong abstractions, and bugs that could have been caught with upfront analysis. And a verified change that is never deployed helps nobody — the live site is the deliverable.
+
 
 ---
 
@@ -209,7 +211,7 @@ type Settings = {
 - Daily goal progress bar (default 120 min), green on completion.
 - Study timer widget (see §6.8).
 - 90-day heatmap, 5 intensity levels (slate → green-600).
-- Recent sessions (last 8) with subject + duration + optional `focusTag` badge. **Multi-select checkboxes hidden by default; only shown after clicking "Select Sessions".**
+- Recent sessions (all non-deleted sessions) with subject + duration + optional `focusTag` badge. **Multi-select checkboxes hidden by default; only shown after clicking "Select Sessions".**
 - Achievements: dismissible celebratory card.
 - **Widget position persistence**: toggling a widget off/on MUST restore its original position, not append to the end.
 - **Widget layout system**: `use-dashboard-widgets.ts` is grid-mode only (freeform removed in `72e50ec`; pending fresh re-implementation). **Three-column grid** (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`); each widget occupies one column (no per-widget width/row controls — width button removed). Widgets fall upward into the shortest column. Cross-column drag via per-column `SortableContext` + `ColumnFloor` drop targets + `GhostWidget` placeholder. Storage key `momentum-dashboard-layout` may still hold stale freeform `Box` records in user browsers — these are ignored by the grid code and safe to clear via DevTools. Widgets registered via `widget-registry.ts` (`registerWidget`, `window.Momentum.registerWidget`).
@@ -217,7 +219,7 @@ type Settings = {
 ### 6.2 Subjects (CRUD) — `src/features/subjects/SubjectsPage.tsx` + `SubjectDetailPage.tsx`
 **List page** (`/subjects`): compact clickable cards (color dot, name, category, routine days, Today/Week/Total minutes, sub-count). Clicking a card navigates to `/subjects/:id`. Children render as compact dashed rows (not full cards). Add/Edit modal: name, category select (with "+ New" link to /categories), ColorPicker, routine checkboxes, weekly target. Warning banner if no categories. Delete with confirmation. Case-insensitive search. **Supports subject hierarchy** (parent/child).
 
-**Detail page** (`/subjects/:id`): rich analytics for one subject. Header (back link, color dot, name, category badge, parent label, routine days, Edit/Delete). Quick stats row (Today / This Week / This Month / All Time + session count). Weekly trend bar chart (5 weeks, daily avg, +/−% vs last week). 90-day heatmap (subject-specific daily target = `weeklyTargetMinutes / 7`, else global). Recent sessions grouped by date (time, duration, note, source badge, project badge). Projects under the subject with total minutes. Sub-focus areas with total minutes. Delete cascades soft-delete to child subjects + their sessions, with undo.
+- **Detail page** (`/subjects/:id`): rich analytics for one subject. Header (back link, color dot, name, category badge, parent label, routine days, Edit/Delete). Quick stats row (Today / This Week / This Month / All Time + session count). Weekly trend bar chart (5 weeks, daily avg, +/−% vs last week). 90-day heatmap (subject-specific daily target = `weeklyTargetMinutes / 7`, else global). Recent sessions grouped by date (time, duration, note, source badge, project badge, **with per-session Edit/Delete affordance**). Projects under the subject with total minutes. Sub-focus areas with total minutes. Delete cascades soft-delete to child subjects + their sessions, with undo.
 
 **Color tooltips**: `ColorPicker` swatches and subject color dots show the preset name on hover (`COLOR_NAMES` map in `ColorPicker.tsx`).
 
@@ -517,6 +519,17 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 **Fix applied**: `useStreak` now skips today when it isn't in `daySet`: it sets `d = subDays(d, 1)` before entering the loop, so the streak is calculated "as of yesterday" until the user logs today. The "at risk" copy (`streak > 0 && liveTotalTodayMinutes === 0`) now triggers correctly, since `streak` reflects the run that just ended. The mirrored `computeStreak` in `streak.test.ts` was updated to match, and two regression tests (`holds the streak when today is not yet logged`, `returns 0 when neither today nor yesterday has a session`) were added.
 **Stall trap**: "the user just needs to log today to keep the streak" → they do, but until they do, the counter should still show the streak they have. A streak of N days isn't dead the moment N+1 begins; it's dead when two consecutive days pass without a log (or a freeze).
 
+### 10.46 Best-streak display lags the current streak — FIXED
+**Symptom**: the streak widget's "Best" number didn't reflect the current streak when the current streak exceeded the previous best (e.g. a user on a 12-day run with a stored best of 8 saw "Best: 8" while the big number showed 12).
+**Root cause**: `useStreak` returns both `longestStreak` (computed from persisted sessions) and `bestStreak` (the all-time record persisted in `momentum-best-streak`, auto-climbing when `longestStreak` exceeds it). Dashboard.tsx and ReportsPage.tsx destructured `{ streak, longestStreak }` and rendered `longestStreak` as "Best" — ignoring `bestStreak` entirely. Worse, `longestStreak`'s memo did NOT include `previewDates` (the live timer's today), so while a timer was running `streak` could exceed `longestStreak`, and the `bestStreak` effect only compared against `longestStreak` — so the invariant `bestStreak ≥ streak` was broken.
+**Fix applied**: (1) Dashboard.tsx and ReportsPage.tsx now destructure and render `bestStreak` (the persisted record, which is the intended "Best"). (2) `longestStreak`'s memo now also folds in `previewDates`, matching the current-streak loop. (3) The `bestStreak` effect now uses `candidate = Math.max(longestStreak, streak)` so the displayed best climbs the moment the current streak exceeds the stored record (e.g. a live timer previewing today). Regression tests added in `streak.test.ts` (`bestStreak invariant` block).
+**Stall trap**: "just `Math.max(longestStreak, currentStreak)` in the component" → that masks the symptom but the persisted `bestStreak` would still be stale on next load. Fix the hook's effect (candidate = max(longest, current)) AND render `bestStreak`, not `longestStreak`.
+
+
+### 10.47 Activity session start/end used wall-clock instead of `scheduledTime`
+**Symptom**: clicking "Attended" on an activity created a session whose `startAt` was `Date.now() - duration * 60_000` and whose `endAt` was `Date.now()`. Logging a 50-min 4:30pm activity at 6pm produced a 5:10pm–6:00pm session, not a 4:30pm–5:20pm one — so the dashboard's "Today" total (filtered by `date(s.startAt) === today`) could miss the session entirely, and the session was incorrectly attributed to the wrong time block.
+**Fix**: `attendActivity` in `SchedulePage.tsx` now derives `startAt` from `scheduledTime` (parsed against `todayStr`) when present, and computes `endAt = startAt + mins`. Falls back to `Date.now() - duration * 60_000` for activities without `scheduledTime`.
+**Stall trap**: "the session isn't counted toward study time" → check whether `startAt` is anchored to the scheduled block, not the wall clock. The `actualMinutes` field on the `ActivityLog` was already correct; only the Session's `startAt`/`endAt`/`durationMinutes` were wrong.
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -573,18 +586,17 @@ cd momentum && npm install && npm run dev     # dev server on :5173
 cd momentum && npm run build                  # production build
 cd momentum && npx tsc --noEmit               # type-check only
 cd momentum && npx vitest run                 # tests
-```
-
-**Deployment**:
+**Deployment — mandatory final step of every change:**
 - Canonical repo: `https://github.com/momentum-study/momentum.git` (remote `org`).
 - Canonical live URL: `https://momentum-study.github.io/momentum/`.
 - `origin` = personal fork `leightonmascord/momentum` (development only).
-- **Every commit to `org/main` SHOULD be deployed** to `https://momentum-study.github.io/momentum/`. Run `npm run deploy` after pushing — this is not optional for substantive changes.
-- Release flow:
+- **Every commit to `org/main` MUST be deployed** to `https://momentum-study.github.io/momentum/`. Verified work that is not deployed is incomplete work.
+- Release flow — run after a change passes type-check, tests, and production build:
   ```bash
   git push org main
   npm run deploy
   ```
+- **Default workflow:** after `npx tsc --noEmit`, `npx vitest run`, and `npm run build` all pass, commit the changes, push to `org/main`, then run `npm run deploy`. Do not stop after a green build — the live site is the deliverable.
 - If README/comments mention `leightonmascord.github.io/momentum`, that is stale — correct to `momentum-study.github.io/momentum`.
 
 ---
@@ -614,10 +626,12 @@ Update this file when you:
 - Keep the "Stale-spec warning" callouts when you correct something that was previously wrong — they prevent future instances from reintroducing the old behavior.
 - If you change a default or a type, update the inline code blocks in §4/§5 to match exactly.
 
+**SPEC_VERSION: 27** — 2026-08-21 Fixed activity "Attended" sessions using wall-clock instead of `scheduledTime`: `attendActivity` in SchedulePage.tsx now anchors `startAt` to the activity's scheduled time (parsed against today) and computes `endAt = startAt + mins`, so a 50-min 4:30pm activity logged at 6pm records a 4:30pm–5:20pm session that counts toward study time. Falls back to now-minus-duration when no `scheduledTime` (§10.47).
 ### 14.3 Grounding rule (repeated)
 The code is the source of truth. If this file and the code disagree, the code wins — and you MUST update this file to match. Never trust a stale spec over the actual implementation. When you read the code and find this file wrong, fix the file, don't work around the code.
 
 ### 14.4 Version stamp
+**SPEC_VERSION: 26** — 2026-08-20 Fixed the streak widget "Best" number not reflecting the current streak when it exceeded the previous best. `useStreak` now includes `previewDates` in the `longestStreak` memo and uses `candidate = Math.max(longestStreak, streak)` in the `bestStreak` effect; Dashboard.tsx and ReportsPage.tsx now render `bestStreak` instead of `longestStreak`. The "How streaks work" tooltip also now states the correct freeze rule (5 consecutive logged days → 1 freeze) instead of the stale "one missed day per chain" text. Regression tests added (§10.46). 173 tests pass.
 **SPEC_VERSION: 25** — 2026-08-19 Comprehensive soft-delete audit: replaced every remaining `db.sessions.delete(id)` hard-delete with `softDelete(db.sessions, id)` across 7 files (Dashboard.tsx, TodayChecklist.tsx, ActivitiesPage.tsx, RoutinePage.tsx, SchedulePage.tsx + undo/redo handlers). Also added missing `durationSeconds` field to manual log sessions in Dashboard. All 169 tests pass.
 **SPEC_VERSION: 24** — 2026-08-19 Added a default "Misc" subject to the first-launch seed data (`seedDefaults` in `app-db.ts`), so new users' Focus Areas list starts with a Misc subject under the Miscellaneous category. Existing installs unaffected (seed only runs when the categories table is empty). §15, §6.2.
 **SPEC_VERSION: 23** — 2026-08-19 Fixed current streak dropping to 0 the morning after a run, before the user logged that day: `useStreak` now starts the loop from yesterday when today isn't in `daySet`, so the streak holds through the current day until the user logs (§10.45). Regression tests added in `streak.test.ts`.
@@ -633,6 +647,7 @@ The code is the source of truth. If this file and the code disagree, the code wi
   - *Streak freeze rule* (`use-streak.ts` rewritten): every 5 consecutive logged days earns 1 missed-day freeze. The new rule consumes a freeze per missed day; chain breaks when freezes run out. The old "1 missed day per chain" rule is gone.
   - *Categories merged into Focus Areas*: `/categories` route now redirects to `/subjects`; subjects page has a "Manage Categories" button + modal (inline CRUD + cascade delete) and a "+ New" link in the subject form. Categories are still stored as a separate table — migration is not needed.
   - *"Any subject" mode* (`src/lib/subject-mode.ts`): projects and routines can now select "Any subject" (sentinel `ANY_SUBJECT_ID = "__any__"`). The routine-tracker match predicate treats this as a wildcard, so its totals accumulate time from every subject. `getSubjectPathLabel` renders the label "Any subject".
+**SPEC_VERSION: 28** — 2026-08-21 Dashboard "Recent Sessions" now shows all non-deleted sessions (not just academic); Today card now displays both academic-total (primary) and all-sessions-today total (secondary). Moved streak mechanics info into the streak info button (HoverCard) and removed duplicate outside text. Added Edit/Delete affordance to sessions in Focus Areas detail view.
   - *Marks page*: multi-select checkboxes (header + per-row), "Compare N marks" button + modal with side-by-side comparison table + weighted average footer.
   - *Reports*: added Consistency score (%), Current Streak 🔥, Best streak, and a new "Time by Project" card.
   - *AI Review* (`src/features/reviews/AIReviewPage.tsx`): prompt now explicitly distinguishes `[future]` days from `[missed]` days so the AI doesn't recommend catch-up plans for days that haven't happened yet; new sections added for marks this period, open assignments (next 7 days), routine adherence, and routine auto-logs. Explicit output-format instructions to produce at most 4 short sections (Headline / What went well / What to improve / Next-week plan).

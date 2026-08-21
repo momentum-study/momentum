@@ -546,7 +546,7 @@ export default function Dashboard() {
     [academicSessions, todayStr]
   )
   const settings = useMemo(() => loadSettings(), [])
-  const { streak, longestStreak } = useStreak(academicSessions, useStreakPreviewDates())
+  const { streak, bestStreak } = useStreak(academicSessions, useStreakPreviewDates())
   // Celebration: trigger once per day when the daily goal is met or a streak
   // milestone is reached today. Guarded by localStorage so it only fires once.
   useEffect(() => {
@@ -1030,7 +1030,17 @@ export default function Dashboard() {
 
   const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
   const goalPct = Math.min(100, Math.round((liveTotalTodayMinutes / settings.dailyTargetMinutes) * 100))
-  const allRecent = academicSessions
+  const allSessions = useMemo(
+    () => data.sessions.filter((s) => !s.deletedAt),
+    [data.sessions]
+  )
+  const totalTodayMinutesAll = useMemo(
+    () => allSessions
+      .filter((s) => toLocalDateString(s.startAt) === todayStr)
+      .reduce((sum, s) => sum + (s.durationSeconds != null ? s.durationSeconds / 60 : s.durationMinutes), 0),
+    [allSessions, todayStr]
+  )
+  const allRecent = allSessions
     .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
     .slice(0, 50)
     .map((s) => ({
@@ -1082,6 +1092,9 @@ export default function Dashboard() {
                   ) : (
                     `${formatMinutes(Math.max(0, settings.dailyTargetMinutes - Math.round(liveTotalTodayMinutes)))} left of ${formatMinutes(settings.dailyTargetMinutes)} goal`
                   )}
+                </div>
+                <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  {formatMinutes(totalTodayMinutesAll)} total today
                 </div>
                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   {lastSessionText}
@@ -1231,9 +1244,9 @@ export default function Dashboard() {
                       <div className="space-y-1 text-xs">
                         <div className="font-medium text-slate-800 dark:text-slate-100">How streaks work</div>
                         <div>Counts one per consecutive day.</div>
-                        <div>One missed day per chain is allowed — the next logged day after that continues the streak.</div>
-                        <div>Two consecutive missed days break the chain.</div>
-                        <div>Best: {longestStreak} day{longestStreak !== 1 ? 's' : ''}</div>
+                        <div>Log today to keep your streak. Every 5 consecutive logged days earns 1 missed-day freeze.</div>
+                        <div>If you miss two days in a row without a freeze, the chain breaks.</div>
+                        <div>Best: {bestStreak} day{bestStreak !== 1 ? 's' : ''}</div>
                       </div>
                     }
                   >
@@ -1246,7 +1259,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="flex items-start gap-2 text-right text-xs text-slate-500">
-                <div>Best <span className="font-semibold text-slate-700 dark:text-slate-200">{longestStreak}</span></div>
+                <div>Best <span className="font-semibold text-slate-700 dark:text-slate-200">{bestStreak}</span></div>
                 <button
                   type="button"
                   onClick={() => loadData()}
@@ -1261,12 +1274,6 @@ export default function Dashboard() {
               </div>
             </div>
             {streak === 0 && <p className="text-sm text-slate-500">Log a session today to start your streak!</p>}
-            {streak > 0 && liveTotalTodayMinutes === 0 && (
-              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                Log today to keep your streak. Every 5 consecutive logged days earns 1 missed-day freeze.
-                If you miss two days in a row without a freeze, the chain breaks.
-              </p>
-            )}
             <div>
               <div className="mb-1 grid grid-cols-7 gap-px text-[10px] font-medium text-slate-400">
                 {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((l, i) => (
@@ -1515,7 +1522,7 @@ export default function Dashboard() {
                     </button>
                   </div>
                 )}
-                {academicSessions.length > 50 && (
+                {allSessions.length > 50 && (
                   <div className="text-right text-xs text-slate-500">
                     Showing {recentSessions.length} of {allRecent.length}
                   </div>

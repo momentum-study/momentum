@@ -4,6 +4,7 @@ import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, formatMinutes, isoNow, toLocalDateString, getChildSubjects, softDelete } from '../../lib/utils'
+import { revertRoutineLogsForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
 import { loadSettings } from '../../lib/settings-store'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
@@ -56,7 +57,7 @@ const emptyFormData: FormData = { name: '', categoryId: '', color: DEFAULT_COLOR
 export default function SubjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { data, isLoading, loadData } = useData()
+  const { data, isLoading, loadData, mutate } = useData()
   const { push: pushUndo } = useUndo()
   const settings = useMemo(() => loadSettings(), [])
 
@@ -313,6 +314,26 @@ export default function SubjectDetailPage() {
     timer: 'Timer', pomodoro: 'Pomo', manual: 'Manual', quickLog: 'Quick', autoRoutine: 'Routine',
   }
 
+  async function deleteSession(sid: string) {
+    const session = data.sessions.find((s) => s.id === sid)
+    if (!session) return
+    await softDelete(db.sessions, sid)
+    mutate(prev => ({ ...prev, sessions: prev.sessions.map(s => s.id === sid ? { ...s, deletedAt: isoNow() } : s) }))
+    await Promise.all([revertRoutineLogsForSession(session), revertStreakDayForSession(session)])
+    pushUndo({
+      description: 'Deleted session',
+      undo: async () => {
+        await db.sessions.update(sid, { deletedAt: null, updatedAt: isoNow() })
+        await loadData()
+      },
+      redo: async () => {
+        await softDelete(db.sessions, sid)
+        await loadData()
+      },
+    })
+    await loadData()
+  }
+
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
@@ -505,6 +526,14 @@ export default function SubjectDetailPage() {
                         <div className="flex shrink-0 items-center gap-2">
                           <span className="text-[10px] text-slate-400">{sourceBadge[s.source] ?? s.source}</span>
                           <span className="font-medium text-slate-800 dark:text-slate-100">{formatMinutes(s.durationMinutes)}</span>
+                          <button
+                            onClick={() => deleteSession(s.id)}
+                            className="text-slate-400 hover:text-red-500"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
                         </div>
                       </div>
                     ))}

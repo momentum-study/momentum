@@ -629,7 +629,7 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                         <span>{subject?.name ?? 'No focus area'}</span>
                         <span>•</span>
                         <span className="text-red-600 font-medium">Overdue {daysOverdue}d</span>
-                        {a.weight > 0 && (
+                        {a.weight > 0 && a.category === 'assignments' && (
                           <>
                             <span>•</span>
                             <span className="text-slate-400">{a.weight}%</span>
@@ -694,7 +694,7 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                         )}
                         <span>•</span>
                         <span>{a.dueDate ? format(parseISO(a.dueDate), 'MMM d, yyyy') : 'No date'}</span>
-                        {a.weight > 0 && (
+                        {a.weight > 0 && a.category === 'assignments' && (
                           <>
                             <span>•</span>
                             <span className="text-slate-400">{a.weight}%</span>
@@ -805,7 +805,7 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
               id="task-subject"
               className="input w-full"
               value={form.subjectId}
-              onChange={(e) => setForm((f) => ({ ...f, subjectId: e.target.value }))}
+              onChange={(e) => setForm((f) => ({ ...f, subjectId: e.target.value, projectId: '' }))}
             >
               <option value="">Select subject</option>
               {filterActive(data.subjects).map((s) => (
@@ -813,30 +813,25 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
               ))}
             </select>
           </div>
-          <div>
-            <label className="label" htmlFor="task-project">Project (optional)</label>
-            <select
-              id="task-project"
-              className="input w-full"
-              value={form.projectId}
-              onChange={(e) => {
-                const pId = e.target.value
-                setForm((f) => {
-                  const project = data.projects.find((p) => p.id === pId)
-                  return {
-                    ...f,
-                    projectId: pId,
-                    subjectId: project ? project.subjectId : f.subjectId
-                  }
-                })
-              }}
-            >
-              <option value="">Select project</option>
-              {data.projects.filter((p) => !p.deletedAt).map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
+          {data.projects.filter((p) => !p.deletedAt && p.subjectId === form.subjectId).length > 0 && (
+            <div>
+              <label className="label" htmlFor="task-project">Project (optional)</label>
+              <select
+                id="task-project"
+                className="input w-full"
+                value={form.projectId}
+                onChange={(e) => {
+                  const pId = e.target.value
+                  setForm((f) => ({ ...f, projectId: pId }))
+                }}
+              >
+                <option value="">None</option>
+                {data.projects.filter((p) => !p.deletedAt && p.subjectId === form.subjectId).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <div>

@@ -89,6 +89,7 @@ export function ContextMenu({ items, children }: ContextMenuProps) {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchMove={handleTouchMove}
+        style={{ display: 'contents' }}
       >
         {children}
       </div>

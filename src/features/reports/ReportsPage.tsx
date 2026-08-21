@@ -102,7 +102,7 @@ export default function ReportsPage() {
     })
   }, [scopeFiltered, period])
   const subjectsById = useMemo(() => new Map(data.subjects.map((s) => [s.id, s])), [data.subjects])
-  const { streak: currentStreak, longestStreak } = useStreak(scopeFiltered)
+  const { streak: currentStreak, bestStreak } = useStreak(scopeFiltered)
 
   // ── Overview metrics ──
   const overview = useMemo(() => {
@@ -389,7 +389,7 @@ export default function ReportsPage() {
           <div>
             <div className="text-sm text-slate-500">Current Streak</div>
             <div className="text-2xl font-semibold text-orange-500">🔥 {currentStreak}</div>
-            <div className="text-xs text-slate-500">Best: {longestStreak}</div>
+            <div className="text-xs text-slate-500">Best: {bestStreak}</div>
           </div>
         </div>
       </Card>

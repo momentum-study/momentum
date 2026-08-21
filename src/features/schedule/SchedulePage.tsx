@@ -387,12 +387,15 @@ export function SchedulePage() {
     }
     let session: Session | null = null
     if (activity.createsSession && activity.subjectId && mins > 0) {
-      const startAt = new Date(Date.now() - mins * 60 * 1000).toISOString()
+      const startAt = activity.scheduledTime
+        ? new Date(`${todayStr}T${activity.scheduledTime}:00`).toISOString()
+        : new Date(Date.now() - mins * 60 * 1000).toISOString()
+      const endAt = new Date(new Date(startAt).getTime() + mins * 60 * 1000).toISOString()
       session = {
         id: sessionIdFor(startAt, activity.subjectId, mins),
         subjectId: activity.subjectId,
         startAt,
-        endAt: new Date().toISOString(),
+        endAt,
         durationMinutes: mins,
         source: 'autoRoutine',
         createdAt: isoNow(),

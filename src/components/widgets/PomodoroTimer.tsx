@@ -304,12 +304,13 @@ export function PomodoroTimer() {
     if (subjectId && r.subjectId !== subjectId) return false
     return true
   }).sort((a, b) => a.name.localeCompare(b.name))
-  // Restore notes + routineId from persisted timer state on mount
+  // Restore notes + routineId + focusTag from persisted timer state on mount
   useEffect(() => {
     const stored = loadTimerState()
     if (stored) {
       setTimerNotes(stored.notes ?? '')
       if (stored.routineId) setTimerRoutineId(stored.routineId)
+      if (stored.focusTag) setTimerFocusTag(stored.focusTag)
     }
   }, [])
 
@@ -571,6 +572,7 @@ export function PomodoroTimer() {
         cyclesCompleted: newCycles,
         config: cfg,
         notes: timerNotes,
+        focusTag: timerFocusTag ?? undefined,
       }
       saveTimerState(newState)
     } else {
@@ -588,6 +590,7 @@ export function PomodoroTimer() {
         cyclesCompleted: st.pomCycles,
         config: cfg,
         notes: timerNotes,
+        focusTag: timerFocusTag ?? undefined,
       }
       saveTimerState(newState)
     }
@@ -813,6 +816,7 @@ export function PomodoroTimer() {
       simplePausedOffset: simplePausedOffset,
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
+      focusTag: timerFocusTag ?? undefined,
     }
     saveTimerState(state)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
@@ -832,9 +836,10 @@ export function PomodoroTimer() {
       phase: 'focus',
       cyclesCompleted: 0,
       config: configRef.current,
-      simplePausedOffset: elapsed,
+      simplePausedOffset: simplePausedOffset,
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
+      focusTag: timerFocusTag ?? undefined,
     }
     saveTimerState(state)
     // Presence is managed centrally by the `isRunning` effect above.
@@ -856,6 +861,7 @@ export function PomodoroTimer() {
       simplePausedOffset: simplePausedOffset,
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
+      focusTag: timerFocusTag ?? undefined,
     }
     saveTimerState(state)
   }
@@ -941,6 +947,8 @@ export function PomodoroTimer() {
     setSimplePausedOffset(0)
     setSimpleSeconds(0)
     setTimerNotes('')
+    setTimerRoutineId('')
+    setTimerFocusTag(null)
     localStorage.removeItem('momentum-timer-notes')
     clearStreakPreviewDates()
   }
@@ -1030,6 +1038,8 @@ export function PomodoroTimer() {
     setSubjectId(newSubjectId)
     setProjectId('')
     setTaskId('')
+    setTimerRoutineId('')
+    setTimerFocusTag(null)
     const newSubjectNotes = getLastNote(newSubjectId) ?? ''
     setTimerNotes(newSubjectNotes)
     const now = Date.now()
@@ -1046,6 +1056,7 @@ export function PomodoroTimer() {
         config: configRef.current,
         notes: newSubjectNotes,
         routineId: timerRoutineId || undefined,
+        focusTag: timerFocusTag ?? undefined,
       }
       saveTimerState(state)
     } else {
@@ -1062,6 +1073,7 @@ export function PomodoroTimer() {
         config: configRef.current,
         notes: newSubjectNotes,
         routineId: timerRoutineId || undefined,
+        focusTag: timerFocusTag ?? undefined,
       }
       saveTimerState(state)
     }
@@ -1091,6 +1103,7 @@ export function PomodoroTimer() {
       config: configRef.current,
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
+      focusTag: timerFocusTag ?? undefined,
     }
     saveTimerState(state)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
@@ -1116,6 +1129,7 @@ export function PomodoroTimer() {
       config: configRef.current,
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
+      focusTag: timerFocusTag ?? undefined,
     }
     saveTimerState(state)
   }
@@ -1134,6 +1148,7 @@ export function PomodoroTimer() {
       config: configRef.current,
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
+      focusTag: timerFocusTag ?? undefined,
     }
     saveTimerState(state)
   }
@@ -1183,6 +1198,8 @@ export function PomodoroTimer() {
     setPomCycles(0)
     setPomSeconds(config.focusMinutes * 60)
     setTimerNotes('')
+    setTimerRoutineId('')
+    setTimerFocusTag(null)
     localStorage.removeItem('momentum-timer-notes')
     clearStreakPreviewDates()
   }
@@ -1201,6 +1218,7 @@ export function PomodoroTimer() {
     clearTimerState()
     setTimerFocusTag(null)
     setTimerNotes('')
+    setTimerRoutineId('')
     localStorage.removeItem('momentum-timer-notes')
   }
 

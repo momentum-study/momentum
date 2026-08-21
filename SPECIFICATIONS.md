@@ -548,6 +548,16 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 **Root cause**: `changeSubject` saved the old session correctly but reused the old `timerNotes` value when creating the new subject's persisted timer state. React state updates are asynchronous, so calling `setTimerNotes` alone was insufficient.
 **Fix applied**: `changeSubject` now loads the new subject's scoped last note with `getLastNote(newSubjectId)`, updates the visible notes state, and writes that same value directly into both simple and pomodoro persisted timer states.
 **Stall trap**: resetting only the React state leaves a reload path carrying the old value; the persisted `notes` field must be updated in the same subject-switch operation.
+
+### 10.51 PomodoroTimer state bleed on subject switch / stop / discard — FIXED
+**Symptom**: switching subjects while the timer is running leaves the old subject's focusTag and routineId on the new session; stopping or discarding a session also leaks these fields into the next session.
+**Root cause**: `timerFocusTag` and `timerRoutineId` were never reset when calling `changeSubject`, `stopSimple`, `stopPomodoro`, `discardSession`, or `resetPomodoro`.
+**Fix applied**: all five functions now reset `timerRoutineId('')` and `timerFocusTag(null)`.
+
+### 10.52 focusTag not persisted / restored on reload — FIXED
+**Symptom**: if the user selected a focusTag and then the page was reloaded while the timer was running, the focusTag was lost.
+**Root cause**: `focusTag` was never written to the persisted timer state (localStorage) and was not restored on mount.
+**Fix applied**: focusTag is now persisted in all timer state writes (startSimple, pauseSimple, resumeSimple, startPomodoro, resumePomodoro, pausePomodoro, changeSubject, phase transition effects) and restored from localStorage on mount alongside notes and routineId.
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -562,8 +572,10 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 8. **Widget position persistence** — toggle off/on returns to original position.
 9. **Keyboard shortcut suppression in inputs** — typing `d`/`s`/`p`/`n` in an input does nothing but type; `Esc` and `Cmd+K`/`Ctrl+K` still work.
 10. **Timer subject switch resets notes** — start a timer on Subject A, type notes, switch to Subject B. The notes box MUST reset to Subject B's last note (if any) or empty — MUST NOT carry Subject A's text.
-11. **Shortcut registry consistency** — registry uses `Cmd+...` canonically; render-time adaptation only.
-12. **Tests and type-check** — `npx tsc --noEmit` and `npx vitest run` MUST pass.
+11. **Timer focusTag persistence** — start a timer, set a focus tag, reload the page. The focus tag MUST survive the reload.
+12. **Timer state isolation per subject** — switch subjects while timer is running; routineId and focusTag MUST NOT carry over.
+13. **Shortcut registry consistency** — registry uses `Cmd+...` canonically; render-time adaptation only.
+14. **Tests and type-check** — `npx tsc --noEmit` and `npx vitest run` MUST pass.
 
 ---
 
@@ -661,6 +673,7 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 **SPEC_VERSION: 19** — 2026-08-17 added §13 deployment requirement: every commit to `org/main` SHOULD be deployed to `https://momentum-study.github.io/momentum/`; `npm run deploy` is not optional for substantive changes.
   - *Dashboard*: removed "(+Xm over)" goal-exceeded text (§6.1); capped recent sessions at 3 with a "Show all (N)" modal containing a full scrollable table; streak info moved to an ⓘ button next to the streak number (HoverCard) instead of always-visible text.
+**SPEC_VERSION: 31** — 2026-08-21 Fixed `PomodoroTimer` state bleed for `timerRoutineId` and `timerFocusTag` on subject switch, stop, and discard (§10.51). Fixed `focusTag` not persisting/restoring on page reload (§10.52).
 **SPEC_VERSION: 30** — 2026-08-21 Timer subject switch now resets "What are you working on?" notes to the new subject's last note instead of carrying over the old subject's text (§10.50).
 **SPEC_VERSION: 29** — 2026-08-21 Fixed Today card "last session" text showing "No sessions yet today" when a timer is active (now shows "Currently studying...", §10.48). Fixed streak heatmap showing 0 study minutes until session is saved (now includes live timer minutes for today in real time, §10.49).
   - *Habits*: deduplicated optimistic local log additions vs persisted logs (fixes "2 today" bug); tick mode is now explicit per habit kind (good: green ✓ "Done"; bad: red ✗ "Lapsed") with text labels; auto-archive at N days is gone — habit instead shows a "Have you finished it?" prompt that triggers "Mark as Done" (which sets `finishedAt`); archived habits are no longer auto-archived.

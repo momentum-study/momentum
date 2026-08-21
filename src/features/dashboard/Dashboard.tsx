@@ -1026,7 +1026,9 @@ export default function Dashboard() {
         new Date(b.endAt).getTime() > new Date(a.endAt).getTime() ? b : a
       )
     : null
-  const lastSessionText = formatLastSessionText(lastSession)
+  const lastSessionText = isTimerActive()
+    ? 'Currently studying...'
+    : formatLastSessionText(lastSession)
 
   const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
   const goalPct = Math.min(100, Math.round((liveTotalTodayMinutes / settings.dailyTargetMinutes) * 100))
@@ -1294,7 +1296,8 @@ export default function Dashboard() {
                     const heatDays = Array.from({ length: HEATMAP_DAYS }, (_, i) => {
                       const d = subDays(new Date(), HEATMAP_DAYS - 1 - i)
                       const ds = format(d, 'yyyy-MM-dd')
-                      return { date: d, ds, minutes: minutesByDay[ds] ?? 0 }
+                      const liveMinutes = ds === todayStr ? liveTimerWholeMinutes / 60 : 0
+                      return { date: d, ds, minutes: (minutesByDay[ds] ?? 0) + liveMinutes }
                     })
                     const firstDow = heatDays[0].date.getDay()
                     return (

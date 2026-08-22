@@ -1029,7 +1029,16 @@ export default function Dashboard() {
   }, [])
 
 
-
+  const allSessions = useMemo(
+    () => data.sessions.filter((s) => !s.deletedAt),
+    [data.sessions]
+  )
+  const totalTodayMinutesAll = useMemo(
+    () => allSessions
+      .filter((s) => toLocalDateString(s.startAt) === todayStr)
+      .reduce((sum, s) => sum + (s.durationSeconds != null ? s.durationSeconds / 60 : s.durationMinutes), 0),
+    [allSessions, todayStr]
+  )
   if (isLoading) return <PageSpinner />
   // ---- Last-session indicator (Today card) ----
   const lastSession = academicSessions.length > 0
@@ -1043,16 +1052,6 @@ export default function Dashboard() {
 
   const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
   const goalPct = Math.min(100, Math.round((liveTotalTodayMinutes / settings.dailyTargetMinutes) * 100))
-  const allSessions = useMemo(
-    () => data.sessions.filter((s) => !s.deletedAt),
-    [data.sessions]
-  )
-  const totalTodayMinutesAll = useMemo(
-    () => allSessions
-      .filter((s) => toLocalDateString(s.startAt) === todayStr)
-      .reduce((sum, s) => sum + (s.durationSeconds != null ? s.durationSeconds / 60 : s.durationMinutes), 0),
-    [allSessions, todayStr]
-  )
   const allRecent = allSessions
     .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
     .slice(0, 50)

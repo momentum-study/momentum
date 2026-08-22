@@ -574,6 +574,10 @@ Dedupe: all notification firings are tracked in localStorage by date key. The st
 **Symptom**: streak milestones and daily goal completions only showed an in-app celebration toast. No browser notification was fired.
 **Fix applied**: the existing celebration effect in `Dashboard.tsx` now fires `sendNotification` when a streak milestone is reached or the daily goal is met.
 **Stall trap**: the celebration localStorage guard (`CELEBRATION_KEY`) already prevents duplicate firings per day; the notification is subject to the same guard.
+### 10.58 React #310 hook-order violation
+- **Symptom**: Minified React error #310 "Rendered more hooks than during the previous render" on initial load, especially in production builds.
+- **Fix**: ALWAYS place ALL `use*()` hooks (useState, useEffect, useMemo, etc.) at the top level of the component, BEFORE any early return statements. Even if the component renders `null` or a spinner early, hooks must execute in the exact same order on every render.
+- **Stall trap**: "it works in dev but breaks in production" → the production build optimizer often reveals hook-order issues that dev doesn't catch immediately. Check every early return for `use*()` hooks appearing after it.
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -696,6 +700,7 @@ The code is the source of truth. If this file and the code disagree, the code wi
   - *Dashboard*: removed "(+Xm over)" goal-exceeded text (§6.1); capped recent sessions at 3 with a "Show all (N)" modal containing a full scrollable table; streak info moved to an ⓘ button next to the streak number (HoverCard) instead of always-visible text.
 **SPEC_VERSION: 32** — 2026-08-22 KebabMenu component, notification scheduler, habit reminders, and mobile-friendly context menus.
 **SPEC_VERSION: 33** — 2026-08-22 Added "current session" grouping to the study timer. Consecutive timer runs within 5 minutes, and subject switches mid-session, are now folded into a single session group, displaying total accumulated time and subject breakdown (§10.56). Fixed `SubjectDetailPage` edit handler to correctly recompute routine logs and streak days (§10.57).
+**SPEC_VERSION: 34** — 2026-08-22 Fixed React error #310 (hook order violation) in `Dashboard.tsx`: moved `allSessions` and `totalTodayMinutesAll` `useMemo` hooks above the `if (isLoading) return` guard so hook count is constant across renders. Also added §10.58 pitfall documenting this trap for future instances.
   - New `KebabMenu` component (`src/components/ui/KebabMenu.tsx`) — three-dot menu for mobile-friendly row actions. Used alongside `ContextMenu` (right-click + long-press) for full mobile coverage.
   - New notification scheduler (`src/lib/notification-scheduler.ts`) — background polling loop for habit reminders, due-date alerts, and study review reminders. Started from `AppLayout` on mount.
   - Habit type: added optional `reminderTime` and `reminderSentDate` fields; Dexie v17 migration; UI field in the habit add/edit form.

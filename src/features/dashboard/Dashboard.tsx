@@ -570,11 +570,6 @@ export default function Dashboard() {
             if (granted) sendNotification('Streak milestone!', `🔥 ${streak} day streak — keep it going!`, 'streak-milestone')
           })
         }
-        if (targetMet) {
-          void requestNotificationPermission().then((granted) => {
-            if (granted) sendNotification('Daily goal met!', `🎯 You've hit your daily study goal.`, 'daily-goal-met')
-          })
-        }
       }
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps

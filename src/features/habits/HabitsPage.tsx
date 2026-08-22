@@ -643,24 +643,29 @@ export default function HabitsPage() {
                   type="button"
                   onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}
                   aria-pressed={isTickMode && isTickedToday}
-                  aria-label={isBad ? (isTickedToday ? 'Mark lapse (done today)' : 'Clear lapse (not done today)') : (isTickedToday ? 'Mark done' : 'Mark undone')}
+                  aria-label={isBad ? (isTickedToday ? 'Mark lapse (done today)' : 'Avoided today') : (isTickedToday ? 'Mark done' : 'Mark undone')}
                   className={cn(
                     'flex h-8 w-8 items-center justify-center rounded border-2 text-sm font-bold transition-colors',
                     isTickedToday
                       ? isBad
-                        ? 'border-red-500 bg-red-500 text-white'
+                        ? 'border-slate-300 bg-white text-slate-400 dark:border-slate-600 dark:bg-slate-800'
                         : 'border-primary-600 bg-primary-600 text-white'
-                      : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400 dark:border-slate-600 dark:bg-slate-800'
+                      : isBad
+                        ? 'border-green-500 bg-green-500 text-white'
+                        : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400 dark:border-slate-600 dark:bg-slate-800'
                   )}
-                  title={isTickedToday ? (isBad ? 'Remove lapse' : 'Mark undone') : (isBad ? 'Mark lapse (bad thing happened)' : 'Mark done')}
+                  title={isTickedToday ? (isBad ? 'Remove lapse' : 'Mark undone') : (isBad ? 'Mark avoided' : 'Mark done')}
                 >
-                  {isTickedToday ? (isBad ? '✗' : '✓') : ''}
+                  {isTickedToday ? (isBad ? '' : '✓') : (isBad ? '✓' : '')}
                 </button>
                 <span className="text-xs text-slate-400 dark:text-slate-500 select-none">
                   {isTickedToday
                     ? (isBad ? 'Lapsed' : 'Done')
                     : (isBad ? 'Avoided' : 'Not yet')}
                 </span>
+                <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
+                  Log Past
+                </Button>
               </>
             ) : (
               <>
@@ -844,9 +849,20 @@ export default function HabitsPage() {
             </div>
           </CardHeader>
 
-          <div className="mb-4 flex gap-4 text-sm text-slate-600">
-            <div><span className="font-semibold">{streakMap.get(selectedHabit.id) ?? 0}</span> day streak</div>
-            <div><span className="font-semibold">{selectedHabitLogs.length}</span> total logs</div>
+          <div className="mb-4 text-sm text-slate-600">
+            <div className="flex gap-4">
+              <div><span className="font-semibold">{streakMap.get(selectedHabit.id) ?? 0}</span> day streak</div>
+              <div><span className="font-semibold">{selectedHabitLogs.length}</span> total logs</div>
+            </div>
+            {selectedHabit.kind === 'good' ? (
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Streak counts consecutive days you logged this habit. One missed day is forgiven (♡) — two consecutive missed days break the streak. The streak starts counting from when the habit was created.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Streak counts consecutive days you AVOIDED this bad habit (no lapse logged). Any single lapse immediately breaks the streak. The streak starts counting from when the habit was created.
+              </p>
+            )}
           </div>
 
           <div className="mb-4">
@@ -1017,18 +1033,14 @@ export default function HabitsPage() {
             </label>
           )}
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-              Reminder time (optional)
-            </label>
+            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Reminder time</label>
             <input
               type="time"
               className="input"
               value={reminderTime}
               onChange={(e) => setReminderTime(e.target.value)}
             />
-            <p className="mt-1 text-xs text-slate-500">
-              We'll send a daily notification at this time if you haven't logged it yet.
-            </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Optional. Get a daily reminder at this time.</p>
           </div>
           <Button variant="primary" className="w-full" onClick={saveHabit}>{editHabit ? 'Save' : 'Add'}</Button>
         </div>

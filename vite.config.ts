@@ -20,7 +20,7 @@ export default defineConfig(({ command }) => ({
       includeAssets: ['favicon.svg'],
 
       manifest: {
-        name: 'Momentum — Study Tracker',
+        name: 'Momentum',
         short_name: 'Momentum',
         description: 'Local-first study tracker with timer, assignments, marks, habits, and reports.',
         theme_color: '#ffffff',

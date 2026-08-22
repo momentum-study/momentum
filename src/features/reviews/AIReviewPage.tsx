@@ -136,12 +136,9 @@ export default function AIReviewPage() {
     for (const streakDay of sortedStreakDays) {
       const streakDate = parseISO(streakDay.id)
       if (streakDate > checkDate) continue
-      if (streakDate < dateRange.start) break
-
       // Check if this day is consecutive to the previous check date
       const diffDays = Math.floor((checkDate.getTime() - streakDate.getTime()) / (1000 * 60 * 60 * 24))
       if (diffDays > 1) break
-
       if (streakDay.goalMet) {
         currentStreak++
         checkDate = subDays(streakDate, 1)
@@ -203,7 +200,7 @@ export default function AIReviewPage() {
     lines.push(`Weekly totals: ${formatMinutes(stats.totalMinutes)} across ${stats.totalSessions} sessions (avg ${stats.avgSessionLength}m, longest ${stats.longestSession}m). Most productive day: ${stats.mostProductiveDay ?? 'N/A'}${stats.mostProductiveDay ? ` (${stats.mostProductiveDayMinutes}m)` : ''}.`)
     lines.push(`Daily target: ${settings.dailyTargetMinutes}m. Days target met: ${stats.daysTargetMet}/${stats.daysInRange}. Current streak: ${stats.currentStreak} days.`)
     lines.push('')
-    lines.push('### Daily breakdown (note: future days in the range are marked `[future]`, do NOT treat them as missed days)')
+    lines.push('### Daily breakdown')
     const days = eachDayOfInterval({ start: dateRange.start, end: dateRange.end })
     days.forEach((day, idx) => {
       const minutes = stats.dailyMinutes[idx] ?? 0
@@ -212,6 +209,20 @@ export default function AIReviewPage() {
       else if (isToday(day) && minutes === 0) marker = ' [today, not yet]'
       else if (minutes === 0) marker = ' [missed]'
       lines.push(`- ${format(day, 'EEE, MMM d')}: ${minutes}m${marker}`)
+    })
+    lines.push('')
+    lines.push('### Focus area breakdown per day')
+    days.forEach((day) => {
+      const daySessions = weekSessions.filter(s => isSameDay(parseISO(s.startAt), day))
+      const breakdown = daySessions.reduce((acc, s) => {
+        const subj = data.subjects.find(sub => sub.id === s.subjectId)?.name ?? 'Unknown'
+        acc[subj] = (acc[subj] ?? 0) + s.durationMinutes
+        return acc
+      }, {} as Record<string, number>)
+      if (Object.keys(breakdown).length > 0) {
+        const bStr = Object.entries(breakdown).map(([name, mins]) => `${name}: ${formatMinutes(mins)}`).join(', ')
+        lines.push(`- ${format(day, 'EEE, MMM d')}: ${bStr}`)
+      }
     })
     lines.push('')
     lines.push('### Focus area time')
@@ -232,7 +243,7 @@ export default function AIReviewPage() {
     lines.push('')
 
     // Habits
-    const activeHabits = data.habits.filter(h => !h.archivedAt && h.status !== 'potential')
+    const activeHabits = data.habits.filter(h => !h.archivedAt && !h.finishedAt && h.status !== 'potential')
     if (activeHabits.length > 0) {
       lines.push('### Habits')
       activeHabits.forEach(habit => {

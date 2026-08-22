@@ -834,10 +834,23 @@ export function PomodoroTimer() {
   function startSimple() {
     setSafetyMessage('')
     simpleSafetyFiredRef.current = false
-    lastSavedCumulativeRef.current = 0
     void requestNotificationPermission()
     const now = Date.now()
     const subjId = currentEffectiveSubject()
+    // Carry over the current subject's accumulated seconds from a fresh session
+    // group so the big timer continues from the previous total instead of
+    // resetting to 0 after a stop/save (within the 5-minute buffer).
+    const carryover = (() => {
+      const g = loadCurrentSessionGroup()
+      if (!g || !isCurrentSessionFresh(g, now)) return 0
+      const lastSeg = g.segments[g.segments.length - 1]
+      if (!lastSeg || lastSeg.subjectId !== subjId) return 0
+      return g.segments
+        .filter((s) => s.subjectId === subjId)
+        .reduce((sum, s) => sum + s.seconds, 0)
+    })()
+    lastSavedCumulativeRef.current = carryover
+    setSimplePausedOffset(carryover)
     updateSessionGroup((prev) => {
       if (prev && isCurrentSessionFresh(prev, now)) {
         const lastSeg = prev.segments[prev.segments.length - 1]

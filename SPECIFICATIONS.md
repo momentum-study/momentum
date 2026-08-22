@@ -558,6 +558,22 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 **Symptom**: if the user selected a focusTag and then the page was reloaded while the timer was running, the focusTag was lost.
 **Root cause**: `focusTag` was never written to the persisted timer state (localStorage) and was not restored on mount.
 **Fix applied**: focusTag is now persisted in all timer state writes (startSimple, pauseSimple, resumeSimple, startPomodoro, resumePomodoro, pausePomodoro, changeSubject, phase transition effects) and restored from localStorage on mount alongside notes and routineId.
+
+### 10.53 KebabMenu component for mobile-friendly context actions
+**Component**: `KebabMenu` (`src/components/ui/KebabMenu.tsx`) — a `⋯` button that opens a floating action menu. Used as the mobile-friendly alternative to right-click context menus. Wraps the same action set as `ContextMenu`. Supports icons, shortcuts, and danger labels. Closes on click-outside or Escape.
+**When to use**: any time a row-level action list would otherwise require Edit/Delete buttons that crowd small screens. Wrap the row in `ContextMenu` (right-click + long-press) AND add a `KebabMenu` inside the row's action area. The `ContextMenu` component handles desktop right-click and mobile long-press; `KebabMenu` handles the explicit tap affordance.
+
+### 10.54 Notification scheduler for time-based reminders
+**Module**: `src/lib/notification-scheduler.ts` — runs a 30s polling loop started from `AppLayout` on mount. Checks three sources:
+ 1. **Habit reminders**: for habits with a `reminderTime` set, fires "Have you logged X today?" at the configured time if no log exists for today. Only fires once per habit per day.
+ 2. **Due-date reminders**: for assignments, fires "X is due tomorrow" / "X is due today" / "X was due yesterday" once per assignment per day.
+ 3. **Study review reminders**: for FSRS study areas with `nextReview <= today`, fires "X is due for review" once per area per day.
+Dedupe: all notification firings are tracked in localStorage by date key. The state is pruned weekly.
+
+### 10.55 Streak milestone / daily goal notifications — FIXED
+**Symptom**: streak milestones and daily goal completions only showed an in-app celebration toast. No browser notification was fired.
+**Fix applied**: the existing celebration effect in `Dashboard.tsx` now fires `sendNotification` when a streak milestone is reached or the daily goal is met.
+**Stall trap**: the celebration localStorage guard (`CELEBRATION_KEY`) already prevents duplicate firings per day; the notification is subject to the same guard.
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -576,6 +592,10 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 12. **Timer state isolation per subject** — switch subjects while timer is running; routineId and focusTag MUST NOT carry over.
 13. **Shortcut registry consistency** — registry uses `Cmd+...` canonically; render-time adaptation only.
 14. **Tests and type-check** — `npx tsc --noEmit` and `npx vitest run` MUST pass.
+15. **Habit reminder time** — set a reminder time on a habit, save, edit it. The time MUST persist on reload.
+16. **KebabMenu opens/closes** — clicking the `⋯` button opens the menu; clicking outside or pressing Escape closes it.
+17. **KebabMenu actions** — selecting an item from the menu fires its action; the menu closes after selection.
+18. **CalendarPage KebabMenu** — each assignment row (mobile and desktop) MUST have a `KebabMenu` with Edit and Delete actions.
 
 ---
 
@@ -674,6 +694,13 @@ The code is the source of truth. If this file and the code disagree, the code wi
 
 **SPEC_VERSION: 19** — 2026-08-17 added §13 deployment requirement: every commit to `org/main` SHOULD be deployed to `https://momentum-study.github.io/momentum/`; `npm run deploy` is not optional for substantive changes.
   - *Dashboard*: removed "(+Xm over)" goal-exceeded text (§6.1); capped recent sessions at 3 with a "Show all (N)" modal containing a full scrollable table; streak info moved to an ⓘ button next to the streak number (HoverCard) instead of always-visible text.
+**SPEC_VERSION: 32** — 2026-08-22 KebabMenu component, notification scheduler, habit reminders, and mobile-friendly context menus.
+  - New `KebabMenu` component (`src/components/ui/KebabMenu.tsx`) — three-dot menu for mobile-friendly row actions. Used alongside `ContextMenu` (right-click + long-press) for full mobile coverage.
+  - New notification scheduler (`src/lib/notification-scheduler.ts`) — background polling loop for habit reminders, due-date alerts, and study review reminders. Started from `AppLayout` on mount.
+  - Habit type: added optional `reminderTime` and `reminderSentDate` fields; Dexie v17 migration; UI field in the habit add/edit form.
+  - Context menus added: CalendarPage (assignment rows), ActivitiesPage (activity rows), RoutinePage (routine rows), SubjectDetailPage (session rows with SessionDetailsModal).
+  - Dashboard: streak milestone and daily goal browser notifications via `sendNotification`.
+  - SPEC provision: "Mobile-responsive design is mandatory for every change" (§13).
 **SPEC_VERSION: 31** — 2026-08-21 Fixed `PomodoroTimer` state bleed for `timerRoutineId` and `timerFocusTag` on subject switch, stop, and discard (§10.51). Fixed `focusTag` not persisting/restoring on page reload (§10.52).
 **SPEC_VERSION: 30** — 2026-08-21 Timer subject switch now resets "What are you working on?" notes to the new subject's last note instead of carrying over the old subject's text (§10.50).
 **SPEC_VERSION: 29** — 2026-08-21 Fixed Today card "last session" text showing "No sessions yet today" when a timer is active (now shows "Currently studying...", §10.48). Fixed streak heatmap showing 0 study minutes until session is saved (now includes live timer minutes for today in real time, §10.49).

@@ -4,7 +4,7 @@ import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, formatMinutes, isoNow, toLocalDateString, getChildSubjects, softDelete } from '../../lib/utils'
-import { revertRoutineLogsForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
+import { revertRoutineLogsForSession, updateRoutineLogsForSession, revertStreakDayForSession, recomputeStreakDaysForDates } from '../../lib/routine-tracker'
 import { loadSettings } from '../../lib/settings-store'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
@@ -680,7 +680,15 @@ export default function SubjectDetailPage() {
         subjects={data.subjects.filter((s) => !s.deletedAt)}
         onSave={async (updates) => {
           if (!viewSession) return
-          await db.sessions.update(viewSession.id, { ...updates, updatedAt: isoNow() })
+          const updatedSession = { ...viewSession, ...updates, updatedAt: isoNow() }
+          await db.sessions.update(viewSession.id, updatedSession)
+          const oldDate = toLocalDateString(viewSession.startAt)
+          const newDate = toLocalDateString(updatedSession.startAt)
+          await Promise.all([
+            revertRoutineLogsForSession(viewSession),
+            updateRoutineLogsForSession(updatedSession),
+            recomputeStreakDaysForDates(Array.from(new Set([oldDate, newDate])).filter(Boolean)),
+          ])
           await loadData()
         }}
       />

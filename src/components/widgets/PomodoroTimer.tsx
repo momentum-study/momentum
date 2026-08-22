@@ -12,6 +12,7 @@ import type { Settings } from '../../lib/settings-store'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
 import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor, splitSessionAtMidnight, setLastNote, getLastNote } from '../../lib/timer-persistence'
+import { loadGroup as loadCurrentSessionGroup, saveGroup as saveCurrentSessionGroup, isGroupFresh as isCurrentSessionFresh, finalizedSeconds, bumpLastSegment, pushSegment, type CurrentSessionGroup } from '../../lib/current-session'
 import { FocusTagSelector, type FocusTag } from '../ui/FocusTagSelector'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
 import { groupService } from '../../lib/group-service'
@@ -284,7 +285,22 @@ export function PomodoroTimer() {
   const changeSubjectConfirmationTimer = useRef<number | null>(null)
   const [timerFocusTag, setTimerFocusTag] = useState<FocusTag | null>(null)
   const [timerNotes, setTimerNotes] = useState('')
-
+  // Current-session group: folds consecutive runs (within 5 min) and subject
+  // changes into one displayable "current session". Persisted in localStorage.
+  const [sessionGroup, setSessionGroup] = useState<CurrentSessionGroup | null>(() => loadCurrentSessionGroup())
+  function updateSessionGroup(fn: (prev: CurrentSessionGroup | null) => CurrentSessionGroup | null) {
+    setSessionGroup((prev) => {
+      const next = fn(prev)
+      saveCurrentSessionGroup(next)
+      return next
+    })
+  }
+  /** Subject id the active timer run maps to (accounting for project override). */
+  function currentEffectiveSubject(): string {
+    return projectId
+      ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId)
+      : subjectId
+  }
   const activeSubjects = data.subjects.filter((s) => !s.deletedAt)
   const topLevelSubjects = activeSubjects.filter(isTopLevelSubject).sort((a, b) => a.name.localeCompare(b.name))
   const selectedSubject = activeSubjects.find((s) => s.id === subjectId) ?? null
@@ -304,6 +320,28 @@ export function PomodoroTimer() {
     if (subjectId && r.subjectId !== subjectId) return false
     return true
   }).sort((a, b) => a.name.localeCompare(b.name))
+  // Auto-select routine if exactly one is scheduled today for the selected
+  // subject, but never override a routine the user has already picked or
+  // cleared. Only when a subject is actually selected.
+  useEffect(() => {
+    if (!subjectId) return
+    const matching = data.routines.filter((r) => {
+      if (r.deletedAt) return false
+      if (!(r.dayMinutes[todayDow] ?? 0)) return false
+      if (r.subjectId !== subjectId) return false
+      return true
+    })
+    if (matching.length === 1 && !timerRoutineId) {
+      setTimerRoutineId(matching[0].id)
+    }
+  }, [subjectId, data.routines, todayDow])
+  // Clear session group if it ended more than 5 minutes ago (group is stale).
+  useEffect(() => {
+    if (sessionGroup && !isCurrentSessionFresh(sessionGroup)) {
+      updateSessionGroup(() => null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // Restore notes + routineId + focusTag from persisted timer state on mount
   useEffect(() => {
     const stored = loadTimerState()
@@ -798,12 +836,20 @@ export function PomodoroTimer() {
     simpleSafetyFiredRef.current = false
     lastSavedCumulativeRef.current = 0
     void requestNotificationPermission()
-    // Optimistic streak preview — show the user the streak goes up as soon
-    // as they start. The real session will replace this on stop.
-    setTodayPreview(true)
-    void null
     const now = Date.now()
+    const subjId = currentEffectiveSubject()
+    updateSessionGroup((prev) => {
+      if (prev && isCurrentSessionFresh(prev, now)) {
+        const lastSeg = prev.segments[prev.segments.length - 1]
+        const segments = lastSeg.subjectId === subjId
+          ? prev.segments
+          : [...prev.segments, { subjectId: subjId, seconds: 0 }]
+        return { ...prev, segments, active: true, lastEndAt: now }
+      }
+      return { startedAt: now, segments: [{ subjectId: subjId, seconds: 0 }], lastEndAt: now, active: true }
+    })
     setSimpleStartedAt(now)
+    setTodayPreview(true)
     const state: PersistedTimerState = {
       mode: 'simple',
       subjectId: subjectId,
@@ -940,6 +986,10 @@ export function PomodoroTimer() {
         updatedAt: isoNow(),
       })
       clearPendingSession()
+      updateSessionGroup((g) => {
+        if (!g) return null
+        return { ...bumpLastSegment(g, delta), active: false, lastEndAt: Date.now() }
+      })
     }
     lastSavedCumulativeRef.current = total
     simpleSafetyFiredRef.current = false
@@ -996,6 +1046,10 @@ export function PomodoroTimer() {
       }
       clearPendingSession()
       lastSavedCumulativeRef.current = elapsed
+      updateSessionGroup((g) => {
+        if (!g) return null
+        return pushSegment(bumpLastSegment(g, elapsed - lastSavedCumulativeRef.current), newSubjectId)
+      })
     } else {
       // Save current pomodoro focus session (only if focus phase and has been running)
       if (pomPhase === 'focus' && pomStartedAt) {
@@ -1030,6 +1084,11 @@ export function PomodoroTimer() {
             updatedAt: isoNow(),
           })
         }
+      updateSessionGroup((g) => {
+        if (!g) return null
+        const elapsedForGroup = Math.min(Date.now() - pomStartedAt, configRef.current.focusMinutes * 60_000) / 1000
+        return pushSegment(bumpLastSegment(g, elapsedForGroup), newSubjectId)
+      })
       }
       clearPendingSession()
     }
@@ -1090,6 +1149,18 @@ export function PomodoroTimer() {
     void requestNotificationPermission()
     setTodayPreview(true)
     const now = Date.now()
+    const subjId = currentEffectiveSubject()
+    updateSessionGroup((prev) => {
+      if (prev && isCurrentSessionFresh(prev, now)) {
+        const lastSeg = prev.segments[prev.segments.length - 1]
+        const segments = lastSeg.subjectId === subjId
+          ? prev.segments
+          : [...prev.segments, { subjectId: subjId, seconds: 0 }]
+        return { ...prev, segments, active: true, lastEndAt: now }
+      }
+      return { startedAt: now, segments: [{ subjectId: subjId, seconds: 0 }], lastEndAt: now, active: true }
+    })
+    setPomStartedAt(now)
     setPomStartedAt(now)
     const state: PersistedTimerState = {
       mode: 'pomodoro',
@@ -1220,6 +1291,7 @@ export function PomodoroTimer() {
     setTimerNotes('')
     setTimerRoutineId('')
     localStorage.removeItem('momentum-timer-notes')
+    updateSessionGroup(() => null)
   }
 
   const currentSeconds = mode === 'simple' ? simpleSeconds : pomSeconds
@@ -1237,6 +1309,23 @@ export function PomodoroTimer() {
     ? `Cycle ${(pomCycles % config.cycles) + 1} of ${config.cycles}`
     : ''
   const isTimerActive = simpleStartedAt != null || pomStartedAt != null
+  // Current-session group display values. The group shows whenever it's
+  // active OR when it ended within the 5-minute "still in the same study
+  // block" window.
+  const groupFinalized = finalizedSeconds(sessionGroup)
+  const isGroupVisible = sessionGroup
+    ? (sessionGroup.active || isCurrentSessionFresh(sessionGroup))
+    : false
+  const groupLiveSeconds = groupFinalized + (isTimerActive && sessionGroup?.active ? currentSeconds : 0)
+  const groupSubjectNames = sessionGroup?.segments
+    .map((seg) => data.subjects.find((s) => s.id === seg.subjectId)?.name ?? 'Unknown')
+    ?? []
+  // Distinct subject names preserving order — the display shows the subject
+  // breakdown only when more than one was studied in this group.
+  const groupDistinctNames: string[] = []
+  for (const name of groupSubjectNames) {
+    if (!groupDistinctNames.includes(name)) groupDistinctNames.push(name)
+  }
 
   // Re-read persisted settings whenever they change (same tab via the custom
   // event dispatched from saveSettings(), cross-tab via the browser storage
@@ -1373,6 +1462,19 @@ export function PomodoroTimer() {
 
       {/* Timer display — always visible. Pomodoro counts up to the phase goal
           shown in brackets; simple mode continues its existing count-up. */}
+      {/* Current session group — the running total of this study block, folded
+          across consecutive runs and subject changes. */}
+      {isGroupVisible && (
+        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center dark:border-slate-700 dark:bg-slate-800/60">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current Session</div>
+          <div className="text-xl font-bold tabular-nums text-slate-800 dark:text-slate-100">{fmt(groupLiveSeconds)}</div>
+          {groupDistinctNames.length > 1 && (
+            <div className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+              {groupDistinctNames.join(' → ')}
+            </div>
+          )}
+        </div>
+      )}
       <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
         {mode === 'pomodoro' && settings.pomodoroEnabled ? fmt(pomElapsedSeconds) : fmt(currentSeconds)}
         {mode === 'pomodoro' && settings.pomodoroEnabled && (

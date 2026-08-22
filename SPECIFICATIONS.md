@@ -578,6 +578,11 @@ Dedupe: all notification firings are tracked in localStorage by date key. The st
 - **Symptom**: Minified React error #310 "Rendered more hooks than during the previous render" on initial load, especially in production builds.
 - **Fix**: ALWAYS place ALL `use*()` hooks (useState, useEffect, useMemo, etc.) at the top level of the component, BEFORE any early return statements. Even if the component renders `null` or a spinner early, hooks must execute in the exact same order on every render.
 - **Stall trap**: "it works in dev but breaks in production" → the production build optimizer often reveals hook-order issues that dev doesn't catch immediately. Check every early return for `use*()` hooks appearing after it.
+### 10.59 Routine auto-completion false-positive (dayMinutes[sessionDow] undefined)
+- **Symptom**: the Today's Checklist ticks a routine as completed when only a fraction of the target was logged — e.g. a 10-min session marking a routine with a 30-min target as "done".
+- **Root cause**: `updateRoutineLogsForSession` (and `revertRoutineLogsForSession`) computed `completed = addedMinutes >= (routine.dayMinutes[sessionDow] ?? 0)`. When the routine was NOT scheduled for the session's day of week (`dayMinutes[sessionDow]` undefined), the `?? 0` defaulted the target to 0, so `addedMinutes >= 0` was always true. This happens when a routine is auto-matched or explicitly selected (via `session.routineId`) on a day it isn't scheduled.
+- **Fix**: only allow `completed = true` when `dayMinutes[sessionDow]` is defined AND > 0: `const completed = targetMinutes !== undefined && targetMinutes > 0 && addedMinutes >= targetMinutes`. Same guard in the revert path.
+- **Stall trap**: "the checklist ticks at 10 min" → don't chase the checklist rendering; the false-positive is in the routine-tracker completion predicate, where an undefined day target must not collapse to 0.
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -701,6 +706,7 @@ The code is the source of truth. If this file and the code disagree, the code wi
 **SPEC_VERSION: 32** — 2026-08-22 KebabMenu component, notification scheduler, habit reminders, and mobile-friendly context menus.
 **SPEC_VERSION: 33** — 2026-08-22 Added "current session" grouping to the study timer. Consecutive timer runs within 5 minutes, and subject switches mid-session, are now folded into a single session group, displaying total accumulated time and subject breakdown (§10.56). Fixed `SubjectDetailPage` edit handler to correctly recompute routine logs and streak days (§10.57).
 **SPEC_VERSION: 34** — 2026-08-22 Fixed React error #310 (hook order violation) in `Dashboard.tsx`: moved `allSessions` and `totalTodayMinutesAll` `useMemo` hooks above the `if (isLoading) return` guard so hook count is constant across renders. Also added §10.58 pitfall documenting this trap for future instances.
+**SPEC_VERSION: 35** — 2026-08-22 Fixed routine-tracker false-positive completion: `updateRoutineLogsForSession` used `addedMinutes >= (dayMinutes[sessionDow] ?? 0)` which defaulted to 0 when the routine wasn't scheduled for the session's day of week, causing any partial session to mark the routine as completed. Fix requires `targetMinutes > 0` before allowing `completed = true`. Same fix applied in `revertRoutineLogsForSession`. §10.59.
   - New `KebabMenu` component (`src/components/ui/KebabMenu.tsx`) — three-dot menu for mobile-friendly row actions. Used alongside `ContextMenu` (right-click + long-press) for full mobile coverage.
   - New notification scheduler (`src/lib/notification-scheduler.ts`) — background polling loop for habit reminders, due-date alerts, and study review reminders. Started from `AppLayout` on mount.
   - Habit type: added optional `reminderTime` and `reminderSentDate` fields; Dexie v17 migration; UI field in the habit add/edit form.

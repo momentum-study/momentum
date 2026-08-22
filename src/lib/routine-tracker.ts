@@ -52,7 +52,8 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
     const addedMinutes = existing
       ? existing.actualMinutes + session.durationMinutes
       : session.durationMinutes
-    const completed = addedMinutes >= (routine.dayMinutes[sessionDow] ?? 0)
+    const targetMinutes = routine.dayMinutes[sessionDow]
+    const completed = targetMinutes !== undefined && targetMinutes > 0 && addedMinutes >= targetMinutes
 
     if (existing) {
       await db.routineLogs.update(existing.id, {
@@ -98,7 +99,10 @@ export async function revertRoutineLogsForSession(session: Session): Promise<voi
     const remaining = Math.max(0, existing.actualMinutes - session.durationMinutes)
     await db.routineLogs.update(existing.id, {
       actualMinutes: remaining,
-      completed: remaining >= (routine.dayMinutes[sessionDow] ?? 0),
+      completed: (() => {
+        const target = routine.dayMinutes[sessionDow]
+        return target !== undefined && target > 0 && remaining >= target
+      })(),
     })
   }
 }

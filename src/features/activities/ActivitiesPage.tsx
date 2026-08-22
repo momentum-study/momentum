@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Modal } from '../../components/ui/Modal'
 import { ColorPicker } from '../../components/ui/ColorPicker'
+import { KebabMenu } from '../../components/ui/KebabMenu'
 import { v4 as uuid } from 'uuid'
 import type { Activity, ActivityLog, DayOfWeek, Session } from '../../domain/types'
 
@@ -493,20 +494,12 @@ export default function ActivitiesPage() {
                               Log
                             </Button>
                           )}
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => openEdit(activity)}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            onClick={() => setDeleteConfirm(activity.id)}
-                          >
-                            Del
-                          </Button>
+                          <KebabMenu
+                            items={[
+                              { label: 'Edit', action: () => openEdit(activity) },
+                              { label: 'Delete', action: () => setDeleteConfirm(activity.id), danger: true },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>

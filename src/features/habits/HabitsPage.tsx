@@ -57,6 +57,7 @@ export default function HabitsPage() {
   const [habitMode, setHabitMode] = useState<Habit['mode']>('count')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [targetPerDay, setTargetPerDay] = useState(1)
+  const [reminderTime, setReminderTime] = useState<string>('')
   const [newHabitStatus, setNewHabitStatus] = useState<'active' | 'potential'>('active')
   const [parkForLater, setParkForLater] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -346,6 +347,7 @@ export default function HabitsPage() {
     setKind('good')
     setColor(DEFAULT_COLOR)
     setTargetPerDay(1)
+    setReminderTime('')
     setNewHabitStatus('active')
     setParkForLater(false)
     setShowModal(true)
@@ -358,6 +360,7 @@ export default function HabitsPage() {
     setKind(habit.kind)
     setColor(habit.color)
     setTargetPerDay(habit.targetPerDay ?? 1)
+    setReminderTime(habit.reminderTime ?? '')
     setShowModal(true)
   }
   async function saveHabit() {
@@ -367,11 +370,11 @@ export default function HabitsPage() {
       const finalName = kind === 'bad' && !trimmed.startsWith('Quitting ') ? `Quitting ${trimmed}` : trimmed
       const status: 'active' | 'potential' = parkForLater ? 'potential' : newHabitStatus
       if (editHabit) {
-        const updated = { name: finalName, kind, mode: habitMode, color, targetPerDay, updatedAt: isoNow() }
+        const updated = { name: finalName, kind, mode: habitMode, color, targetPerDay, reminderTime: reminderTime || null, updatedAt: isoNow() }
         await db.habits.update(editHabit.id, updated)
         mutate(prev => ({ ...prev, habits: prev.habits.map(h => h.id === editHabit.id ? { ...h, ...updated } : h) }))
       } else {
-        const newHabit = { id: uuid(), name: finalName, kind, mode: habitMode, color, targetPerDay, status, createdAt: isoNow(), updatedAt: isoNow() }
+        const newHabit = { id: uuid(), name: finalName, kind, mode: habitMode, color, targetPerDay, reminderTime: reminderTime || null, status, createdAt: isoNow(), updatedAt: isoNow() }
         await db.habits.add(newHabit)
         mutate(prev => ({ ...prev, habits: [...prev.habits, newHabit] }))
       }
@@ -1013,6 +1016,20 @@ export default function HabitsPage() {
               Park this for later (won't count toward your habit limit)
             </label>
           )}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+              Reminder time (optional)
+            </label>
+            <input
+              type="time"
+              className="input"
+              value={reminderTime}
+              onChange={(e) => setReminderTime(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              We'll send a daily notification at this time if you haven't logged it yet.
+            </p>
+          </div>
           <Button variant="primary" className="w-full" onClick={saveHabit}>{editHabit ? 'Save' : 'Add'}</Button>
         </div>
       </Modal>

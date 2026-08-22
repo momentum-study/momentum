@@ -136,6 +136,10 @@ export interface Habit {
   archivedAfterDays?: number | null
   status?: 'active' | 'potential'
   targetPerDay?: number
+  /** Reminder time for this habit (HH:MM). When set and today is not yet logged, a notification fires. */
+  reminderTime?: string | null
+  /** When true, the reminder was already sent today — used to prevent duplicate notifications. */
+  reminderSentDate?: string | null
 }
 
 export interface HabitLog {

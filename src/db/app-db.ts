@@ -138,6 +138,15 @@ export class AppDB extends Dexie {
     this.version(16).stores({
       assignments: 'id, subjectId, projectId, dueDate, completed, category',
     })
+    // v17: habit reminder settings are optional fields; migrate existing habits with no reminder.
+    this.version(17).stores({
+      habits: 'id, kind',
+    }).upgrade(async (tx) => {
+      await tx.table('habits').toCollection().modify((habit: any) => {
+        if (habit.reminderTime === undefined) habit.reminderTime = null
+        if (habit.reminderSentDate === undefined) habit.reminderSentDate = null
+      })
+    })
   }
 }
 

@@ -10,6 +10,7 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
+import { KebabMenu } from '../../components/ui/KebabMenu'
 import { v4 as uuid } from 'uuid'
 import {
   format,
@@ -487,6 +488,12 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                                 {it.title}
                               </span>
                             </button>
+                            <KebabMenu
+                              items={[
+                                { label: 'Edit', action: () => openEditModal(it) },
+                                { label: 'Delete', action: () => void deleteTask(it.id), danger: true },
+                              ]}
+                            />
                           </li>
                         ))}
                         {projects.map((p) => (
@@ -645,8 +652,12 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                     >
                       {TASK_CATEGORIES.find((c) => c.value === a.category)?.label}
                     </span>
-                    <Button size="sm" variant="secondary" onClick={() => openEditModal(a)}>Edit</Button>
-                    <Button size="sm" variant="danger" onClick={() => void deleteTask(a.id)}>Delete</Button>
+                    <KebabMenu
+                      items={[
+                        { label: 'Edit', action: () => openEditModal(a) },
+                        { label: 'Delete', action: () => void deleteTask(a.id), danger: true },
+                      ]}
+                    />
                   </div>
                 </li>
               )
@@ -719,8 +730,12 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                     >
                       {TASK_CATEGORIES.find((c) => c.value === a.category)?.label}
                     </span>
-                    <Button size="sm" variant="secondary" onClick={() => openEditModal(a)}>Edit</Button>
-                    <Button size="sm" variant="danger" onClick={() => void deleteTask(a.id)}>Delete</Button>
+                    <KebabMenu
+                      items={[
+                        { label: 'Edit', action: () => openEditModal(a) },
+                        { label: 'Delete', action: () => void deleteTask(a.id), danger: true },
+                      ]}
+                    />
                   </div>
                 </li>
               )

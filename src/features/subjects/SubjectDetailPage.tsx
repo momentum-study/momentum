@@ -13,6 +13,8 @@ import { ColorPicker, COLOR_NAMES } from '../../components/ui/ColorPicker'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
+import { KebabMenu } from '../../components/ui/KebabMenu'
+import { SessionDetailsModal } from '../../components/ui/SessionDetailsModal'
 import type { Session } from '../../domain/types'
 
 /** Tooltip text for a subject's color dot: preset name, or hex, or fallback. */
@@ -188,6 +190,17 @@ export default function SubjectDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [formData, setFormData] = useState<FormData>(emptyFormData)
   const [isSaving, setIsSaving] = useState(false)
+  // ── Session detail modal state ──
+  const [viewSession, setViewSession] = useState<Session | null>(null)
+  const [viewModalOpen, setViewModalOpen] = useState(false)
+  function copySessionInfo(s: Session) {
+    const subj = data.subjects.find((sub) => sub.id === s.subjectId)?.name ?? 'Unknown'
+    const proj = s.projectId ? data.projects.find((p) => p.id === s.projectId)?.name : undefined
+    const date = format(new Date(s.startAt), 'EEE, MMM d, h:mm a')
+    const duration = formatMinutes(s.durationMinutes)
+    const parts = [subj, proj, date, duration, s.note].filter(Boolean)
+    navigator.clipboard.writeText(parts.join(' | ')).catch(() => {})
+  }
   const activeSubjects = data.subjects.filter((s) => !s.deletedAt)
   const activeCategories = data.categories.filter((c) => !c.deletedAt)
 
@@ -526,14 +539,13 @@ export default function SubjectDetailPage() {
                         <div className="flex shrink-0 items-center gap-2">
                           <span className="text-[10px] text-slate-400">{sourceBadge[s.source] ?? s.source}</span>
                           <span className="font-medium text-slate-800 dark:text-slate-100">{formatMinutes(s.durationMinutes)}</span>
-                          <button
-                            onClick={() => deleteSession(s.id)}
-                            className="text-slate-400 hover:text-red-500"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          <KebabMenu
+                            items={[
+                              { label: 'View', action: () => { setViewSession(s); setViewModalOpen(true) } },
+                              { label: 'Copy', action: () => copySessionInfo(s) },
+                              { label: 'Delete', action: () => deleteSession(s.id), danger: true },
+                            ]}
+                          />
                         </div>
                       </div>
                     ))}
@@ -659,6 +671,19 @@ export default function SubjectDetailPage() {
           </div>
         </div>
       </Modal>
+
+      <SessionDetailsModal
+        session={viewSession}
+        open={viewModalOpen}
+        onClose={() => { setViewModalOpen(false); setViewSession(null) }}
+        subjectName={viewSession ? (data.subjects.find((sub) => sub.id === viewSession.subjectId)?.name ?? 'Unknown') : undefined}
+        subjects={data.subjects.filter((s) => !s.deletedAt)}
+        onSave={async (updates) => {
+          if (!viewSession) return
+          await db.sessions.update(viewSession.id, { ...updates, updatedAt: isoNow() })
+          await loadData()
+        }}
+      />
     </div>
   )
 }

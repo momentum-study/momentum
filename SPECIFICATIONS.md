@@ -622,6 +622,7 @@ cd momentum && npx vitest run                 # tests
 - Canonical live URL: `https://momentum-study.github.io/momentum/`.
 - `origin` = personal fork `leightonmascord/momentum` (development only).
 - **Every commit to `org/main` MUST be deployed** to `https://momentum-study.github.io/momentum/`. Verified work that is not deployed is incomplete work.
+- **Mobile-responsive design is mandatory for every change:** validate all UI changes at mobile widths. Desktop-only interactions (such as right-click context menus) MUST have a touch-friendly equivalent, such as long-press or a visible kebab/action menu. Notifications MUST remain useful without blocking or overwhelming small screens.
 - Release flow — run after a change passes type-check, tests, and production build:
   ```bash
   git push org main

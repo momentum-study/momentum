@@ -11,6 +11,7 @@ import { Modal } from '../../components/ui/Modal'
 import { ColorPicker } from '../../components/ui/ColorPicker'
 import { v4 as uuid } from 'uuid'
 import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
+import { KebabMenu } from '../../components/ui/KebabMenu'
 import type { Routine, RoutineLog, DayOfWeek, Session } from '../../domain/types'
 import { sessionIdFor } from '../../lib/timer-persistence'
 
@@ -424,8 +425,12 @@ export default function RoutinePage() {
                           >
                             Log
                           </Button>
-                          <Button variant="secondary" size="sm" onClick={() => openEditRoutine(routine)}>Edit</Button>
-                          <Button variant="danger" size="sm" onClick={() => setDeleteConfirm(routine.id)}>Del</Button>
+                          <KebabMenu
+                            items={[
+                              { label: 'Edit', action: () => openEditRoutine(routine) },
+                              { label: 'Delete', action: () => setDeleteConfirm(routine.id), danger: true },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>

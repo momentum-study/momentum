@@ -17,6 +17,7 @@ import { Modal } from '../../components/ui/Modal'
 import { HoverCard } from '../../components/ui/HoverCard'
 import { ContextMenu, type ContextMenuItem } from '../../components/ui/ContextMenu'
 import { Collapsible } from '../../components/ui/Collapsible'
+import { sendNotification, requestNotificationPermission } from '../../lib/notification-service'
 import { useSwipe } from '../../lib/use-swipe'
 import { cn, formatMinutes, getSessionScope, getSubjectPathLabel, isoNow, toLocalDateString, STREAK_MILESTONES, softDelete } from '../../lib/utils'
 import { loadSettings } from '../../lib/settings-store'
@@ -564,6 +565,16 @@ export default function Dashboard() {
       if (targetMet || reachedMilestone) {
         localStorage.setItem(CELEBRATION_KEY, today)
         setShowCelebration(true)
+        if (reachedMilestone) {
+          void requestNotificationPermission().then((granted) => {
+            if (granted) sendNotification('Streak milestone!', `🔥 ${streak} day streak — keep it going!`, 'streak-milestone')
+          })
+        }
+        if (targetMet) {
+          void requestNotificationPermission().then((granted) => {
+            if (granted) sendNotification('Daily goal met!', `🎯 You've hit your daily study goal.`, 'daily-goal-met')
+          })
+        }
       }
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps

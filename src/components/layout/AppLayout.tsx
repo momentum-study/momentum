@@ -16,6 +16,7 @@ import { CommandPalette, useCommandPalette } from '../ui/CommandPalette'
 import { useFocusMode } from '../../lib/use-focus-mode'
 import { useData } from '../../app/providers'
 import { format } from 'date-fns'
+import { startNotificationScheduler } from '../../lib/notification-scheduler'
 
   const NAV_ITEMS = [
     { to: '/', label: 'Dashboard', icon: '🏠' },
@@ -119,6 +120,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [mobileSidebarOpen])
+  // Start the notification scheduler (habit reminders + due-date alerts).
+  useEffect(() => {
+    return startNotificationScheduler()
+  }, [])
   const [prefs, setPrefs] = useState<NavPrefs>(() => loadPrefs())
   const [draftPrefs, setDraftPrefs] = useState<NavPrefs | null>(null)
   const [navNotification, setNavNotification] = useState(() => {

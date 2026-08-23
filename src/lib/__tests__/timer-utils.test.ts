@@ -312,4 +312,58 @@ describe('getLiveTimerSeconds', () => {
     localStorage.setItem(QUICK_KEY, 'not-json')
     expect(getLiveTimerSeconds()).toBe(0)
   })
+  it('returns 0 for non-academic timers when subjects/categories are provided', () => {
+    const started = Date.now() - 60_000 // started 60 seconds ago
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      mode: 'simple',
+      startedAt: started,
+      phaseRemaining: null,
+      phase: 'focus',
+      cyclesCompleted: 0,
+      config: { focusMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, cycles: 4 },
+      simplePausedOffset: 0,
+      subjectId: 'non-academic-subject',
+    }))
+    localStorage.setItem(QUICK_KEY, JSON.stringify({
+      running: true,
+      startedAt: Date.now() - 30_000,
+      seconds: 0,
+      subjectId: 'non-academic-quick-subject',
+    }))
+
+    const subjects = [
+      { id: 'non-academic-subject', categoryId: 'non-academic-category' },
+      { id: 'non-academic-quick-subject', categoryId: 'non-academic-category' },
+      { id: 'academic-subject', categoryId: 'academic-category' },
+    ]
+    const categories = [
+      { id: 'non-academic-category', scope: 'nonAcademic' as const },
+      { id: 'academic-category', scope: 'academic' as const },
+    ]
+
+    expect(getLiveTimerSeconds(subjects, categories)).toBe(0)
+  })
+
+  it('returns all live timer seconds when no subjects/categories are provided', () => {
+    const started = Date.now() - 60_000 // started 60 seconds ago
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      mode: 'simple',
+      startedAt: started,
+      phaseRemaining: null,
+      phase: 'focus',
+      cyclesCompleted: 0,
+      config: { focusMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, cycles: 4 },
+      simplePausedOffset: 0,
+      subjectId: 'non-academic-subject',
+    }))
+    localStorage.setItem(QUICK_KEY, JSON.stringify({
+      running: true,
+      startedAt: Date.now() - 30_000,
+      seconds: 0,
+      subjectId: 'non-academic-quick-subject',
+    }))
+
+    // Should return the sum of both timers (60 + 30 = 90)
+    expect(getLiveTimerSeconds()).toBe(90)
+  })
 })

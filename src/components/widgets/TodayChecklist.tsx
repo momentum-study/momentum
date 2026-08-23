@@ -33,7 +33,10 @@ export function TodayChecklist() {
       .filter(r => !r.deletedAt && (r.dayMinutes[todayDow] ?? 0) > 0)
       .map(r => {
         const log = rlogs.find(l => l.routineId === r.id)
-        return { kind: 'routine' as const, data: r, completed: log?.completed ?? false, skipped: !!log && !log.completed, log }
+        // "Skipped" only when the user explicitly skipped (log has no actual
+        // minutes). A routine with partial study progress (actualMinutes > 0)
+        // is neither completed nor skipped — do not cross it out.
+        return { kind: 'routine' as const, data: r, completed: log?.completed ?? false, skipped: !!log && !log.completed && (log.actualMinutes ?? 0) === 0, log }
       })
     const aRows: Row[] = data.activities
       .filter(a => !a.deletedAt && (a.dayMinutes[todayDow] ?? 0) > 0)
@@ -187,25 +190,43 @@ export function TodayChecklist() {
   function markSkipped(row: Row) {
     if (row.skipped || row.completed) return
     if (row.kind === 'routine') {
+      const prevLog = row.log
       const log: RoutineLog = {
-        id: uuid(),
+        id: prevLog?.id ?? uuid(),
         routineId: row.data.id,
         date: todayStr,
         actualMinutes: 0,
         completed: false,
-        createdAt: isoNow(),
+        createdAt: prevLog?.createdAt ?? isoNow(),
       }
-      mutate(prev => ({ ...prev, routineLogs: [...prev.routineLogs, log] }))
-      void db.routineLogs.add(log).catch(err => console.error('Failed to save routine log:', err))
+      mutate(prev => ({
+        ...prev,
+        routineLogs: prevLog
+          ? prev.routineLogs.map(l => l.id === log.id ? log : l)
+          : [...prev.routineLogs, log],
+      }))
+      void db.routineLogs.put(log).catch(err => console.error('Failed to save routine log:', err))
       push({
         description: `Skipped ${row.data.name}`,
         undo: async () => {
-          await db.routineLogs.delete(log.id)
-          mutate(prev => ({ ...prev, routineLogs: prev.routineLogs.filter(l => l.id !== log.id) }))
+          if (prevLog) {
+            await db.routineLogs.put(prevLog)
+            mutate(prev => ({ ...prev, routineLogs: prev.routineLogs.map(l => l.id === prevLog.id ? prevLog : l) }))
+          } else {
+            await db.routineLogs.delete(log.id)
+            mutate(prev => ({ ...prev, routineLogs: prev.routineLogs.filter(l => l.id !== log.id) }))
+          }
         },
         redo: async () => {
-          await db.routineLogs.add(log)
-          mutate(prev => ({ ...prev, routineLogs: [...prev.routineLogs, log] }))
+          await db.routineLogs.put(log)
+          mutate(prev => ({
+            ...prev,
+            routineLogs: prevLog
+              ? prev.routineLogs.map(l => l.id === log.id ? log : l)
+              : prev.routineLogs.some(l => l.id === log.id)
+              ? prev.routineLogs.map(l => l.id === log.id ? log : l)
+              : [...prev.routineLogs, log],
+          }))
         },
       })
     } else {

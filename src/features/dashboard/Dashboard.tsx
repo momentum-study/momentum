@@ -739,6 +739,9 @@ export default function Dashboard() {
   const [viewModalOpen, setViewModalOpen] = useState(false)
   const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
   const [liveTimerSubjectId, setLiveTimerSubjectId] = useState<string | null>(null)
+  // All-scope live timer seconds (academic AND non-academic). Used by the
+  // "Xm total today" line so the all-sessions total also ticks up live.
+  const [liveTimerAllSeconds, setLiveTimerAllSeconds] = useState(0)
   // Round live timer seconds down to whole minutes so the "Today by Subject"
   // breakdown only recomputes once per minute instead of every second. The
   // per-second precision is already shown in the "Today" total card above;
@@ -757,6 +760,8 @@ export default function Dashboard() {
       setLiveTimerSeconds(
         nowActive ? getLiveTimerSeconds(data.subjects, data.categories) : 0
       )
+      // All-scope: no subject/category filter, so non-academic timers count too.
+      setLiveTimerAllSeconds(nowActive ? getLiveTimerSeconds() : 0)
       setLiveTimerSubjectId(nowActive ? getLiveTimerSubjectId() : null)
       if (nowActive !== active) {
         active = nowActive
@@ -1101,7 +1106,7 @@ export default function Dashboard() {
                   )}
                 </div>
                 <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  {formatMinutes(totalTodayMinutesAll)} total today
+                  {formatMinutes(totalTodayMinutesAll + Math.floor(liveTimerAllSeconds / 60))} total today
                 </div>
                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   {lastSessionText}

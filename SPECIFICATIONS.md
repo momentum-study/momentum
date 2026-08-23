@@ -583,6 +583,16 @@ Dedupe: all notification firings are tracked in localStorage by date key. The st
 - **Root cause**: `updateRoutineLogsForSession` (and `revertRoutineLogsForSession`) computed `completed = addedMinutes >= (routine.dayMinutes[sessionDow] ?? 0)`. When the routine was NOT scheduled for the session's day of week (`dayMinutes[sessionDow]` undefined), the `?? 0` defaulted the target to 0, so `addedMinutes >= 0` was always true. This happens when a routine is auto-matched or explicitly selected (via `session.routineId`) on a day it isn't scheduled.
 - **Fix**: only allow `completed = true` when `dayMinutes[sessionDow]` is defined AND > 0: `const completed = targetMinutes !== undefined && targetMinutes > 0 && addedMinutes >= targetMinutes`. Same guard in the revert path.
 - **Stall trap**: "the checklist ticks at 10 min" → don't chase the checklist rendering; the false-positive is in the routine-tracker completion predicate, where an undefined day target must not collapse to 0.
+### 10.60 TodayChecklist routine "skipped" conflation with partial progress
+- **Symptom**: Routines with partial study progress (a RoutineLog exists with `actualMinutes > 0`, but `completed: false`) appear crossed out (line-through) on Today's Checklist.
+- **Root cause**: `TodayChecklist` computed `skipped` as `!!log && !log.completed`, conflating partial-progress logs with explicit skips. `isDone` then used `row.completed || row.skipped`, crossing out partial work.
+- **Fix**: `skipped` now only true if `!log.completed` AND `(log.actualMinutes ?? 0) === 0`.
+- **Stall trap**: "the routine log shows it's not completed, so why is it crossed out?" → check `skipped` computation in row-mapping logic.
+
+### 10.61 Dashboard total time display lags live study
+- **Symptom**: "Xm total today" line at the bottom of the Today card uses `totalTodayMinutesAll` (persisted sessions only) and does not update live with the timer.
+- **Fix**: display `totalTodayMinutesAll + Math.floor(liveTimerAllSeconds / 60)` to include live timer minutes, using `Math.floor` for per-minute ticking.
+- **Stall trap**: "do I need to refactor `getTotalTodayMinutes`?" → no, it's academic-only; dashboard needs an all-scope total.
 ---
 
 ## 11. Regression Checklist — MUST pass before deployment
@@ -772,3 +782,4 @@ Every instance MUST document significant logic pitfalls and durable user decisio
   - **Categories**: Merged into "Focus Areas" (subjects).
   - **Subject Mode**: "Any subject" (sentinel `__any__`) treats projects/routines as wildcards to accumulate time from all subjects.
   - **Default Data**: On first launch, `seedDefaults()` seeds default categories (Academic, Hobbies, Miscellaneous) AND a default "Misc" subject under the Miscellaneous category (`subj-seed-0`), so the Focus Areas list is never empty for new users. Existing installs are unaffected (the seed only runs when the categories table is empty).
+**SPEC_VERSION: 36** — 2026-08-23 Fixed two bugs: (1) TodayChecklist routines with partial study progress (actualMinutes > 0, completed: false) are no longer treated as 'skipped' and crossed out (§10.60); (2) "Xm total today" line now includes live timer minutes for all subjects (academic and non-academic), ticking up per whole minute (§10.61).

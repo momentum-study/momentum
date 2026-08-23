@@ -8,7 +8,7 @@ import { db } from '../../db/app-db'
 import { isoNow, toLocalDateString, softDelete } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { useSessionSync } from '../../lib/use-session-sync'
-import { updateRoutineLogsForSession, updateStreakDayForSession, revertRoutineLogsForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
+import { updateStreakDayForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
 import { sessionIdFor } from '../../lib/timer-persistence'
 import type { Routine, Activity, RoutineLog, ActivityLog, DayOfWeek, Session } from '../../domain/types'
 
@@ -58,27 +58,26 @@ export function TodayChecklist() {
     if (row.kind === 'routine') {
       const routine = row.data
       const mins = routine.dayMinutes[todayDow] ?? 0
-      if (mins <= 0) return
+      const existingMinutes = row.log?.actualMinutes ?? 0
+      const gap = Math.max(0, mins - existingMinutes)
       const logId = row.log?.id ?? uuid()
       const log: RoutineLog = {
         id: logId,
         routineId: routine.id,
         date: todayStr,
-        actualMinutes: mins,
+        actualMinutes: existingMinutes + gap,
         completed: true,
         createdAt: row.log?.createdAt ?? isoNow(),
       }
-      // Only create a session when "Log time" is enabled — by default,
-      // checking off just records the completion, not study minutes.
-      const session: Session | null = logTime && routine.subjectId && mins > 0
+      const session: Session | null = logTime && routine.subjectId && gap > 0
         ? {
-            id: sessionIdFor(new Date(Date.now() - mins * 60_000).toISOString(), routine.subjectId, mins),
+            id: sessionIdFor(new Date(Date.now() - gap * 60_000).toISOString(), routine.subjectId, gap),
             subjectId: routine.subjectId,
             projectId: routine.projectId ?? null,
             routineId: routine.id,
-            startAt: new Date(Date.now() - mins * 60_000).toISOString(),
+            startAt: new Date(Date.now() - gap * 60_000).toISOString(),
             endAt: new Date().toISOString(),
-            durationMinutes: mins,
+            durationMinutes: gap,
             source: 'autoRoutine',
             createdAt: isoNow(),
             updatedAt: isoNow(),
@@ -96,19 +95,20 @@ export function TodayChecklist() {
         void db.sessions.put(session).catch(err => console.error('Failed to save session:', err))
         const subjectName = data.subjects.find(s => s.id === routine.subjectId)?.name ?? 'Unknown'
         syncSession(session, subjectName)
-        void updateRoutineLogsForSession(session).catch(err => console.error('Failed to update routine logs:', err))
         void updateStreakDayForSession(session).catch(err => console.error('Failed to update streak:', err))
       }
       push({
-        description: session ? `Logged ${mins}m for ${routine.name}` : `Completed ${routine.name}`,
+        description: session ? `Logged ${session.durationMinutes}m (gap) for ${routine.name}` : `Completed ${routine.name}`,
         undo: async () => {
           if (session) await softDelete(db.sessions, session.id)
-          if (!row.log) await db.routineLogs.delete(logId)
-          mutate(prev => ({
-            ...prev,
-            ...(session ? { sessions: prev.sessions.filter(s => s.id !== session.id) } : {}),
-            routineLogs: row.log ? prev.routineLogs : prev.routineLogs.filter(l => l.id !== logId),
-          }))
+          if (row.log) {
+            // Restore the prior log (partial timer progress)
+            await db.routineLogs.put(row.log)
+            mutate(prev => ({ ...prev, routineLogs: prev.routineLogs.map(l => l.id === row.log!.id ? row.log! : l), ...(session ? { sessions: prev.sessions.filter(s => s.id !== session.id) } : {}) }))
+          } else {
+            await db.routineLogs.delete(logId)
+            mutate(prev => ({ ...prev, routineLogs: prev.routineLogs.filter(l => l.id !== logId), ...(session ? { sessions: prev.sessions.filter(s => s.id !== session.id) } : {}) }))
+          }
         },
         redo: async () => {
           if (session) await db.sessions.put(session)
@@ -256,7 +256,11 @@ export function TodayChecklist() {
     if (!row.log) return
     if (row.kind === 'routine') {
       const removedLog = row.log
-      const session = data.sessions.find(s => s.routineId === row.data.id && toLocalDateString(s.startAt) === todayStr) ?? null
+      // Only target the auto-generated markDone session (source='autoRoutine'),
+      // NOT real timer sessions that just happen to share the routineId.
+      const session = data.sessions.find(
+        s => s.routineId === row.data.id && s.source === 'autoRoutine' && toLocalDateString(s.startAt) === todayStr
+      ) ?? null
       mutate(prev => ({
         ...prev,
         routineLogs: prev.routineLogs.filter(l => l.id !== removedLog.id),
@@ -265,7 +269,6 @@ export function TodayChecklist() {
       void db.routineLogs.delete(removedLog.id).catch(err => console.error('Failed to delete routine log:', err))
       if (session) {
         void softDelete(db.sessions, session.id).catch(err => console.error('Failed to delete session:', err))
-        void revertRoutineLogsForSession(session).catch(err => console.error('Failed to revert routine logs:', err))
         void revertStreakDayForSession(session).catch(err => console.error('Failed to revert streak:', err))
       }
       push({
@@ -310,7 +313,6 @@ export function TodayChecklist() {
       void db.activityLogs.delete(removedLog.id).catch(err => console.error('Failed to delete activity log:', err))
       if (session) {
         void softDelete(db.sessions, session.id).catch(err => console.error('Failed to delete session:', err))
-        void revertRoutineLogsForSession(session).catch(err => console.error('Failed to revert routine logs:', err))
         void revertStreakDayForSession(session).catch(err => console.error('Failed to revert streak:', err))
       }
       push({

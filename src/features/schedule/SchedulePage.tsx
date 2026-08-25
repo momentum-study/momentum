@@ -1090,6 +1090,7 @@ function WeeklyPlanGrid(props: {
             onEditRoutine={onEditRoutine}
             onEditCell={onEditCell}
             blockHeight={blockHeight}
+            hideUnused={hideUnused}
             isFirst={i === 0}
             isLast={i === sortedRoutines.length - 1}
             onMove={onMoveRoutine}
@@ -1104,6 +1105,7 @@ function WeeklyPlanGrid(props: {
             onEditActivity={onEditActivity}
             onEditCell={onEditCell}
             blockHeight={blockHeight}
+            hideUnused={hideUnused}
             isFirst={i === 0}
             isLast={i === sortedActivities.length - 1}
             onMove={onMoveActivity}
@@ -1131,11 +1133,12 @@ function RoutineGridRow(props: {
   onEditRoutine: (r: Routine) => void
   onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
   blockHeight: (mins: number, max: number) => string
+  hideUnused: boolean
   isFirst: boolean
   isLast: boolean
   onMove: (id: string, dir: -1 | 1) => void
 }) {
-  const { routine, maxMinutes, subjectName, onEditRoutine, onEditCell, blockHeight, isFirst, isLast, onMove } = props
+  const { routine, maxMinutes, subjectName, onEditRoutine, onEditCell, blockHeight, hideUnused, isFirst, isLast, onMove } = props
   return (
     <>
       <div className="flex items-center gap-1 py-2 pr-3 text-sm font-medium text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800">
@@ -1173,16 +1176,20 @@ function RoutineGridRow(props: {
       {WEEKDAYS.map((_, i) => {
         const dow = i as DayOfWeek
         const mins = routine.dayMinutes[dow] ?? 0
+        if (mins <= 0 && hideUnused) {
+          return <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1" />
+        }
         return (
           <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
               <button
                 onClick={() => onEditCell(routine.id, dow, mins, false)}
-                className="w-full rounded text-xs text-white font-medium flex items-center justify-center transition-opacity hover:opacity-80"
+                className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
                 style={{ backgroundColor: routine.color, height: blockHeight(mins, maxMinutes) }}
-                title={`${mins}m on ${DAY_LABELS[dow]}`}
+                title={`${subjectName ? subjectName + ' · ' : ''}${mins}m on ${DAY_LABELS[dow]}`}
               >
-                {mins}m
+                {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
+                <span className="leading-tight">{mins}m</span>
               </button>
             ) : (
               <button
@@ -1206,11 +1213,12 @@ function ActivityGridRow(props: {
   onEditActivity: (a: Activity) => void
   onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
   blockHeight: (mins: number, max: number) => string
+  hideUnused: boolean
   isFirst: boolean
   isLast: boolean
   onMove: (id: string, dir: -1 | 1) => void
 }) {
-  const { activity, maxMinutes, subjectName, onEditActivity, onEditCell, blockHeight, isFirst, isLast, onMove } = props
+  const { activity, maxMinutes, subjectName, onEditActivity, onEditCell, blockHeight, hideUnused, isFirst, isLast, onMove } = props
   return (
     <>
       <div className="flex items-center gap-1 py-2 pr-3 text-sm text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
@@ -1248,16 +1256,20 @@ function ActivityGridRow(props: {
       {WEEKDAYS.map((_, i) => {
         const dow = i as DayOfWeek
         const mins = activity.dayMinutes[dow] ?? 0
+        if (mins <= 0 && hideUnused) {
+          return <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1" />
+        }
         return (
           <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
               <button
                 onClick={() => onEditCell(activity.id, dow, mins, true)}
-                className="w-full rounded text-xs text-white font-medium flex items-center justify-center transition-opacity hover:opacity-80"
+                className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
                 style={{ backgroundColor: activity.color, height: blockHeight(mins, maxMinutes) }}
-                title={`${mins}m on ${DAY_LABELS[dow]}`}
+                title={`${subjectName ? subjectName + ' · ' : ''}${activity.scheduledTime ? formatTime12h(activity.scheduledTime) : mins + 'm'} on ${DAY_LABELS[dow]}`}
               >
-                {activity.scheduledTime ? formatTime12h(activity.scheduledTime) : `${mins}m`}
+                {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
+                <span className="leading-tight">{activity.scheduledTime ? formatTime12h(activity.scheduledTime) : `${mins}m`}</span>
               </button>
             ) : (
               <button

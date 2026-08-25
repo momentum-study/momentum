@@ -22,10 +22,12 @@ import { useTimerTabLock } from '../../lib/use-timer-tab-lock'
 import { clearStreakPreviewDates, setTodayPreview } from '../../lib/streak-preview'
 type Mode = 'pomodoro' | 'simple'
 const LAST_SUBJECT_KEY = 'momentum-last-subject'
+const LAST_PROJECT_KEY = 'momentum-last-project'
+const LAST_TASK_KEY = 'momentum-last-task'
+const LAST_ROUTINE_KEY = 'momentum-last-routine'
 const SAFETY_LIMIT_HOURS = 12
 const SAFETY_LIMIT_SECONDS = SAFETY_LIMIT_HOURS * 3600
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
-
 /** Notes textarea + focus tag selector. Used in both idle and active timer states.
  *  When `notes` is empty and `lastNoteHint` is set, the textarea shows the hint
  *  as gray text. Clicking/focusing activates it (sets it as the actual note); if
@@ -443,13 +445,29 @@ export function PomodoroTimer() {
   // capturing a stale closure value. Assigned after the tab-lock hook runs.
   const isOwnerRef = useRef(false)
   useEffect(() => {
-    if (subjectId) return
-    const last = localStorage.getItem(LAST_SUBJECT_KEY)
-    if (last && data.subjects.some(s => s.id === last && !s.deletedAt)) {
-      setSubjectId(last)
+    const lastSubject = localStorage.getItem(LAST_SUBJECT_KEY)
+    if (lastSubject && data.subjects.some(s => s.id === lastSubject && !s.deletedAt)) {
+      setSubjectId(lastSubject)
     }
-    // Don't auto-select first — leave empty
-  }, [data.subjects, subjectId])
+    const lastProject = localStorage.getItem(LAST_PROJECT_KEY)
+    if (lastProject && data.projects.some(p => p.id === lastProject && !p.deletedAt)) {
+      setProjectId(lastProject)
+    }
+    const lastTask = localStorage.getItem(LAST_TASK_KEY)
+    if (lastTask && data.assignments.some(a => a.id === lastTask && !a.deletedAt)) {
+      setTaskId(lastTask)
+    }
+    const lastRoutine = localStorage.getItem(LAST_ROUTINE_KEY)
+    if (lastRoutine && data.routines.some(r => r.id === lastRoutine && !r.deletedAt)) {
+      setTimerRoutineId(lastRoutine)
+    }
+  }, [data.subjects, data.projects, data.assignments, data.routines])
+  useEffect(() => {
+    if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
+    if (projectId) localStorage.setItem(LAST_PROJECT_KEY, projectId)
+    if (taskId) localStorage.setItem(LAST_TASK_KEY, taskId)
+    if (timerRoutineId) localStorage.setItem(LAST_ROUTINE_KEY, timerRoutineId)
+  }, [subjectId, projectId, taskId, timerRoutineId])
 
   // Recover any session that was saved to localStorage on page close but not
   // yet committed to Dexie (e.g. browser killed the tab before the async write).

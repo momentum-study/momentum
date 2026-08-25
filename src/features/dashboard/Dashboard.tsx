@@ -19,7 +19,7 @@ import { ContextMenu, type ContextMenuItem } from '../../components/ui/ContextMe
 import { Collapsible } from '../../components/ui/Collapsible'
 import { sendNotification, requestNotificationPermission } from '../../lib/notification-service'
 import { useSwipe } from '../../lib/use-swipe'
-import { cn, formatMinutes, getSessionScope, getSubjectPathLabel, isoNow, toLocalDateString, STREAK_MILESTONES, softDelete } from '../../lib/utils'
+import { cn, formatMinutes, getSessionScope, getSubjectPathLabel, getWeekStartsOn, isoNow, toLocalDateString, STREAK_MILESTONES, softDelete } from '../../lib/utils'
 import { loadSettings } from '../../lib/settings-store'
 import { useStreak } from '../../lib/use-streak'
 import { useStreakPreviewDates } from '../../lib/streak-preview'
@@ -44,7 +44,7 @@ import { SessionDetailsModal } from '../../components/ui/SessionDetailsModal'
  * than a discouraging duration, per spec.
  */
 function formatLastSessionText(lastSession: { endAt: string } | null): string {
-  if (!lastSession) return 'No sessions yet — log your first one!'
+  if (!lastSession) return 'No sessions yet (log your first one!)'
   const sinceMs = Date.now() - new Date(lastSession.endAt).getTime()
   const MIN = 60_000
   const HOUR = 60 * MIN
@@ -60,11 +60,11 @@ function formatLastSessionText(lastSession: { endAt: string } | null): string {
   }
   if (sinceMs < 7 * DAY) {
     const days = Math.floor(sinceMs / DAY)
-    if (days === 1) return 'No sessions yet today — last was yesterday'
-    return `No sessions yet today — last was ${days}d ago`
+    if (days === 1) return 'No sessions yet today (last was yesterday)'
+    return `No sessions yet today (last was ${days}d ago)`
   }
   // Long gap: gentle re-engagement, no specific duration shown.
-  return "It's been a while since your last session — let's get back to it!"
+  return "It's been a while since your last session (let's get back to it!)"
 }
 
  function CustomizeRow({
@@ -106,7 +106,7 @@ function formatLastSessionText(lastSession: { endAt: string } | null): string {
         type="checkbox"
         checked={visible}
         onChange={onToggle}
-        className="rounded border-slate-300"
+        className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
         aria-label={visible ? `Hide ${label}` : `Show ${label}`}
       />
       <span className={cn('flex-1 text-sm min-w-[8rem]', !visible && 'text-slate-400 dark:text-slate-500')}>{label}</span>
@@ -215,7 +215,7 @@ function SessionRow({
             type="checkbox"
             checked={selected}
             onChange={() => onToggleSelect(session.id)}
-            className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-primary-600 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700"
+            className="h-5 w-5 shrink-0 cursor-pointer rounded-sm border-slate-300 accent-primary-600"
             aria-label={`Select session ${session.subjectName}`}
           />
         )}
@@ -583,6 +583,7 @@ export default function Dashboard() {
 
 
   const [calendarMonth, setCalendarMonth] = useState(new Date())
+  const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day'>('month')
   const minutesByDay = useMemo(() => {
     const map: Record<string, number> = {}
     for (const s of academicSessions) {
@@ -1331,7 +1332,7 @@ export default function Dashboard() {
                             >
                               <span>{date.getDate()}</span>
                               <div className="pointer-events-none absolute -top-10 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800">
-                                {format(date, 'd MMM')}: {formatMinutes(minutes)} • {metTarget ? 'Target met' : minutes > 0 ? 'Below target' : 'No study'}
+                                {format(date, 'd MMM')}: {formatMinutes(minutes)} • {metTarget ? `${formatMinutes(targetMinutes)}+ (target met)` : minutes > 0 ? `${formatMinutes(minutes)} of ${formatMinutes(targetMinutes)}` : '0 min'}
                               </div>
                             </div>
                           )
@@ -1343,13 +1344,13 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
-              <span>No study</span>
+              <span>0 min</span>
               <div className="h-3 w-3 rounded-sm border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-800" />
-              <span>Started</span>
+              <span>1–74% of target</span>
               <div className="h-3 w-3 rounded-sm border border-amber-200 bg-amber-200 dark:border-amber-800 dark:bg-amber-900/50" />
-              <span>Near target</span>
+              <span>75–99% of target</span>
               <div className="h-3 w-3 rounded-sm border border-orange-400 bg-orange-500" />
-              <span>Target met</span>
+              <span>100% of target</span>
               <div className="h-3 w-3 rounded-sm border border-green-600 bg-green-700 dark:border-green-400 dark:bg-green-500" />
             </div>
             <div className="text-xs text-slate-500">Streak milestones:</div>
@@ -1372,7 +1373,7 @@ export default function Dashboard() {
                       {m}d
                     </div>
                     <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800">
-                      {reached ? `${m} days — milestone reached!` : `Reach ${m} days`}
+                      {reached ? `${m} days (milestone reached!)` : `Reach ${m} days`}
                     </div>
                   </div>
                 )
@@ -1427,49 +1428,118 @@ export default function Dashboard() {
                 <span className="text-sm font-medium">{format(calendarMonth, 'MMMM yyyy')}</span>
                 <button onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">→</button>
               </div>
+              <div className="inline-flex rounded-md bg-slate-100 dark:bg-slate-700 p-0.5 text-[10px] font-medium">
+                {(['month', 'week', 'day'] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setCalendarView(v)}
+                    className={cn(
+                      'rounded px-2 py-0.5 capitalize transition-colors',
+                      calendarView === v
+                        ? 'bg-white text-slate-800 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    )}
+                  >{v}</button>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-7 gap-1 text-center text-xs mb-1">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => <div key={d} className="py-1 font-medium text-slate-500">{d}</div>)}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {Array.from({ length: calendarDays.pad }).map((_, i) => <div key={`pad-${i}`} />)}
-              {Array.from({ length: calendarDays.daysInMonth }, (_, i) => {
-                const dayNum = i + 1
-                const dateStr = `${format(calendarMonth, 'yyyy-MM')}-${String(dayNum).padStart(2, '0')}`
+            {calendarView === 'week' ? (
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: 7 }, (_, i) => {
+                  const d = new Date(calendarMonth)
+                  // Find the Monday of the current week (using getWeekStartsOn)
+                  const dow = d.getDay()
+                  const diff = (dow - getWeekStartsOn() + 7) % 7
+                  d.setDate(d.getDate() - diff + i)
+                  const dateStr = format(d, 'yyyy-MM-dd')
+                  const mins = minutesByDay[dateStr] ?? 0
+                  const intensity = heatMax > 0 ? mins / heatMax : 0
+                  const isToday = dateStr === todayStr
+                  const isFuture = dateStr > todayStr
+                  return (
+                    <div
+                      key={dateStr}
+                      title={`${format(d, 'd MMM')}: ${formatMinutes(mins)}`}
+                      className={cn(
+                        'flex min-h-[3rem] flex-col items-center justify-center rounded text-xs transition-all overflow-hidden',
+                        isToday && 'ring-2 ring-primary-500',
+                        isFuture && 'text-slate-300 dark:text-slate-600',
+                        !isFuture && mins === 0 && 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                        mins > 0 && 'text-white font-medium',
+                        mins > 0 && intensity < 0.25 && 'bg-green-200 dark:bg-green-900/50',
+                        mins > 0 && intensity >= 0.25 && intensity < 0.5 && 'bg-green-400 dark:bg-green-800',
+                        mins > 0 && intensity >= 0.5 && intensity < 0.75 && 'bg-green-600 dark:bg-green-700',
+                        mins > 0 && intensity >= 0.75 && 'bg-green-800 dark:bg-green-500',
+                      )}
+                    >
+                      <span>{format(d, 'EEE d')}</span>
+                      {mins > 0 && <span className="text-[10px] opacity-80 truncate max-w-full leading-tight">{formatMinutes(mins)}</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : calendarView === 'day' ? (
+              (() => {
+                const dateStr = format(calendarMonth, 'yyyy-MM-dd')
                 const mins = minutesByDay[dateStr] ?? 0
-                const intensity = heatMax > 0 ? mins / heatMax : 0
-                const isToday = dateStr === todayStr
-                const isFuture = dateStr > todayStr
                 return (
                   <div
-                    key={dayNum}
-                    title={`${dateStr}: ${formatMinutes(mins)}`}
+                    title={`${format(calendarMonth, 'd MMM')}: ${formatMinutes(mins)}`}
                     className={cn(
-                      'flex min-h-[2.5rem] flex-col items-center justify-center rounded text-xs transition-all overflow-hidden',
-                      isToday && 'ring-2 ring-primary-500',
-                      isFuture && 'text-slate-300 dark:text-slate-600',
-                      !isFuture && mins === 0 && 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
-                      mins > 0 && 'text-white font-medium',
-                      mins > 0 && intensity < 0.2 && 'bg-green-200 dark:bg-green-900/50',
-                      mins > 0 && intensity >= 0.2 && intensity < 0.4 && 'bg-green-400 dark:bg-green-800',
-                      mins > 0 && intensity >= 0.4 && intensity < 0.6 && 'bg-green-600 dark:bg-green-700',
-                      mins > 0 && intensity >= 0.6 && intensity < 0.8 && 'bg-green-700 dark:bg-green-600',
-                      mins > 0 && intensity >= 0.8 && 'bg-green-800 dark:bg-green-500',
+                      'flex min-h-[4rem] flex-col items-center justify-center rounded text-xs transition-all overflow-hidden',
+                      'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                      mins > 0 && 'text-white font-medium bg-green-600 dark:bg-green-700'
                     )}
                   >
-                    <span>{dayNum}</span>
-                    {mins > 0 && <span className="text-[10px] opacity-80 truncate max-w-full leading-tight">{formatMinutes(mins)}</span>}
+                    <span>{format(calendarMonth, 'EEE d MMM')}</span>
+                    <span className="text-sm font-bold">{formatMinutes(mins)}</span>
                   </div>
                 )
-              })}
-            </div>
+              })()
+            ) : (
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: calendarDays.pad }).map((_, i) => <div key={`pad-${i}`} />)}
+                {Array.from({ length: calendarDays.daysInMonth }, (_, i) => {
+                  const dayNum = i + 1
+                  const dateStr = `${format(calendarMonth, 'yyyy-MM')}-${String(dayNum).padStart(2, '0')}`
+                  const mins = minutesByDay[dateStr] ?? 0
+                  const intensity = heatMax > 0 ? mins / heatMax : 0
+                  const isToday = dateStr === todayStr
+                  const isFuture = dateStr > todayStr
+                  return (
+                    <div
+                      key={dayNum}
+                      title={`${dateStr}: ${formatMinutes(mins)}`}
+                      className={cn(
+                        'flex min-h-[2.5rem] flex-col items-center justify-center rounded text-xs transition-all overflow-hidden',
+                        isToday && 'ring-2 ring-primary-500',
+                        isFuture && 'text-slate-300 dark:text-slate-600',
+                        !isFuture && mins === 0 && 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+                        mins > 0 && 'text-white font-medium',
+                        mins > 0 && intensity < 0.2 && 'bg-green-200 dark:bg-green-900/50',
+                        mins > 0 && intensity >= 0.2 && intensity < 0.4 && 'bg-green-400 dark:bg-green-800',
+                        mins > 0 && intensity >= 0.4 && intensity < 0.6 && 'bg-green-600 dark:bg-green-700',
+                        mins > 0 && intensity >= 0.6 && intensity < 0.8 && 'bg-green-700 dark:bg-green-600',
+                        mins > 0 && intensity >= 0.8 && 'bg-green-800 dark:bg-green-500',
+                      )}
+                    >
+                      <span>{dayNum}</span>
+                      {mins > 0 && <span className="text-[10px] opacity-80 truncate max-w-full leading-tight">{formatMinutes(mins)}</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
             <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-500">
               <span>No study</span>
               <div className="h-3 w-3 rounded-sm bg-slate-100 dark:bg-slate-800" />
               <div className="h-3 w-3 rounded-sm bg-green-200 dark:bg-green-900/50" />
+              <div className="h-3 w-3 rounded-sm bg-green-400 dark:bg-green-800" />
               <div className="h-3 w-3 rounded-sm bg-green-600 dark:bg-green-700" />
+              <div className="h-3 w-3 rounded-sm bg-green-700 dark:bg-green-600" />
               <div className="h-3 w-3 rounded-sm bg-green-800 dark:bg-green-500" />
-              <span>Full</span>
+              <span>Peak day</span>
             </div>
           </Card>
         )
@@ -1871,14 +1941,18 @@ export default function Dashboard() {
 
   return (
     <div data-tour="dashboard" className="space-y-6 overflow-x-hidden">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-end gap-2">
         <button
           type="button"
           data-tour="customise-btn"
-          className="rounded border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+          aria-label="Customise dashboard"
+          title="Customise dashboard"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
           onClick={() => setCustomizeOpen(true)}
         >
-          Customise
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
         </button>
       </div>
       {/* Dashboard grid with widgets */}
@@ -2056,7 +2130,7 @@ export default function Dashboard() {
               <div className="text-sm text-slate-600 dark:text-slate-400">
                 Today: {formatMinutes(existingToday)} (of {formatMinutes(target)} goal){' '}
                 <span className="text-slate-400 dark:text-slate-500">
-                  — logging {formatMinutes(logDuration)}{afterLog >= target ? ' reaches goal' : ` (${formatMinutes(toGo)} to go after logging)`}
+                  · logging {formatMinutes(logDuration)}{afterLog >= target ? ' reaches goal' : ` (${formatMinutes(toGo)} to go after logging)`}
                 </span>
               </div>
             )
@@ -2075,7 +2149,7 @@ export default function Dashboard() {
               <div>
                 <label className="label">Project (optional)</label>
                 <select className="input" value={logProjectId} onChange={(e) => { const pid = e.target.value; setLogProjectId(pid); setLogTaskId(''); if (pid && !logSubjectId) { const proj = data.projects.find((p) => p.id === pid); if (proj) setLogSubjectId(proj.subjectId) } }}>
-                  <option value="">— Select project —</option>
+                  <option value="">Select project...</option>
                   {data.projects.filter((p) => !p.deletedAt && p.subjectId === logSubjectId).map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -2086,7 +2160,7 @@ export default function Dashboard() {
               <div>
                 <label className="label">Task (optional)</label>
                 <select className="input" value={logTaskId} onChange={(e) => setLogTaskId(e.target.value)}>
-                  <option value="">— Select task —</option>
+                  <option value="">Select task...</option>
                   {data.assignments
                     .filter((a) => !a.deletedAt && !a.completed && a.subjectId === logSubjectId && (!logProjectId || a.projectId === logProjectId))
                     .map((a) => (
@@ -2164,7 +2238,7 @@ export default function Dashboard() {
           <div>
             <label className="label">Subject</label>
             <select className="input" value={editSubjectId} onChange={(e) => setEditSubjectId(e.target.value)}>
-              <option value="">— Select subject —</option>
+              <option value="">Select subject...</option>
               {data.subjects.filter((s) => !s.deletedAt).map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
@@ -2182,7 +2256,7 @@ export default function Dashboard() {
           <div>
             <label className="label">New Subject</label>
             <select className="input" value={batchSubjectId} onChange={(e) => setBatchSubjectId(e.target.value)}>
-              <option value="">— Select subject —</option>
+              <option value="">Select subject...</option>
               {data.subjects.filter((s) => !s.deletedAt).map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}

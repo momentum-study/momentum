@@ -135,7 +135,7 @@ export default function ExamConfigPage() {
                           type="checkbox"
                           checked={selectedIds.has(area.id)}
                           onChange={() => toggleSelect(area.id)}
-                          className="rounded"
+                          className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                         />
                         <span className="font-medium">{area.name}</span>
                         <span className="text-xs text-slate-500">
@@ -193,7 +193,7 @@ export default function ExamConfigPage() {
                       type="checkbox"
                       checked={selectedIds.has(area.id)}
                       onChange={() => toggleSelect(area.id)}
-                      className="rounded"
+                      className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                     />
                     <span className="font-medium">{area.name}</span>
                     <span className="text-xs text-slate-500">

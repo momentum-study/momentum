@@ -6,6 +6,7 @@ import { cn, gradeColor, isoNow, pctToGrade, sessionLocalDate, softDelete } from
 import { filterActive } from '../../lib/filterActive'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
+import { Select } from '../../components/ui/Select'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
@@ -472,8 +473,7 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                               type="checkbox"
                               checked={it.completed}
                               onChange={() => void quickCompleteTask(it)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="h-3.5 w-3.5 flex-shrink-0 cursor-pointer"
+                              className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                             />
                             <button
                               onClick={() => openEditModal(it)}
@@ -557,8 +557,7 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                               type="checkbox"
                               checked={it.completed}
                               onChange={() => void quickCompleteTask(it)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="h-3 w-3 flex-shrink-0 cursor-pointer"
+                              className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                             />
                             <button
                               onClick={() => openEditModal(it)}
@@ -625,10 +624,10 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                 <li key={a.id} className="flex items-center justify-between gap-4 py-3 px-4">
                   <div className="flex items-start gap-3">
                     <input
-                      type="checkbox"
+                    type="checkbox"
                       checked={a.completed}
                       onChange={() => void quickCompleteTask(a)}
-                      className="mt-1 h-4 w-4 cursor-pointer"
+                      className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                     />
                     <div>
                       <div className="font-medium text-slate-800 dark:text-slate-100">{a.title}</div>
@@ -684,10 +683,10 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                 <li key={a.id} className="flex items-center justify-between gap-4 py-3">
                   <div className="flex items-start gap-3">
                     <input
-                      type="checkbox"
+                    type="checkbox"
                       checked={a.completed}
                       onChange={() => void quickCompleteTask(a)}
-                      className="mt-1 h-4 w-4"
+                      className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                     />
                     <div>
                       <div className={cn('font-medium', a.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-100')}>
@@ -722,7 +721,6 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                       )}
                     </div>
                   </div>
-
                   <div className="flex items-center gap-2">
                     <span
                       className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
@@ -767,10 +765,10 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                   <li key={a.id} className="flex items-center justify-between gap-4 py-3">
                     <div className="flex items-start gap-3">
                       <input
-                        type="checkbox"
+                      type="checkbox"
                         checked={true}
                         onChange={() => void quickCompleteTask(a)}
-                        className="mt-1 h-4 w-4 cursor-pointer"
+                        className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                       />
                       <div>
                         <div className="font-medium text-slate-400 line-through dark:text-slate-500">
@@ -816,38 +814,22 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
 
           <div>
             <label className="label" htmlFor="task-subject">Focus Area</label>
-            <select
-              id="task-subject"
-              className="input w-full"
+            <Select
               value={form.subjectId}
-              onChange={(e) => setForm((f) => ({ ...f, subjectId: e.target.value, projectId: '' }))}
-            >
-              <option value="">Select subject</option>
-              {filterActive(data.subjects).map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
+              onChange={(val) => setForm((f) => ({ ...f, subjectId: val, projectId: '' }))}
+              options={[{ value: '', label: 'Select subject' }, ...filterActive(data.subjects).map((s) => ({ value: s.id, label: s.name }))]}
+            />
           </div>
           {data.projects.filter((p) => !p.deletedAt && p.subjectId === form.subjectId).length > 0 && (
             <div>
               <label className="label" htmlFor="task-project">Project (optional)</label>
-              <select
-                id="task-project"
-                className="input w-full"
+              <Select
                 value={form.projectId}
-                onChange={(e) => {
-                  const pId = e.target.value
-                  setForm((f) => ({ ...f, projectId: pId }))
-                }}
-              >
-                <option value="">None</option>
-                {data.projects.filter((p) => !p.deletedAt && p.subjectId === form.subjectId).map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+                onChange={(val) => setForm((f) => ({ ...f, projectId: val }))}
+                options={[{ value: '', label: 'None' }, ...data.projects.filter((p) => !p.deletedAt && p.subjectId === form.subjectId).map((p) => ({ value: p.id, label: p.name }))]}
+              />
             </div>
           )}
-
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="label" htmlFor="task-due">Due date</label>
@@ -861,16 +843,11 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
             </div>
             <div>
               <label className="label" htmlFor="task-cat">Category</label>
-              <select
-                id="task-cat"
-                className="input w-full"
+              <Select
                 value={form.category}
-                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as TaskCategory }))}
-              >
-                {TASK_CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
+                onChange={(val) => setForm((f) => ({ ...f, category: val as TaskCategory }))}
+                options={TASK_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
+              />
             </div>
           </div>
 

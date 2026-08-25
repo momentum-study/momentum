@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { loadSettings } from './settings-store'
 import { isAnySubject } from './subject-mode'
 import type { Session, Subject, Category, Scope } from '../domain/types'
 import type { Table } from 'dexie'
@@ -116,6 +117,9 @@ export function getTopLevelSubject(subjectId: string, subjects: Subject[]): Subj
   if (!subject) return null
   if (!subject.parentSubjectId) return subject
   return subjects.find((s) => s.id === subject.parentSubjectId && !s.deletedAt) ?? subject
+}
+export function getWeekStartsOn(): 0 | 1 {
+  return loadSettings().weekStartsOn
 }
 
 export function getSubjectPathLabel(subjectId: string | null | undefined, subjects: Subject[]): string {

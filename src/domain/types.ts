@@ -169,6 +169,7 @@ export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6  // 0=Sun, 6=Sat
 
 export interface Routine {
   id: string
+  orderIndex?: number
   name: string                // e.g. 'Math Study Block'
   subjectId: string           // which focus area
   projectId?: string | null   // optional project within that focus area
@@ -195,10 +196,10 @@ export interface RoutineLog {
 // Distinct from Routines (self-directed study blocks) and Subjects (focus areas).
 export interface Activity {
   id: string
+  orderIndex?: number
   name: string
   subjectId: string | null
   dayMinutes: Partial<Record<DayOfWeek, number>>
-  /** Default duration in minutes for any scheduled day (used when dayMinutes[dow] is not set) */
   duration?: number
   /** When true, marking the activity 'attended' auto-creates a Session record */
   createsSession?: boolean

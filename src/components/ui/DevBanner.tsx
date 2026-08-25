@@ -18,26 +18,27 @@ export function DevBanner() {
   const [pushModalOpen, setPushModalOpen] = useState(false)
   const [pushing, setPushing] = useState(false)
   const [pushDone, setPushDone] = useState(false)
-
-  if (!settings.devMode) return null
-
-  const handlePushToGlobal = async () => {
+  const [bannerDismissed, setBannerDismissed] = useState(false)
+  if (!settings.devMode || bannerDismissed) return null
+  const handlePushToGlobal = () => {
     setPushing(true)
-    try {
-      // Best-effort: if a local dev hook is present, ping it so the developer
-      // running the build server gets a notification. No-op in production.
-      await fetch('/__dev_push__', { method: 'POST' }).catch(() => null)
-      setPushDone(true)
-    } finally {
-      setPushing(false)
-      setPushModalOpen(false)
-    }
+    const updated = { ...settings, devMode: false }
+    saveSettings(updated)
+    setSettings(updated)
+    setBannerDismissed(true)
+    setPushModalOpen(false)
+    // The browser cannot run the repository's build/deploy command. Notify a
+    // local dev hook when one is available, without delaying banner dismissal.
+    void fetch('/__dev_push__', { method: 'POST' }).catch(() => null)
+    setPushDone(true)
+    setPushing(false)
   }
 
   const handleDisableDevMode = () => {
     const updated = { ...settings, devMode: false }
     saveSettings(updated)
     setSettings(updated)
+    setBannerDismissed(true)
     setPushModalOpen(false)
   }
 
@@ -50,7 +51,7 @@ export function DevBanner() {
               Dev Build v{VERSION}
             </span>
             <span className="text-sm font-medium text-amber-950">
-              Preview Mode — changes are not yet pushed to global
+              Preview Mode (changes not yet pushed to global)
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -60,7 +61,7 @@ export function DevBanner() {
               className="border-amber-700 bg-amber-100 text-amber-900 hover:bg-amber-200"
               onClick={() => setPushModalOpen(true)}
             >
-              Testing Done — Push to Global
+              Testing Done (Push to Global)
             </Button>
             <Button
               size="sm"

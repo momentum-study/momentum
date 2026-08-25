@@ -125,19 +125,6 @@ export function TodayChecklist() {
     } else {
       const activity = row.data
       const mins = activity.dayMinutes[todayDow] ?? activity.duration ?? 0
-      const sessionStartAt = new Date(Date.now() - mins * 60_000).toISOString()
-      const session: Session | null = logTime && activity.createsSession && activity.subjectId && mins > 0
-        ? {
-            id: sessionIdFor(sessionStartAt, activity.subjectId, mins),
-            subjectId: activity.subjectId,
-            startAt: sessionStartAt,
-            endAt: new Date().toISOString(),
-            durationMinutes: mins,
-            source: 'autoRoutine',
-            createdAt: isoNow(),
-            updatedAt: isoNow(),
-          }
-        : null
       const log: ActivityLog = {
         id: row.log?.id ?? uuid(),
         activityId: activity.id,
@@ -145,42 +132,30 @@ export function TodayChecklist() {
         status: 'completed',
         actualMinutes: mins,
         createdAt: row.log?.createdAt ?? isoNow(),
-        sessionId: row.log?.sessionId ?? session?.id,
       }
       mutate(prev => ({
         ...prev,
         activityLogs: row.log
           ? prev.activityLogs.map(l => l.id === log.id ? log : l)
           : [...prev.activityLogs, log],
-        ...(session ? { sessions: [...prev.sessions, session] } : {}),
       }))
       void db.activityLogs.put(log).catch(err => console.error('Failed to save activity log:', err))
-      if (session) {
-        void db.sessions.put(session).catch(err => console.error('Failed to save session:', err))
-        const subjectName = data.subjects.find(s => s.id === activity.subjectId)?.name ?? 'Unknown'
-        syncSession(session, subjectName)
-        void updateStreakDayForSession(session).catch(err => console.error('Failed to update streak:', err))
-      }
       push({
-        description: session ? `Logged ${mins}m for ${activity.name}` : `Completed ${activity.name}`,
+        description: `Completed ${activity.name}`,
         undo: async () => {
           await db.activityLogs.delete(log.id)
-          if (session) await softDelete(db.sessions, session.id)
           mutate(prev => ({
             ...prev,
             activityLogs: row.log ? prev.activityLogs : prev.activityLogs.filter(l => l.id !== log.id),
-            ...(session ? { sessions: prev.sessions.filter(s => s.id !== session.id) } : {}),
           }))
         },
         redo: async () => {
           await db.activityLogs.put(log)
-          if (session) await db.sessions.put(session)
           mutate(prev => ({
             ...prev,
             activityLogs: row.log
               ? prev.activityLogs.map(l => l.id === log.id ? log : l)
               : [...prev.activityLogs, log],
-            ...(session ? { sessions: [...prev.sessions, session] } : {}),
           }))
         },
       })
@@ -363,7 +338,7 @@ export function TodayChecklist() {
               type="checkbox"
               checked={logTime}
               onChange={(e) => setLogTime(e.target.checked)}
-              className="h-3 w-3 rounded border-slate-300 text-primary-600"
+              className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
             />
             Log time
           </label>
@@ -393,7 +368,7 @@ export function TodayChecklist() {
                     : 'border-slate-300 hover:border-primary-500 dark:border-slate-600'
                 }`}
                 title={isDone ? 'Unmark' : 'Mark done'}
-                aria-label={row.completed ? 'Completed — click to unmark' : row.skipped ? 'Skipped — click to unmark' : 'Mark done'}
+                aria-label={row.completed ? 'Completed (click to unmark)' : row.skipped ? 'Skipped (click to unmark)' : 'Mark done'}
               >
                 {row.completed && (
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -401,7 +376,7 @@ export function TodayChecklist() {
                   </svg>
                 )}
                 {row.skipped && (
-                  <span className="text-[8px] font-bold text-slate-500">—</span>
+                  <span className="text-[8px] font-bold text-slate-500">-</span>
                 )}
               </button>
               <span

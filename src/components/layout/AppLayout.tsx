@@ -658,7 +658,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                         type="checkbox"
                         checked={!isHidden}
                         onChange={() => toggleHidden(to)}
-                        className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700"
+                        className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                       />
                       Show
                     </label>

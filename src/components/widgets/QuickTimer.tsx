@@ -151,7 +151,7 @@ export default function QuickTimer() {
       void updateRoutineLogsForSession(session).catch(err => console.error('Failed to update routine logs:', err))
       void updateStreakDayForSession(session).catch(err => console.error('Failed to update streak day:', err))
       syncSession(session, subject.name)
-      sendNotification('Momentum', `Session saved: ${subject.name} — ${durationMinutes}m`, 'session-saved')
+      sendNotification('Momentum', `Session saved: ${subject.name} (${durationMinutes}m)`, 'session-saved')
     } finally {
       stopInFlightRef.current = false
     }

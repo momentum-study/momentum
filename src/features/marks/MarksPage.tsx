@@ -65,7 +65,7 @@ export default function MarksPage() {
   const [form, setForm] = useState<MarkForm>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const [filterSubject, setFilterSubject] = useState('')
+  const [filterSubjects, setFilterSubjects] = useState<Set<string>>(new Set())
   const [filterName, setFilterName] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
@@ -89,8 +89,8 @@ export default function MarksPage() {
 
   const filteredMarks = useMemo(() => {
     let result = [...marks]
-    if (filterSubject) {
-      result = result.filter((m) => m.subjectId === filterSubject)
+    if (filterSubjects.size > 0) {
+      result = result.filter((m) => filterSubjects.has(m.subjectId))
     }
     if (filterName) {
       const q = filterName.toLowerCase()
@@ -110,8 +110,20 @@ export default function MarksPage() {
       return sortOrder === 'asc' ? cmp : -cmp
     })
     return result
-  }, [marks, filterSubject, filterName, sortKey, sortOrder, subjectName])
+  }, [marks, filterSubjects, filterName, sortKey, sortOrder, subjectName])
   const visibleMarks = filteredMarks.slice(0, visibleCount)
+  const allSubjectsSelected = filterSubjects.size === 0
+  function toggleSubjectFilter(subjectId: string) {
+    setFilterSubjects((prev) => {
+      const next = new Set(prev)
+      if (next.has(subjectId)) next.delete(subjectId)
+      else next.add(subjectId)
+      return next
+    })
+  }
+  function clearSubjectFilter() {
+    setFilterSubjects(new Set())
+  }
 
   // Early return AFTER all hooks
   const confirmDelete = async (id: string) => {
@@ -239,16 +251,41 @@ export default function MarksPage() {
           <Button variant="primary" size="sm" onClick={openAdd}>Add Mark</Button>
         </div>
       </div>
-
       {/* Filters */}
       {marks.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <select className="input text-sm" value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)}>
-            <option value="">All subjects</option>
-            {subjectOptions.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={clearSubjectFilter}
+              className={cn(
+                'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                allSubjectsSelected
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+              )}
+            >
+              All subjects
+            </button>
+            {subjectOptions.map((s) => {
+              const active = filterSubjects.has(s.id)
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => toggleSubjectFilter(s.id)}
+                  className={cn(
+                    'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                    active
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                  )}
+                >
+                  {s.name}
+                </button>
+              )
+            })}
+          </div>
           <input className="input text-sm" placeholder="Filter by name..." value={filterName} onChange={(e) => setFilterName(e.target.value)} />
         </div>
       )}
@@ -279,7 +316,7 @@ export default function MarksPage() {
                         setSelectedMarkIds(new Set())
                       }
                     }}
-                    className="h-4 w-4 cursor-pointer rounded border-slate-300 text-primary-600 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700"
+                    className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                   />
                 </th>
                 <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('name')}>Name<SortIcon column="name" /></th>
@@ -317,7 +354,7 @@ export default function MarksPage() {
                           else next.add(m.id)
                           return next
                         })}
-                        className="h-4 w-4 cursor-pointer rounded border-slate-300 text-primary-600 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-700"
+                        className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                       />
                     </td>
                     <td className="py-2.5 pr-4 font-medium text-slate-800 dark:text-slate-100">{m.name}</td>

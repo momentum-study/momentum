@@ -539,7 +539,7 @@ export default function ActivitiesPage() {
               value={subjectId}
               onChange={(e) => setSubjectId(e.target.value)}
             >
-              <option value="">— None —</option>
+              <option value="">None</option>
               {getSubjectPickerOptions(data.subjects).map((s) => (
                 <option key={s.id} value={s.id}>{s.label}</option>
               ))}

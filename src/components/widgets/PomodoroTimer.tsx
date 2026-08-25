@@ -314,9 +314,14 @@ export function PomodoroTimer() {
   // Routines scheduled for today that match the selected subject (or any subject
   // when none is selected). Lets the user log timer time toward a routine.
   const todayDow = new Date().getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
   const availableRoutines = data.routines.filter((r) => {
     if (r.deletedAt) return false
     if (!(r.dayMinutes[todayDow] ?? 0)) return false
+    // Block routines already finished for today — no need to keep studying
+    // toward a completed target.
+    const doneToday = data.routineLogs.some((l) => l.routineId === r.id && l.date === todayStr && l.completed)
+    if (doneToday) return false
     if (subjectId && r.subjectId !== subjectId) return false
     return true
   }).sort((a, b) => a.name.localeCompare(b.name))
@@ -328,13 +333,16 @@ export function PomodoroTimer() {
     const matching = data.routines.filter((r) => {
       if (r.deletedAt) return false
       if (!(r.dayMinutes[todayDow] ?? 0)) return false
+      // Skip routines already completed today.
+      const doneToday = data.routineLogs.some((l) => l.routineId === r.id && l.date === todayStr && l.completed)
+      if (doneToday) return false
       if (r.subjectId !== subjectId) return false
       return true
     })
     if (matching.length === 1 && !timerRoutineId) {
       setTimerRoutineId(matching[0].id)
     }
-  }, [subjectId, data.routines, todayDow])
+  }, [subjectId, data.routines, data.routineLogs, todayDow, todayStr])
   // Clear session group if it ended more than 5 minutes ago (group is stale).
   useEffect(() => {
     if (sessionGroup && !isCurrentSessionFresh(sessionGroup)) {
@@ -560,7 +568,7 @@ export function PomodoroTimer() {
     }
     prevPomSecondsRef.current = pomSeconds
     if (configRef.current.soundEnabled) playNotificationSound()
-    sendNotification('Momentum', pomPhase === 'focus' ? 'Focus session complete — time for a break!' : 'Break over — back to focus!', 'pomodoro-phase')
+    sendNotification('Momentum', pomPhase === 'focus' ? 'Focus session complete. Time for a break!' : 'Break over. Back to focus!', 'pomodoro-phase')
     const st = stateRef.current
     const cfg = configRef.current
     const projects = dataRef.current.projects
@@ -734,7 +742,7 @@ export function PomodoroTimer() {
   const isRunning = simpleStartedAt !== null || pomStartedAt !== null
   useEffect(() => {
     if (!isRunning) { document.title = 'Momentum'; return }
-    document.title = simpleStartedAt !== null ? `${fmt(simpleSeconds)} — Momentum` : `${fmt(pomElapsedSeconds)} — Momentum`
+    document.title = simpleStartedAt !== null ? `(${fmt(simpleSeconds)}) Momentum` : `(${fmt(pomSeconds)}) Momentum`
     return () => { document.title = 'Momentum' }
   }, [isRunning, simpleSeconds, pomSeconds])
 
@@ -1315,9 +1323,6 @@ export function PomodoroTimer() {
   const pomGoalSeconds = mode === 'pomodoro' && settings.pomodoroEnabled
     ? getPhaseDuration(pomPhase, config)
     : 0
-  const pomElapsedSeconds = mode === 'pomodoro' && settings.pomodoroEnabled
-    ? Math.max(0, pomGoalSeconds - pomSeconds)
-    : 0
   const cycleLabel = mode === 'pomodoro' && settings.pomodoroEnabled
     ? `Cycle ${(pomCycles % config.cycles) + 1} of ${config.cycles}`
     : ''
@@ -1489,7 +1494,7 @@ export function PomodoroTimer() {
         </div>
       )}
       <div className="text-center text-5xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
-        {mode === 'pomodoro' && settings.pomodoroEnabled ? fmt(pomElapsedSeconds) : fmt(currentSeconds)}
+        {mode === 'pomodoro' && settings.pomodoroEnabled ? fmt(pomSeconds) : fmt(currentSeconds)}
         {mode === 'pomodoro' && settings.pomodoroEnabled && (
           <span className="ml-2 text-2xl font-medium text-slate-400 dark:text-slate-500">({fmt(pomGoalSeconds)})</span>
         )}
@@ -1555,7 +1560,7 @@ export function PomodoroTimer() {
                 value={selectedParentId}
                 onChange={(e) => { setSubjectId(e.target.value); setProjectId(''); setTaskId('') }}
               >
-                <option value="">— Select focus area —</option>
+                <option value="">Select focus area...</option>
                 {topLevelSubjects.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
@@ -1584,7 +1589,7 @@ export function PomodoroTimer() {
                   value={projectId}
                   onChange={(e) => { setProjectId(e.target.value); setTaskId('') }}
                 >
-                  <option value="">— Select project —</option>
+                  <option value="">Select project...</option>
                   {availableProjects.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -1599,7 +1604,7 @@ export function PomodoroTimer() {
                   value={taskId}
                   onChange={(e) => setTaskId(e.target.value)}
                 >
-                  <option value="">— Select task —</option>
+                  <option value="">Select task...</option>
                   {availableTasks.map((a) => (
                     <option key={a.id} value={a.id}>{a.title}</option>
                   ))}
@@ -1614,7 +1619,7 @@ export function PomodoroTimer() {
                   value={timerRoutineId}
                   onChange={(e) => setTimerRoutineId(e.target.value)}
                 >
-                  <option value="">— No routine —</option>
+                  <option value="">No routine</option>
                   {availableRoutines.map((r) => (
                     <option key={r.id} value={r.id}>{r.name}</option>
                   ))}
@@ -1721,7 +1726,7 @@ export function PomodoroTimer() {
                 onChange={(e) => { void changeSubject(e.target.value) }}
                 autoFocus
               >
-                <option value="">— Select new subject —</option>
+                <option value="">Select new subject...</option>
                 {data.subjects.filter((s) => s.id !== subjectId && !s.deletedAt).map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}

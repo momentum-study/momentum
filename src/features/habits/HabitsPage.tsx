@@ -6,7 +6,7 @@ import { loadSettings } from '../../lib/settings-store'
 import { cn, isoNow, sessionLocalDate, softDelete, STREAK_MILESTONES } from '../../lib/utils'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
-import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
+import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { Modal } from '../../components/ui/Modal'
@@ -333,18 +333,10 @@ export default function HabitsPage() {
 
 
   function openAddHabit() {
-    if (overLimit) {
-      const ok = window.confirm(
-        `You already have ${currentHabits.length} active habits. ` +
-        `Research suggests 1–3 habits at a time is optimal — focusing on fewer habits ` +
-        `gives you a much better chance of sticking with them long-term.` +
-        `\n\nAdd another anyway?`
-      )
-      if (!ok) return
-    }
     setEditHabit(null)
     setName('')
     setKind('good')
+    setHabitMode('count')
     setColor(DEFAULT_COLOR)
     setTargetPerDay(1)
     setReminderTime('')
@@ -365,10 +357,22 @@ export default function HabitsPage() {
   }
   async function saveHabit() {
     if (!name.trim()) return
+    const trimmed = name.trim()
+    const finalName = kind === 'bad' && !trimmed.startsWith('Quitting ') ? `Quitting ${trimmed}` : trimmed
+    const status: 'active' | 'potential' = parkForLater ? 'potential' : newHabitStatus
+    // Only warn when adding a NEW active habit that would exceed the limit.
+    // Editing an existing habit or adding to "park for later" does not trigger
+    // the limit check.
+    if (!editHabit && status === 'active' && overLimit) {
+      const ok = window.confirm(
+        `You already have ${currentHabits.length} active habits. ` +
+        `Research suggests 1-3 habits at a time is optimal — focusing on fewer habits ` +
+        `gives you a much better chance of sticking with them long-term.` +
+        `\n\nAdd another anyway?`
+      )
+      if (!ok) return
+    }
     try {
-      const trimmed = name.trim()
-      const finalName = kind === 'bad' && !trimmed.startsWith('Quitting ') ? `Quitting ${trimmed}` : trimmed
-      const status: 'active' | 'potential' = parkForLater ? 'potential' : newHabitStatus
       if (editHabit) {
         const updated = { name: finalName, kind, mode: habitMode, color, targetPerDay, reminderTime: reminderTime || null, updatedAt: isoNow() }
         await db.habits.update(editHabit.id, updated)
@@ -642,26 +646,30 @@ export default function HabitsPage() {
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}
-                  aria-pressed={isTickMode && isTickedToday}
-                  aria-label={isBad ? (isTickedToday ? 'Mark lapse (done today)' : 'Avoided today') : (isTickedToday ? 'Mark done' : 'Mark undone')}
+                  aria-pressed={isTickedToday}
+                  aria-label={isBad
+                    ? (isTickedToday ? 'Lapsed today. Click to mark avoided.' : 'Avoided today. Click to mark lapsed.')
+                    : (isTickedToday ? 'Done today. Click to unmark.' : 'Not done today. Click to mark done.')}
                   className={cn(
-                    'flex h-8 w-8 items-center justify-center rounded border-2 text-sm font-bold transition-colors',
-                    isTickedToday
-                      ? isBad
-                        ? 'border-slate-300 bg-white text-slate-400 dark:border-slate-600 dark:bg-slate-800'
-                        : 'border-primary-600 bg-primary-600 text-white'
-                      : isBad
-                        ? 'border-green-500 bg-green-500 text-white'
-                        : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400 dark:border-slate-600 dark:bg-slate-800'
+                    'flex min-h-8 min-w-[76px] items-center justify-center rounded border-2 px-2 text-xs font-semibold transition-colors',
+                    isBad
+                      ? isTickedToday
+                        ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/30 dark:text-red-300'
+                        : 'border-green-500 bg-green-500 text-white'
+                      : isTickedToday
+                        ? 'border-primary-600 bg-primary-600 text-white'
+                        : 'border-slate-300 bg-white text-slate-500 hover:border-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'
                   )}
-                  title={isTickedToday ? (isBad ? 'Remove lapse' : 'Mark undone') : (isBad ? 'Mark avoided' : 'Mark done')}
+                  title={isBad
+                    ? (isTickedToday ? 'Click to mark avoided' : 'Click to mark a lapse')
+                    : (isTickedToday ? 'Click to mark undone' : 'Click to mark done')}
                 >
-                  {isTickedToday ? (isBad ? '' : '✓') : (isBad ? '✓' : '')}
+                  {isBad
+                    ? (isTickedToday ? '✕ Lapsed' : '✓ Avoided')
+                    : (isTickedToday ? '✓ Done' : 'Not yet')}
                 </button>
                 <span className="text-xs text-slate-400 dark:text-slate-500 select-none">
-                  {isTickedToday
-                    ? (isBad ? 'Lapsed' : 'Done')
-                    : (isBad ? 'Avoided' : 'Not yet')}
+                  {isBad ? 'Click to change' : (isTickedToday ? 'Done' : 'Not yet')}
                 </span>
                 <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
                   Log Past
@@ -835,148 +843,93 @@ export default function HabitsPage() {
         </Collapsible>
       )}
 
-      {selectedHabit && (
-        <Card>
-          <CardHeader>
+      <Modal
+        open={selectedHabit !== null}
+        onClose={() => setSelectedId(null)}
+        title={selectedHabit?.name ?? ''}
+        className="max-w-lg"
+      >
+        {selectedHabit && (
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <CardTitle>
-                <span className="mr-2 inline-block h-3 w-3 rounded-full" style={{ backgroundColor: selectedHabit.color }} />
-                {selectedHabit.name}
-              </CardTitle>
               <span className={cn('rounded px-2 py-0.5 text-xs font-medium', selectedHabit.kind === 'good' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')}>
                 {selectedHabit.kind === 'good' ? 'Good' : 'Bad'}
               </span>
             </div>
-          </CardHeader>
-
-          <div className="mb-4 text-sm text-slate-600">
-            <div className="flex gap-4">
-              <div><span className="font-semibold">{streakMap.get(selectedHabit.id) ?? 0}</span> day streak</div>
-              <div><span className="font-semibold">{selectedHabitLogs.length}</span> total logs</div>
-            </div>
-            {selectedHabit.kind === 'good' ? (
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Streak counts consecutive days you logged this habit. One missed day is forgiven (♡) — two consecutive missed days break the streak. The streak starts counting from when the habit was created.
+            <div className="text-sm text-slate-600 dark:text-slate-300">
+              <div className="flex gap-4">
+                <div><span className="font-semibold">{streakMap.get(selectedHabit.id) ?? 0}</span> day streak</div>
+                <div><span className="font-semibold">{selectedHabitLogs.length}</span> total logs</div>
+              </div>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                {selectedHabit.kind === 'good'
+                  ? 'Streak counts consecutive days you logged this habit. One missed day is forgiven (♡) — two consecutive missed days break the streak. The streak starts counting from when the habit was created.'
+                  : 'Streak counts consecutive days you AVOIDED this bad habit (no lapse logged). Any single lapse immediately breaks the streak. The streak starts counting from when the habit was created.'}
               </p>
-            ) : (
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Streak counts consecutive days you AVOIDED this bad habit (no lapse logged). Any single lapse immediately breaks the streak. The streak starts counting from when the habit was created.
-              </p>
-            )}
-          </div>
+            </div>
 
-          <div className="mb-4">
-            <div className="mb-2 flex items-center justify-between">
-              <button onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">←</button>
-              <span className="font-medium">{format(calendarMonth, 'MMMM yyyy')}</span>
-              <button onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">→</button>
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <button onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">←</button>
+                <span className="font-medium">{format(calendarMonth, 'MMMM yyyy')}</span>
+                <button onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700">→</button>
+              </div>
+              <div className="grid grid-cols-7 gap-1 text-center text-xs">
+                {WEEKDAYS.map((day) => <div key={day} className="py-1 font-medium text-slate-500">{day}</div>)}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: calendarStartDay }).map((_, i) => <div key={`empty-${i}`} />)}
+                {(() => {
+                  const forgivenDates = getForgivenDates(selectedHabit.id)
+                  const habitStartDate = sessionLocalDate(selectedHabit.createdAt)
+                  return calendarDays.map((day) => {
+                    const dateStr = format(day, 'yyyy-MM-dd')
+                    const dayLogs = logsByDate[dateStr] ?? []
+                    const count = dayLogs.length
+                    const isTickMode = selectedHabit.mode === 'tick'
+                    const target = selectedHabit.targetPerDay ?? 1
+                    const intensity = count === 0 ? 0 : isTickMode ? 4 : Math.min(4, Math.ceil(count / target))
+                    const opacity = intensity === 0 ? undefined : isTickMode ? 0.8 : 0.2 + (intensity * 0.2)
+                    const isFuture = dateStr > todayStr
+                    const isBeforeStart = dateStr < habitStartDate
+                    const isToday = dateStr === todayStr
+                    const isForgiven = forgivenDates.has(dateStr)
+                    const hasLogs = count > 0
+                    const isMissed = !hasLogs && !isFuture && !isBeforeStart && !isForgiven
+                    const muted = isFuture || isBeforeStart
+                    return (
+                      <button
+                        key={dateStr}
+                        onClick={() => setDayDetailDate(dateStr)}
+                        className={cn(
+                          'flex h-9 w-full flex-col items-center justify-center rounded text-xs font-medium transition-all relative',
+                          muted && 'cursor-default text-slate-300 dark:text-slate-600',
+                          !muted && 'hover:ring-2 hover:ring-primary-400',
+                          isToday && 'ring-2 ring-orange-400',
+                          hasLogs && 'text-white shadow-sm',
+                          isForgiven && 'bg-amber-50 border-2 border-amber-300 text-amber-700',
+                          isMissed && 'bg-slate-100 dark:bg-slate-800 text-slate-400',
+                        )}
+                        style={hasLogs ? { backgroundColor: selectedHabit.color, opacity } : undefined}
+                      >
+                        <span>{format(day, 'd')}</span>
+                        {isForgiven && <span className="absolute -top-1 -right-1 text-[8px]">♡</span>}
+                      </button>
+                    )
+                  })
+                })()}
+              </div>
             </div>
-            <div className="grid grid-cols-7 gap-1 text-center text-xs">
-              {WEEKDAYS.map((day) => <div key={day} className="py-1 font-medium text-slate-500">{day}</div>)}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {Array.from({ length: calendarStartDay }).map((_, i) => <div key={`empty-${i}`} />)}
-              {(() => {
-                const forgivenDates = getForgivenDates(selectedHabit.id)
-                const habitStartDate = sessionLocalDate(selectedHabit.createdAt)
-                return calendarDays.map((day) => {
-                const dateStr = format(day, 'yyyy-MM-dd')
-                const dayLogs = logsByDate[dateStr] ?? []
-                const count = dayLogs.length
-                const totalValue = dayLogs.reduce((sum, l) => sum + (l.value ?? 0), 0)
-                const isTickMode = selectedHabit.mode === 'tick'
-                const target = selectedHabit.targetPerDay ?? 1
-                // Tick mode is binary: either the day is checked (full intensity) or not.
-                const intensity = count === 0
-                  ? 0
-                  : isTickMode
-                  ? 4
-                  : count >= target * 4
-                  ? 4
-                  : count >= target * 2
-                  ? 3
-                  : count >= target
-                  ? 2
-                  : 1
-                const opacity = intensity === 0 ? undefined : isTickMode ? 0.8 : 0.2 + (intensity * 0.2)
-                const isFuture = dateStr > todayStr
-                const isBeforeStart = dateStr < habitStartDate
-                const isToday = dateStr === todayStr
-                const isForgiven = forgivenDates.has(dateStr)
-                const hasLogs = count > 0
-                const isMissed = !hasLogs && !isFuture && !isBeforeStart && !isForgiven
-                // Streak break: a past logged day followed by 2+ consecutive missed days
-                // We need to check if the previous day had logs and this day is the start of a miss run of 2+
-                let hasStreakBreak = false
-                if (isMissed) {
-                  // Check: previous day exists, had logs, and next day is also missed
-                  const prevDay = new Date(day)
-                  prevDay.setDate(prevDay.getDate() - 1)
-                  const prevStr = format(prevDay, 'yyyy-MM-dd')
-                  const prevHadLogs = (logsByDate[prevStr]?.length ?? 0) > 0
-                  const nextDay = new Date(day)
-                  nextDay.setDate(nextDay.getDate() + 1)
-                  const nextStr = format(nextDay, 'yyyy-MM-dd')
-                  const nextDayLogs = logsByDate[nextStr] ?? []
-                  const nextIsMissed = nextDayLogs.length === 0 && nextStr <= todayStr && nextStr >= habitStartDate && !forgivenDates.has(nextStr)
-                  if (prevHadLogs && nextIsMissed) hasStreakBreak = true
-                }
-                const muted = isFuture || isBeforeStart
-                return (
-                  <button
-                    key={dateStr}
-                    onClick={() => setDayDetailDate(dateStr)}
-                    title={muted ? dateStr : isTickMode ? `${dateStr} — ${hasLogs ? '✓' : 'missed'}` : totalValue > 0 ? `${dateStr} — ${count} log${count !== 1 ? 's' : ''} (${totalValue} total)` : isForgiven ? `${dateStr} — forgiven` : isMissed ? `${dateStr} — missed` : `${dateStr}${count > 0 ? ` — ${count} log${count !== 1 ? 's' : ''}` : ''}`}
-                    aria-label={muted ? dateStr : hasLogs ? `Logged` : isForgiven ? `Forgiven` : isMissed ? `Missed` : `No study logged`}
-                    className={cn(
-                      'flex h-9 w-full flex-col items-center justify-center rounded text-xs font-medium transition-all',
-                      muted && 'cursor-default text-slate-300 dark:text-slate-600',
-                      !muted && 'hover:ring-2 hover:ring-primary-400',
-                      isToday && 'ring-2 ring-orange-400',
-                      hasLogs && 'text-white shadow-sm',
-                      isForgiven && 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400',
-                      isMissed && !hasStreakBreak && 'bg-red-50 text-red-400 dark:bg-red-900/20 dark:text-red-400',
-                      isMissed && hasStreakBreak && 'bg-red-50 text-red-400 dark:bg-red-900/20 dark:text-red-400 border-l-2 border-red-400',
-                      !hasLogs && !isForgiven && !isMissed && !muted && 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                    )}
-                    style={hasLogs ? { backgroundColor: selectedHabit.color, opacity } : undefined}
-                  >
-                    <span>{format(day, 'd')}</span>
-                    {isMissed && !muted && <span className="text-[9px] text-red-400">×</span>}
-                    {isForgiven && <span className="text-[9px]">♡</span>}
-                    {hasLogs && isTickMode && <span className="text-[9px] opacity-90">✓</span>}
-                    {hasLogs && !isTickMode && <span className="text-[9px] opacity-90">×{count}{totalValue > 0 ? ` ${totalValue}` : ''}</span>}
-                  </button>
-                )
-                })
-              })()}
-            </div>
-            {/* Heatmap legend — 5 levels */}
-            <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-500">
-              <span>less</span>
-              <div className="h-3 w-3 rounded bg-slate-100 dark:bg-slate-800" />
-              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.2 }} />
-              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.4 }} />
-              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.6 }} />
-              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 0.8 }} />
-              <div className="h-3 w-3 rounded" style={{ backgroundColor: selectedHabit.color, opacity: 1 }} />
-              <span>more</span>
-            </div>
+            <Button variant="secondary" className="w-full" onClick={() => openAddLog()}>+ Add Log</Button>
           </div>
-          <div className="mb-4">
-            <Button variant="secondary" onClick={() => openAddLog()}>+ Add Log</Button>
-          </div>
-        </Card>
-      )}
+        )}
+      </Modal>
 
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editHabit ? 'Edit Habit' : 'Add Habit'}>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                {kind === 'bad' ? 'What are you quitting?' : 'Name'}
-              </label>
               <input
                 className="input"
                 placeholder={kind === 'bad' ? 'Quitting smoking' : 'Name'}
@@ -1027,7 +980,7 @@ export default function HabitsPage() {
                 type="checkbox"
                 checked={parkForLater}
                 onChange={(e) => setParkForLater(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
               />
               Park this for later (won't count toward your habit limit)
             </label>

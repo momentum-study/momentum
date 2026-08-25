@@ -4,7 +4,7 @@ import { useData } from '../../app/providers'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { PageSpinner } from '../../components/ui/Spinner'
-import { cn, formatMinutes } from '../../lib/utils'
+import { cn, formatMinutes, getWeekStartsOn } from '../../lib/utils'
 import { loadSettings } from '../../lib/settings-store'
 import type { DayOfWeek } from '../../domain/types'
 
@@ -18,18 +18,19 @@ function getDatePresetRange(preset: DatePreset): { start: Date; end: Date } {
 
   switch (preset) {
     case 'thisWeek': {
-      const start = startOfWeek(today, { weekStartsOn: 1 }) // Monday
-      const end = endOfWeek(today, { weekStartsOn: 1 })
+      const weekStartsOn = getWeekStartsOn()
+      const start = startOfWeek(today, { weekStartsOn }) // user preference
+      const end = endOfWeek(today, { weekStartsOn })
       return { start, end }
     }
     case 'lastWeek': {
-      const thisWeekStart = startOfWeek(today, { weekStartsOn: 1 })
+      const thisWeekStart = startOfWeek(today, { weekStartsOn: getWeekStartsOn() })
       const start = subDays(thisWeekStart, 7)
       const end = subDays(thisWeekStart, 1)
       return { start, end }
     }
     case 'last2Weeks': {
-      const thisWeekStart = startOfWeek(today, { weekStartsOn: 1 })
+      const thisWeekStart = startOfWeek(today, { weekStartsOn: getWeekStartsOn() })
       const start = subDays(thisWeekStart, 14)
       const end = subDays(thisWeekStart, 1)
       return { start, end }
@@ -61,13 +62,49 @@ export default function AIReviewPage() {
     return getDatePresetRange(datePreset)
   }, [datePreset, customStart, customEnd, showCustom])
 
-  // Filter sessions for the date range
+  // Filter non-deleted sessions for the date range
   const weekSessions = useMemo(() => {
     return data.sessions.filter((s) => {
+      if (s.deletedAt) return false
       const sessionDate = parseISO(s.startAt)
       return isWithinInterval(sessionDate, { start: dateRange.start, end: dateRange.end })
-    })
+    }).sort((a, b) => a.startAt.localeCompare(b.startAt))
   }, [data.sessions, dateRange])
+  // Sessions merged: consecutive sessions within 10 min of each other are
+  // collapsed so the AI doesn't count each as a separate session.
+  const mergedSessions = useMemo(() => {
+    if (weekSessions.length === 0) return []
+    const result: { startAt: string; endAt: string; durationMinutes: number; subjectIds: Set<string>; count: number }[] = []
+    let current = {
+      startAt: weekSessions[0].startAt,
+      endAt: weekSessions[0].endAt,
+      durationMinutes: weekSessions[0].durationMinutes,
+      subjectIds: new Set([weekSessions[0].subjectId]),
+      count: 1,
+    }
+    for (let i = 1; i < weekSessions.length; i++) {
+      const prev = weekSessions[i - 1]
+      const next = weekSessions[i]
+      const gapMinutes = (parseISO(next.startAt).getTime() - parseISO(prev.endAt).getTime()) / (1000 * 60)
+      if (gapMinutes <= 10) {
+        current.endAt = next.endAt
+        current.durationMinutes += next.durationMinutes
+        current.subjectIds.add(next.subjectId)
+        current.count++
+      } else {
+        result.push(current)
+        current = {
+          startAt: next.startAt,
+          endAt: next.endAt,
+          durationMinutes: next.durationMinutes,
+          subjectIds: new Set([next.subjectId]),
+          count: 1,
+        }
+      }
+    }
+    result.push(current)
+    return result
+  }, [weekSessions])
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -128,23 +165,36 @@ export default function AIReviewPage() {
     }
 
 
-    // Total streak (consecutive days up to end of range)
+    // Streak as of the end of the range, using the same freeze logic as the
+    // dashboard (every 5 consecutive logged days earns one missed-day freeze).
+    // Build the set of days with study activity from the filtered sessions so
+    // soft-deleted sessions are excluded.
+    const daySet = new Set(weekSessions.map((s) => format(parseISO(s.startAt), 'yyyy-MM-dd')))
     let currentStreak = 0
-    let checkDate = dateRange.end
-    const sortedStreakDays = [...data.streakDays].sort((a, b) => b.id.localeCompare(a.id))
-
-    for (const streakDay of sortedStreakDays) {
-      const streakDate = parseISO(streakDay.id)
-      if (streakDate > checkDate) continue
-      // Check if this day is consecutive to the previous check date
-      const diffDays = Math.floor((checkDate.getTime() - streakDate.getTime()) / (1000 * 60 * 60 * 24))
-      if (diffDays > 1) break
-      if (streakDay.goalMet) {
+    let consecutiveLogged = 0
+    let freezes = 0
+    let d = new Date(dateRange.end.getFullYear(), dateRange.end.getMonth(), dateRange.end.getDate())
+    // If the anchor day isn't logged (e.g. range ends today before logging),
+    // start from the day before so the streak doesn't immediately break.
+    if (!daySet.has(format(d, 'yyyy-MM-dd'))) {
+      d = subDays(d, 1)
+    }
+    while (true) {
+      const ds = format(d, 'yyyy-MM-dd')
+      if (daySet.has(ds)) {
         currentStreak++
-        checkDate = subDays(streakDate, 1)
+        consecutiveLogged++
+        if (consecutiveLogged === 5) {
+          freezes++
+          consecutiveLogged = 0
+        }
+      } else if (freezes > 0) {
+        freezes--
+        consecutiveLogged = 0
       } else {
         break
       }
+      d = subDays(d, 1)
     }
 
     return {
@@ -168,7 +218,7 @@ export default function AIReviewPage() {
       autoRoutineSessions,
       routineAdherence,
     }
-  }, [weekSessions, data.subjects, data.streakDays, data.routines, data.routineLogs, dateRange, settings.dailyTargetMinutes])
+  }, [weekSessions, data.subjects, data.routines, data.routineLogs, dateRange, settings.dailyTargetMinutes])
 
   // Generate the AI prompt
   const aiPrompt = useMemo(() => {
@@ -197,7 +247,7 @@ export default function AIReviewPage() {
     lines.push('Do NOT add any other sections. Do NOT include filler. Be specific to my data.')
     lines.push('')
     lines.push('## My data')
-    lines.push(`Weekly totals: ${formatMinutes(stats.totalMinutes)} across ${stats.totalSessions} sessions (avg ${stats.avgSessionLength}m, longest ${stats.longestSession}m). Most productive day: ${stats.mostProductiveDay ?? 'N/A'}${stats.mostProductiveDay ? ` (${stats.mostProductiveDayMinutes}m)` : ''}.`)
+    lines.push(`Weekly totals: ${formatMinutes(stats.totalMinutes)} across ${mergedSessions.length} study blocks (avg ${mergedSessions.length > 0 ? Math.round(stats.totalMinutes / mergedSessions.length) : 0}m, longest ${stats.longestSession}m). Most productive day: ${stats.mostProductiveDay ?? 'N/A'}${stats.mostProductiveDay ? ` (${stats.mostProductiveDayMinutes}m)` : ''}.`)
     lines.push(`Daily target: ${settings.dailyTargetMinutes}m. Days target met: ${stats.daysTargetMet}/${stats.daysInRange}. Current streak: ${stats.currentStreak} days.`)
     lines.push('')
     lines.push('### Daily breakdown')
@@ -210,20 +260,21 @@ export default function AIReviewPage() {
       else if (minutes === 0) marker = ' [missed]'
       lines.push(`- ${format(day, 'EEE, MMM d')}: ${minutes}m${marker}`)
     })
-    lines.push('')
-    lines.push('### Focus area breakdown per day')
-    days.forEach((day) => {
-      const daySessions = weekSessions.filter(s => isSameDay(parseISO(s.startAt), day))
-      const breakdown = daySessions.reduce((acc, s) => {
-        const subj = data.subjects.find(sub => sub.id === s.subjectId)?.name ?? 'Unknown'
-        acc[subj] = (acc[subj] ?? 0) + s.durationMinutes
-        return acc
-      }, {} as Record<string, number>)
-      if (Object.keys(breakdown).length > 0) {
-        const bStr = Object.entries(breakdown).map(([name, mins]) => `${name}: ${formatMinutes(mins)}`).join(', ')
-        lines.push(`- ${format(day, 'EEE, MMM d')}: ${bStr}`)
-      }
-    })
+    lines.push('### Study blocks (sessions ≤10 min apart are merged into one block)')
+    if (mergedSessions.length === 0) {
+      lines.push('- No study blocks in this period')
+    } else {
+      mergedSessions.forEach((block) => {
+        const startD = parseISO(block.startAt)
+        const endD = parseISO(block.endAt)
+        const subjNames = Array.from(block.subjectIds)
+          .map((id) => data.subjects.find((s) => s.id === id)?.name ?? 'Unknown')
+          .join(' + ')
+        const dur = Math.round((endD.getTime() - startD.getTime()) / (1000 * 60))
+        const mergeNote = block.count > 1 ? ` (${block.count} sessions merged)` : ''
+        lines.push(`- ${format(startD, 'EEE, MMM d h:mm a')} – ${format(endD, 'h:mm a')} | ${subjNames} | ${formatMinutes(dur)}${mergeNote}`)
+      })
+    }
     lines.push('')
     lines.push('### Focus area time')
     const sortedSubjects = Object.entries(stats.subjectTime).sort((a, b) => b[1].minutes - a[1].minutes)
@@ -243,7 +294,7 @@ export default function AIReviewPage() {
     lines.push('')
 
     // Habits
-    const activeHabits = data.habits.filter(h => !h.archivedAt && !h.finishedAt && h.status !== 'potential')
+    const activeHabits = data.habits.filter(h => !h.deletedAt && !h.archivedAt && !h.finishedAt && h.status !== 'potential')
     if (activeHabits.length > 0) {
       lines.push('### Habits')
       activeHabits.forEach(habit => {
@@ -312,7 +363,7 @@ export default function AIReviewPage() {
 
     lines.push('Now produce the 4-section review.')
     return lines.join('\n')
-  }, [dateRange, stats, settings.dailyTargetMinutes, data.habits, data.habitLogs, data.assignments, data.subjects, data.marks, weekSessions])
+  }, [dateRange, stats, settings.dailyTargetMinutes, data.habits, data.habitLogs, data.assignments, data.subjects, data.marks, weekSessions, mergedSessions])
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(aiPrompt)

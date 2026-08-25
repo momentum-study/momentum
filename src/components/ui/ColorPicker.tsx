@@ -28,6 +28,14 @@ interface ColorPickerProps {
   onChange: (color: string) => void
 }
 
+export const AUTO_COLOR = '__auto__'
+
+// Deterministic palette for auto-color assignment (cycles on index)
+export function autoColorFor(index: number): string {
+  return COLOR_PRESETS[index % COLOR_PRESETS.length]
+}
+
+export const COLOR_AUTO_LABEL = 'Auto'
 export function ColorPicker({ value, onChange }: ColorPickerProps) {
   const handleCustom = (e: ChangeEvent<HTMLInputElement>) => {
     onChange(e.target.value)
@@ -36,6 +44,19 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
+        <button
+          key={AUTO_COLOR}
+          type="button"
+          title={COLOR_AUTO_LABEL}
+          aria-label="Auto-assign a color from the palette"
+          className={cn(
+            'h-8 w-8 rounded-full transition-transform hover:scale-110 flex items-center justify-center border border-slate-300 dark:border-slate-600',
+            'ring-2 ring-offset-2 ring-slate-400 dark:ring-slate-500'
+          )}
+          onClick={() => onChange(autoColorFor(Date.now()))}
+        >
+          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">A</span>
+        </button>
         {COLOR_PRESETS.map((c) => (
           <button
             key={c}

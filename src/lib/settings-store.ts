@@ -16,6 +16,7 @@ export type Settings = {
   soundEnabled: boolean
   maxActiveHabits: number
   defaultArchiveDays: number
+  weekStartsOn: 0 | 1 // 0 = Sun, 1 = Mon
   settingsUpdatedAt: string
   devMode?: boolean
 }
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   soundEnabled: true,
   maxActiveHabits: 3,
   defaultArchiveDays: 66,
+  weekStartsOn: 1,
   settingsUpdatedAt: '',
 }
 

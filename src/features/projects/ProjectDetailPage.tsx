@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, startOfWeek, endOfWeek } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, formatMinutes, isoNow, sessionLocalDate, softDelete } from '../../lib/utils'
+import { cn, formatMinutes, isoNow, sessionLocalDate, softDelete, getWeekStartsOn } from '../../lib/utils'
 import { sessionIdFor } from '../../lib/timer-persistence'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
@@ -43,6 +43,18 @@ export default function ProjectDetailPage() {
     () => sessions.reduce((sum, s) => sum + s.durationMinutes, 0),
     [sessions]
   )
+  // Calculate weekly minutes for weekly goal display
+  const weeklyMinutes = useMemo(() => {
+    const today = new Date()
+    const weekStart = startOfWeek(today, { weekStartsOn: getWeekStartsOn() })
+    const weekEnd = endOfWeek(today, { weekStartsOn: getWeekStartsOn() })
+    return sessions
+      .filter((s) => {
+        const d = new Date(s.startAt)
+        return d >= weekStart && d <= weekEnd
+      })
+      .reduce((sum, s) => sum + s.durationMinutes, 0)
+  }, [sessions])
   const openTasks = useMemo(() => {
     const filtered = [...tasks.filter((t) => !t.completed)]
     if (sortMode === 'alpha') filtered.sort((a, b) => a.title.localeCompare(b.title))
@@ -202,7 +214,9 @@ export default function ProjectDetailPage() {
   }
 
   const goalTarget = project.dailyTargetMinutes ?? project.weeklyTargetMinutes ?? project.totalTargetMinutes ?? 0
-  const goalPct = goalTarget > 0 ? Math.min(100, Math.round((totalMinutes / goalTarget) * 100)) : 0
+  // For weekly goals, show this week's minutes vs the weekly target
+  const displayMinutes = project.weeklyTargetMinutes ? weeklyMinutes : totalMinutes
+  const goalPct = goalTarget > 0 ? Math.min(100, Math.round((displayMinutes / goalTarget) * 100)) : 0
   const goalLabel = project.dailyTargetMinutes ? 'daily' : project.weeklyTargetMinutes ? 'weekly' : 'total'
 
   return (
@@ -240,7 +254,7 @@ export default function ProjectDetailPage() {
         <Card>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Progress: {formatMinutes(totalMinutes)} / {formatMinutes(goalTarget)} · {goalLabel} goal
+              Progress: {formatMinutes(displayMinutes)} / {formatMinutes(goalTarget)} · {goalLabel} goal
             </span>
             <span className="text-lg font-bold text-primary-600 dark:text-primary-400">{goalPct}%</span>
           </div>
@@ -275,7 +289,7 @@ export default function ProjectDetailPage() {
           openTasks.map((t, idx) => (
           <div key={t.id} className="flex items-center justify-between border-b border-slate-100 py-2 dark:border-slate-700">
             <div className="flex items-center gap-2">
-              <input type="checkbox" checked={false} onChange={() => toggleTask(t)} className="h-4 w-4 cursor-pointer" />
+              <input type="checkbox" checked={false} onChange={() => toggleTask(t)} className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer" />
               <span className="text-sm text-slate-800 dark:text-slate-100">{t.title}</span>
               <span className="text-xs text-slate-400">{t.dueDate ? format(parseISO(t.dueDate), 'd MMM') : 'No due date'}</span>
               <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
@@ -300,7 +314,7 @@ export default function ProjectDetailPage() {
             {doneTasks.map((t) => (
               <div key={t.id} className="flex items-center justify-between border-b border-slate-100 py-1.5 dark:border-slate-700">
                 <div className="flex items-center gap-2">
-                  <input type="checkbox" checked={true} onChange={() => toggleTask(t)} className="h-4 w-4 cursor-pointer" />
+                  <input type="checkbox" checked={true} onChange={() => toggleTask(t)} className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer" />
                   <span className="text-sm text-slate-500 line-through">{t.title}</span>
                 </div>
                 <div className="flex gap-1">

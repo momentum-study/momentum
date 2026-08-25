@@ -33,7 +33,7 @@ export function ReloadPrompt() {
       className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 shadow-lg"
     >
       <div className="text-sm text-slate-700 dark:text-slate-200">
-        {needRefresh ? 'New version available — reload to update.' : 'App ready to work offline.'}
+        {needRefresh ? 'New version available (reload to update).' : 'App ready to work offline.'}
       </div>
       {needRefresh && (
         <button

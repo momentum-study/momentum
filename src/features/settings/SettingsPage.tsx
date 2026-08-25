@@ -13,7 +13,10 @@ import { useCompactMode } from '../../lib/use-compact-mode'
 import { useHighContrast } from '../../lib/use-high-contrast'
 import { requestNotificationPermission } from '../../lib/notification-service'
 import { VERSION } from '../../lib/version'
+import { createBackup, listBackups, restoreFromBackup } from '../../lib/cloud-backup'
+import { checkCloudState, forcePullAllData, undeleteAllData } from '../../lib/data-sync'
 import { loadSettings, saveSettings, applyDarkMode } from '../../lib/settings-store'
+import { db } from '../../db/app-db'
 import type { Settings } from '../../lib/settings-store'
 
 
@@ -50,7 +53,6 @@ function DataRecovery() {
     if (!user?.uid) return
     setLoadingBackups(true)
     try {
-      const { listBackups } = await import('../../lib/cloud-backup')
       const list = await listBackups(user.uid)
       setBackups(list.map((b) => ({ date: b.date, totalRecords: b.totalRecords, createdAt: b.createdAt })))
     } catch (e) {
@@ -63,7 +65,6 @@ function DataRecovery() {
     if (!user?.uid) return
     setBackingUp(true)
     try {
-      const { createBackup } = await import('../../lib/cloud-backup')
       const meta = await createBackup(user.uid)
       alert(`Backup created for ${meta.date} (${meta.totalRecords} records).`)
       await loadBackupsList()
@@ -78,9 +79,7 @@ function DataRecovery() {
     if (!confirm(`Restore all data from backup ${date}? This will overwrite your current cloud data. Then a force re-pull will load the restored data into the app.`)) return
     setRecovering(true)
     try {
-      const { restoreFromBackup } = await import('../../lib/cloud-backup')
       const total = await restoreFromBackup(user.uid, date)
-      const { forcePullAllData } = await import('../../lib/data-sync')
       await forcePullAllData(user.uid)
       await loadData()
       alert(`Restored ${total} records from ${date}.`)
@@ -95,7 +94,6 @@ function DataRecovery() {
     setChecking(true)
     setError('')
     try {
-      const { checkCloudState } = await import('../../lib/data-sync')
       const state = await checkCloudState(user.uid)
       setDiag(state)
       if (state.error) setError(state.error)
@@ -110,17 +108,14 @@ function DataRecovery() {
     setRecovering(true)
     setError('')
     try {
-      const { forcePullAllData } = await import('../../lib/data-sync')
       const total = await forcePullAllData(user.uid)
       await loadData()
-      setRecovering(false)
       alert(`Recovery complete! Pulled ${total} records from cloud.`)
-      // Re-check after recovery
-      const { checkCloudState } = await import('../../lib/data-sync')
       const state = await checkCloudState(user.uid)
       setDiag(state)
     } catch (e) {
       setError(String(e))
+    } finally {
       setRecovering(false)
     }
   }
@@ -130,21 +125,17 @@ function DataRecovery() {
     setRecovering(true)
     setError('')
     try {
-      const { undeleteAllData } = await import('../../lib/data-sync')
       const total = await undeleteAllData(user.uid)
       console.log(`[undelete] Restored ${total} records`)
       await loadData()
-      setRecovering(false)
       alert(`Undelete complete! ${total} records restored. Navigate to Dashboard or Subjects to see them.`)
-      if (user?.uid) {
-        const { checkCloudState } = await import('../../lib/data-sync')
-        const state = await checkCloudState(user.uid)
-        setDiag(state)
-        console.log('[undelete] Post-undelete diagnostic:', state)
-      }
+      const state = await checkCloudState(user.uid)
+      setDiag(state)
+      console.log('[undelete] Post-undelete diagnostic:', state)
     } catch (e) {
       console.error('[undelete] Failed:', e)
       setError(String(e))
+    } finally {
       setRecovering(false)
     }
   }
@@ -168,7 +159,6 @@ function DataRecovery() {
           {recovering ? 'Working...' : 'Undelete All'}
         </Button>
         <Button variant="secondary" size="sm" onClick={async () => {
-          const { db } = await import('../../db/app-db')
           const [subjects, categories, marks, projects, sessions] = await Promise.all([
             db.subjects.toArray(),
             db.categories.toArray(),
@@ -601,6 +591,22 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader>
+              <CardTitle>Calendar & Weekly View</CardTitle>
+            </CardHeader>
+            <SettingsField label="Week starts on">
+              <select
+                className="input py-1"
+                value={settings.weekStartsOn}
+                onChange={(e) => update({ weekStartsOn: Number(e.target.value) as 0 | 1 })}
+              >
+                <option value={1}>Monday</option>
+                <option value={0}>Sunday</option>
+              </select>
+            </SettingsField>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Daily Target</CardTitle>
             </CardHeader>
             <SettingsField label="Daily study goal (minutes)">
@@ -716,7 +722,7 @@ export default function SettingsPage() {
             </div>
           </Card>
 
-          <DataRecovery />
+          {settings.devMode && <DataRecovery />}
 
 
           <Card>

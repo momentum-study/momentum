@@ -8,11 +8,12 @@ import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ColorPicker } from '../../components/ui/ColorPicker'
+import { Select } from '../../components/ui/Select'
 import { Collapsible } from '../../components/ui/Collapsible'
 import { cn, isoNow, softDelete } from '../../lib/utils'
 import { v4 as uuid } from 'uuid'
 import { useSessionSync } from '../../lib/use-session-sync'
-import type { Routine, RoutineLog, Activity, ActivityLog, DayOfWeek, Session, Project } from '../../domain/types'
+import type { Routine, RoutineLog, Activity, ActivityLog, DayOfWeek, Session, Project, Subject } from '../../domain/types'
 import { updateStreakDayForSession, updateRoutineLogsForSession } from '../../lib/routine-tracker'
 import { sessionIdFor } from '../../lib/timer-persistence'
 import { subDays } from 'date-fns'
@@ -81,6 +82,7 @@ export function SchedulePage() {
   const { push } = useUndo()
   const { syncSession } = useSessionSync()
   const [tab, setTab] = useState<'today' | 'plan'>('today')
+  const [todayFilter, setTodayFilter] = useState<'all' | 'study' | 'activities'>('all')
   const [routineEditing, setRoutineEditing] = useState<Routine | null>(null)
   const [activityEditing, setActivityEditing] = useState<Activity | null>(null)
   const [cellEditing, setCellEditing] = useState<{ itemId: string; dow: DayOfWeek; minutes: string; isActivity: boolean } | null>(null)
@@ -385,50 +387,21 @@ export function SchedulePage() {
       actualMinutes: mins,
       createdAt: isoNow(),
     }
-    let session: Session | null = null
-    if (activity.createsSession && activity.subjectId && mins > 0) {
-      const startAt = activity.scheduledTime
-        ? new Date(`${todayStr}T${activity.scheduledTime}:00`).toISOString()
-        : new Date(Date.now() - mins * 60 * 1000).toISOString()
-      const endAt = new Date(new Date(startAt).getTime() + mins * 60 * 1000).toISOString()
-      session = {
-        id: sessionIdFor(startAt, activity.subjectId, mins),
-        subjectId: activity.subjectId,
-        startAt,
-        endAt,
-        durationMinutes: mins,
-        source: 'autoRoutine',
-        createdAt: isoNow(),
-        updatedAt: isoNow(),
-      }
-      // H2 fix: persist the session id on the log so untick can find the
-      // exact session instead of relying on a fragile note-string match.
-      log.sessionId = session.id
-    }
     // Instant UI update FIRST
     mutate(prev => ({
       ...prev,
       activityLogs: [...prev.activityLogs, log],
-      ...(session ? { sessions: [...prev.sessions, session] } : {}),
     }))
-    // Fire-and-forget DB writes
+    // Fire-and-forget DB write
     void db.activityLogs.add(log).catch(err => console.error('Failed to save activity log:', err))
-    if (session) {
-      void db.sessions.put(session).catch(err => console.error('Failed to save session:', err))
-      const subjectName = subjectsMap.get(activity.subjectId!)?.name ?? 'Unknown'
-      syncSession(session, subjectName)
-      void updateStreakDayForSession(session).catch(err => console.error('Failed to update streak:', err))
-    }
     push({
       description: `Attended ${activity.name}`,
       undo: async () => {
         await db.activityLogs.delete(log.id)
-        if (session) await softDelete(db.sessions, session.id)
         await loadData()
       },
       redo: async () => {
         await db.activityLogs.add(log)
-        if (session) await db.sessions.put(session)
         await loadData()
       },
     })
@@ -451,6 +424,36 @@ export function SchedulePage() {
 
   async function deleteActivity(activity: Activity) {
     await db.activities.update(activity.id, { deletedAt: isoNow(), updatedAt: isoNow() })
+    await loadData()
+  }
+  async function moveRoutine(id: string, dir: -1 | 1) {
+    const list = routines
+    const idx = list.findIndex(r => r.id === id)
+    const swap = list[idx + dir]
+    if (idx < 0 || !swap) return
+    const a = list[idx]
+    const b = swap
+    const aOrder = a.orderIndex ?? idx
+    const bOrder = b.orderIndex ?? idx + dir
+    await db.routines.bulkPut([
+      { ...a, orderIndex: bOrder, updatedAt: isoNow() },
+      { ...b, orderIndex: aOrder, updatedAt: isoNow() },
+    ])
+    await loadData()
+  }
+  async function moveActivity(id: string, dir: -1 | 1) {
+    const list = activities
+    const idx = list.findIndex(a => a.id === id)
+    const swap = list[idx + dir]
+    if (idx < 0 || !swap) return
+    const a = list[idx]
+    const b = swap
+    const aOrder = a.orderIndex ?? idx
+    const bOrder = b.orderIndex ?? idx + dir
+    await db.activities.bulkPut([
+      { ...a, orderIndex: bOrder, updatedAt: isoNow() },
+      { ...b, orderIndex: aOrder, updatedAt: isoNow() },
+    ])
     await loadData()
   }
 
@@ -482,10 +485,49 @@ export function SchedulePage() {
           <Button size="sm" variant="secondary" onClick={() => setAddActivityOpen(true)}>+ Activity</Button>
         </div>
       </div>
-
       {tab === 'today' && (
         <div className="space-y-3">
-          {todaysActivities.length === 0 && todaysRoutines.length === 0 && (
+          {(todaysActivities.length > 0 || todaysRoutines.length > 0) && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setTodayFilter('all')}
+                className={cn(
+                  'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                  todayFilter === 'all'
+                    ? 'bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+                )}
+              >
+                All ({todaysActivities.length + todaysRoutines.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTodayFilter('study')}
+                className={cn(
+                  'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                  todayFilter === 'study'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-primary-50 text-primary-700 hover:bg-primary-100 dark:bg-primary-900/30 dark:text-primary-300 dark:hover:bg-primary-900/50'
+                )}
+              >
+                Study blocks ({todaysRoutines.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTodayFilter('activities')}
+                className={cn(
+                  'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                  todayFilter === 'activities'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50'
+                )}
+              >
+                Activities ({todaysActivities.length})
+              </button>
+            </div>
+          )}
+          {todaysActivities.length === 0 && todaysRoutines.length === 0 && todayFilter === 'all' && (
             <EmptyState
               title="Nothing scheduled"
               description="Add a routine or activity to start tracking today."
@@ -497,8 +539,7 @@ export function SchedulePage() {
               }
             />
           )}
-
-          {catchUpItems.map(item => (
+          {catchUpItems.length > 0 && (todayFilter === 'all' || todayFilter === 'study') && catchUpItems.map(item => (
             <Card key={`${item.id}:${item.date}`} className="border-l-4 border-l-amber-500">
               <div className="flex flex-wrap items-center gap-3">
                 <span
@@ -533,7 +574,7 @@ export function SchedulePage() {
               </p>
             </Card>
           ))}
-          {todaysActivities.length > 0 && (
+          {(todayFilter === 'all' || todayFilter === 'activities') && todaysActivities.length > 0 && (
             <div data-section="activities">
               <div className="mb-2 mt-2 flex items-center gap-2">
                 <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
@@ -555,19 +596,14 @@ export function SchedulePage() {
                   onUndo={() => {
                     const log = getActivityLogForToday(activity.id)
                     if (log) {
-                        // H2 fix: use the persisted sessionId (H2) instead of
-                        // the brittle note-string match that matched nothing.
-                        const deletes: Array<Promise<unknown>> = [db.activityLogs.delete(log.id)]
-                        if (log.sessionId) deletes.push(softDelete(db.sessions, log.sessionId))
-                        Promise.all(deletes).then(() => loadData())
+                        void db.activityLogs.delete(log.id).then(() => loadData())
                     }
                   }}
                 />
               ))}
             </div>
           )}
-
-          {todaysRoutines.filter(r => !getRoutineLogForToday(r.id)?.completed).length > 0 && (
+          {(todayFilter === 'all' || todayFilter === 'study') && todaysRoutines.filter(r => !getRoutineLogForToday(r.id)?.completed).length > 0 && (
             <div data-section="study-blocks">
               <div className="mb-2 mt-4 flex items-center gap-2">
                 <span className="rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
@@ -598,8 +634,7 @@ export function SchedulePage() {
                 ))}
             </div>
           )}
-
-          {todaysRoutines.some(r => getRoutineLogForToday(r.id)?.completed) && (
+          {(todayFilter === 'all' || todayFilter === 'study') && todaysRoutines.some(r => getRoutineLogForToday(r.id)?.completed) && (
             <div data-section="completed-old" className="mt-4">
               <Collapsible id="completed-routines" title={`Completed today (${todaysRoutines.filter(r => getRoutineLogForToday(r.id)?.completed).length})`} defaultOpen={false}>
                 {todaysRoutines
@@ -633,9 +668,12 @@ export function SchedulePage() {
         <WeeklyPlanGrid
           routines={routines}
           activities={activities}
+          subjects={subjectsMap}
           onEditRoutine={r => setRoutineEditing(r)}
           onEditActivity={a => setActivityEditing(a)}
           onEditCell={(itemId, d, mins, isActivity) => setCellEditing({ itemId, dow: d, minutes: String(mins), isActivity })}
+          onMoveRoutine={moveRoutine}
+          onMoveActivity={moveActivity}
         />
       )}
 
@@ -977,25 +1015,22 @@ function ActivityCard(props: {
 function WeeklyPlanGrid(props: {
   routines: Routine[]
   activities: Activity[]
+  subjects: Map<string, Subject>
   onEditRoutine: (r: Routine) => void
   onEditActivity: (a: Activity) => void
   onEditCell: (itemId: string, dow: DayOfWeek, minutes: number, isActivity: boolean) => void
+  onMoveRoutine: (id: string, dir: -1 | 1) => void
+  onMoveActivity: (id: string, dir: -1 | 1) => void
 }) {
-  const { routines, activities, onEditRoutine, onEditActivity, onEditCell } = props
-
-  if (routines.length === 0 && activities.length === 0) {
-    return <EmptyState title="No routines or activities yet" description="Add one using the buttons above to start planning your week." />
-  }
-
+  const { routines, activities, subjects, onEditRoutine, onEditActivity, onEditCell, onMoveRoutine, onMoveActivity } = props
+  const [hideUnused, setHideUnused] = useState(false)
   const maxRoutineMin = routines.reduce((m, r) => Math.max(m, ...Object.values(r.dayMinutes).map(v => v ?? 0)), 0)
   const maxActivityMin = activities.reduce((m, a) => Math.max(m, ...Object.values(a.dayMinutes).map(v => v ?? 0)), 0)
-
   function blockHeight(mins: number, max: number): string {
     if (mins <= 0 || max <= 0) return '24px'
     const ratio = mins / max
     return `${Math.max(24, Math.round(ratio * 72))}px`
   }
-
   // Compute daily totals across routines and activities.
   const dailyTotals: number[] = WEEKDAYS.map((_, i) => {
     const dow = i as DayOfWeek
@@ -1004,39 +1039,74 @@ function WeeklyPlanGrid(props: {
     return routineTotal + activityTotal
   })
   const weeklyTotal = dailyTotals.reduce((a, b) => a + b, 0)
+  if (routines.length === 0 && activities.length === 0) {
+    return <EmptyState title="No routines or activities yet" description="Add one using the buttons above to start planning your week." />
+  }
+  const filteredRoutines = hideUnused
+    ? routines.filter(r => Object.values(r.dayMinutes).some(v => (v ?? 0) > 0))
+    : routines
+  const filteredActivities = hideUnused
+    ? activities.filter(a => Object.values(a.dayMinutes).some(v => (v ?? 0) > 0))
+    : activities
   // Sort routines and activities by scheduledTime so users can plan a day
   // in time order. Items without a scheduledTime come last.
   const timeKey = (t?: string) => t ?? '99:99'
-  const sortedRoutines = [...routines].sort((a, b) => timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime)))
-  const sortedActivities = [...activities].sort((a, b) => timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime)))
+  const sortedRoutines = [...filteredRoutines].sort((a, b) => {
+    const order = (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+    if (order !== 0) return order
+    return timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime))
+  })
+  const sortedActivities = [...filteredActivities].sort((a, b) => {
+    const order = (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+    if (order !== 0) return order
+    return timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime))
+  })
 
   return (
-    <div className="overflow-x-auto">
-      <div className="grid min-w-[640px]" style={{ gridTemplateColumns: '200px repeat(7, minmax(70px, 1fr))' }}>
+    <div className="space-y-2">
+      <label className="flex cursor-pointer items-center justify-end gap-2 text-xs text-slate-600 dark:text-slate-300">
+        <input
+          type="checkbox"
+          checked={hideUnused}
+          onChange={(e) => setHideUnused(e.target.checked)}
+          className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
+        />
+        Hide unused
+      </label>
+      <div className="overflow-x-auto">
+        <div className="grid min-w-[640px]" style={{ gridTemplateColumns: '200px repeat(7, minmax(70px, 1fr))' }}>
         <div />
         {WEEKDAYS.map((d) => (
           <div key={d} className="text-center text-xs font-semibold text-slate-600 dark:text-slate-300 py-2 border-b border-slate-200 dark:border-slate-700">
             {d}
           </div>
         ))}
-        {sortedRoutines.map(r => (
+        {sortedRoutines.map((r, i) => (
           <RoutineGridRow
             key={r.id}
             routine={r}
             maxMinutes={maxRoutineMin}
+            subjectName={subjects.get(r.subjectId)?.name ?? null}
             onEditRoutine={onEditRoutine}
             onEditCell={onEditCell}
             blockHeight={blockHeight}
+            isFirst={i === 0}
+            isLast={i === sortedRoutines.length - 1}
+            onMove={onMoveRoutine}
           />
         ))}
-        {sortedActivities.map(a => (
+        {sortedActivities.map((a, i) => (
           <ActivityGridRow
             key={a.id}
             activity={a}
             maxMinutes={maxActivityMin}
+            subjectName={a.subjectId ? subjects.get(a.subjectId)?.name ?? null : null}
             onEditActivity={onEditActivity}
             onEditCell={onEditCell}
             blockHeight={blockHeight}
+            isFirst={i === 0}
+            isLast={i === sortedActivities.length - 1}
+            onMove={onMoveActivity}
           />
         ))}
         {/* Daily totals row */}
@@ -1049,6 +1119,7 @@ function WeeklyPlanGrid(props: {
           </div>
         ))}
       </div>
+      </div>
     </div>
   )
 }
@@ -1056,22 +1127,49 @@ function WeeklyPlanGrid(props: {
 function RoutineGridRow(props: {
   routine: Routine
   maxMinutes: number
+  subjectName: string | null
   onEditRoutine: (r: Routine) => void
   onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
   blockHeight: (mins: number, max: number) => string
+  isFirst: boolean
+  isLast: boolean
+  onMove: (id: string, dir: -1 | 1) => void
 }) {
-  const { routine, maxMinutes, onEditRoutine, onEditCell, blockHeight } = props
+  const { routine, maxMinutes, subjectName, onEditRoutine, onEditCell, blockHeight, isFirst, isLast, onMove } = props
   return (
     <>
-      <button
-        onClick={() => onEditRoutine(routine)}
-        className="text-left py-2 pr-3 text-sm font-medium text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-      >
-        <div className="flex items-center gap-2 truncate">
-          <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: routine.color }} />
-          <span className="truncate">{routine.name}</span>
+      <div className="flex items-center gap-1 py-2 pr-3 text-sm font-medium text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800">
+        <button
+          onClick={() => onEditRoutine(routine)}
+          className="flex-1 min-w-0 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded"
+        >
+          <div className="flex flex-col truncate">
+            <div className="flex items-center gap-2 truncate">
+              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: routine.color }} />
+              <span className="truncate">{routine.name}</span>
+            </div>
+            {subjectName && <span className="truncate text-[10px] text-slate-500">{subjectName}</span>}
+          </div>
+        </button>
+        <div className="flex flex-col shrink-0">
+          <button
+            type="button"
+            disabled={isFirst}
+            onClick={() => onMove(routine.id, -1)}
+            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+            title="Move up"
+            aria-label={`Move ${routine.name} up`}
+          >▲</button>
+          <button
+            type="button"
+            disabled={isLast}
+            onClick={() => onMove(routine.id, 1)}
+            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+            title="Move down"
+            aria-label={`Move ${routine.name} down`}
+          >▼</button>
         </div>
-      </button>
+      </div>
       {WEEKDAYS.map((_, i) => {
         const dow = i as DayOfWeek
         const mins = routine.dayMinutes[dow] ?? 0
@@ -1104,22 +1202,49 @@ function RoutineGridRow(props: {
 function ActivityGridRow(props: {
   activity: Activity
   maxMinutes: number
+  subjectName: string | null
   onEditActivity: (a: Activity) => void
   onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
   blockHeight: (mins: number, max: number) => string
+  isFirst: boolean
+  isLast: boolean
+  onMove: (id: string, dir: -1 | 1) => void
 }) {
-  const { activity, maxMinutes, onEditActivity, onEditCell, blockHeight } = props
+  const { activity, maxMinutes, subjectName, onEditActivity, onEditCell, blockHeight, isFirst, isLast, onMove } = props
   return (
     <>
-      <button
-        onClick={() => onEditActivity(activity)}
-        className="text-left py-2 pr-3 text-sm text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-      >
-        <div className="flex items-center gap-2 truncate">
-          <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activity.color }} />
-          <span className="truncate">{activity.name}{activity.scheduledTime ? ` (${formatTime12h(activity.scheduledTime)})` : ''}</span>
+      <div className="flex items-center gap-1 py-2 pr-3 text-sm text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
+        <button
+          onClick={() => onEditActivity(activity)}
+          className="flex-1 min-w-0 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded"
+        >
+          <div className="flex flex-col truncate">
+            <div className="flex items-center gap-2 truncate">
+              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activity.color }} />
+              <span className="truncate">{activity.name}{activity.scheduledTime ? ` (${formatTime12h(activity.scheduledTime)})` : ''}</span>
+            </div>
+            {subjectName && <span className="truncate text-[10px] text-slate-500">{subjectName}</span>}
+          </div>
+        </button>
+        <div className="flex flex-col shrink-0">
+          <button
+            type="button"
+            disabled={isFirst}
+            onClick={() => onMove(activity.id, -1)}
+            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+            title="Move up"
+            aria-label={`Move ${activity.name} up`}
+          >▲</button>
+          <button
+            type="button"
+            disabled={isLast}
+            onClick={() => onMove(activity.id, 1)}
+            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+            title="Move down"
+            aria-label={`Move ${activity.name} down`}
+          >▼</button>
         </div>
-      </button>
+      </div>
       {WEEKDAYS.map((_, i) => {
         const dow = i as DayOfWeek
         const mins = activity.dayMinutes[dow] ?? 0
@@ -1240,16 +1365,19 @@ function RoutineEditModal(props: {
             <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputCls} />
           </Field>
           <Field label="Subject">
-            <select value={subjectId} onChange={e => { setSubjectId(e.target.value); setProjectId('') }} className={inputCls}>
-              <option value={ANY_SUBJECT_ID}>Any subject</option>
-              {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            <Select
+              value={subjectId}
+              onChange={val => { setSubjectId(val); setProjectId('') }}
+              options={subjects.map(s => ({ value: s.id, label: s.name }))}
+              placeholder="Any subject"
+            />
           </Field>
           <Field label="Project (optional)">
-            <select value={projectId} onChange={e => setProjectId(e.target.value)} className={inputCls}>
-              <option value="">None</option>
-              {subjectProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <Select
+              value={projectId}
+              onChange={val => setProjectId(val)}
+              options={[{ value: '', label: 'None' }, ...subjectProjects.map(p => ({ value: p.id, label: p.name }))]}
+            />
           </Field>
           <Field label="Color">
             <ColorPicker value={color} onChange={setColor} />
@@ -1319,7 +1447,6 @@ function ActivityEditModal(props: {
   const [scheduledTime, setScheduledTime] = useState(activity?.scheduledTime ?? '')
   const [notes, setNotes] = useState(activity?.notes ?? '')
   const [duration, setDuration] = useState(activity?.duration ?? 60)
-  const [createsSession, setCreatesSession] = useState(activity?.createsSession ?? false)
 
   function setDay(dow: DayOfWeek, active: boolean) {
     const next = { ...dayMinutes }
@@ -1343,7 +1470,6 @@ function ActivityEditModal(props: {
       subjectId: subjectId || null,
       dayMinutes,
       duration,
-      createsSession,
       scheduledTime: scheduledTime || undefined,
       notes: notes || undefined,
       color,
@@ -1362,10 +1488,11 @@ function ActivityEditModal(props: {
             <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputCls} placeholder="e.g. Japanese Tutoring" />
           </Field>
           <Field label="Subject (optional)">
-            <select value={subjectId} onChange={e => setSubjectId(e.target.value)} className={inputCls}>
-              <option value="">None</option>
-              {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            <Select
+              value={subjectId}
+              onChange={val => setSubjectId(val)}
+              options={[{ value: '', label: 'None' }, ...subjects.map(s => ({ value: s.id, label: s.name }))]}
+            />
           </Field>
           <Field label="Scheduled time">
             <input type="time" value={scheduledTime} onChange={e => setScheduledTime(e.target.value)} className={inputCls} />
@@ -1395,15 +1522,7 @@ function ActivityEditModal(props: {
           <Field label="Notes">
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputCls} />
           </Field>
-          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-            <input
-              type="checkbox"
-              checked={createsSession}
-              onChange={e => setCreatesSession(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-            />
-            <span>Create study session when marked Attended</span>
-          </label>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Attending an activity marks it complete without counting toward study time.</p>
         </div>
         <div className="flex justify-between mt-6">
           <div>

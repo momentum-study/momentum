@@ -547,7 +547,8 @@ export default function Dashboard() {
     [academicSessions, todayStr]
   )
   const settings = useMemo(() => loadSettings(), [])
-  const { streak, bestStreak } = useStreak(academicSessions, useStreakPreviewDates())
+  const { streak, bestStreak, lastLoggedDate } = useStreak(academicSessions, useStreakPreviewDates())
+  const isNextDay = lastLoggedDate != null && format(lastLoggedDate, 'yyyy-MM-dd') < todayStr
   // Celebration: trigger once per day when the daily goal is met or a streak
   // milestone is reached today. Guarded by localStorage so it only fires once.
   useEffect(() => {
@@ -1052,6 +1053,7 @@ export default function Dashboard() {
     : formatLastSessionText(lastSession)
 
   const liveTotalTodayMinutes = getTotalTodayMinutes(data.sessions, data.subjects, data.categories)
+  const atRisk = streak > 0 && isNextDay && liveTotalTodayMinutes === 0
   const goalPct = Math.min(100, Math.round((liveTotalTodayMinutes / settings.dailyTargetMinutes) * 100))
   const allRecent = allSessions
     .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
@@ -1214,13 +1216,14 @@ export default function Dashboard() {
       case 'today-checklist':
         return <TodayChecklist />
       case 'study-streak': {
+        const targetMinutes = Math.max(1, settings.dailyTargetMinutes)
         const nextMilestone = STREAK_MILESTONES.find(m => m > streak) ?? streak
         const progressPercent = Math.min(100, Math.round((streak / nextMilestone) * 100))
         return (
           <div className="space-y-3">
             <div className="flex items-end justify-between gap-3">
               <div className="flex items-end gap-2">
-                <div className={cn('relative w-16 h-16 rounded-full', streak > 0 && liveTotalTodayMinutes === 0 && 'ring-2 ring-amber-400 ring-offset-2 ring-offset-white dark:ring-offset-slate-800 animate-[milestone-pulse_2s_ease-in-out_infinite]')}>
+                <div className={cn('relative w-16 h-16 rounded-full', atRisk && 'ring-2 ring-amber-400 ring-offset-2 ring-offset-white dark:ring-offset-slate-800 animate-[milestone-pulse_2s_ease-in-out_infinite]')}>
                   <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                     <circle
                       className="text-slate-200 dark:text-slate-700"
@@ -1247,7 +1250,7 @@ export default function Dashboard() {
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <div className="text-2xl font-bold text-orange-500 leading-none">{streak}</div>
-                    {streak > 0 && liveTotalTodayMinutes === 0 && <span className="text-[8px] text-amber-500/70 leading-none mt-0.5">at risk</span>}
+                    {atRisk && <span className="text-[8px] text-amber-500/70 leading-none mt-0.5">at risk</span>}
                   </div>
                 </div>
                 <div className="flex flex-col gap-0.5">
@@ -1343,15 +1346,23 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
-              <span>0 min</span>
-              <div className="h-3 w-3 rounded-sm border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-800" />
-              <span>1–74% of target</span>
-              <div className="h-3 w-3 rounded-sm border border-amber-200 bg-amber-200 dark:border-amber-800 dark:bg-amber-900/50" />
-              <span>75–99% of target</span>
-              <div className="h-3 w-3 rounded-sm border border-orange-400 bg-orange-500" />
-              <span>100% of target</span>
-              <div className="h-3 w-3 rounded-sm border border-green-600 bg-green-700 dark:border-green-400 dark:bg-green-500" />
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-3 w-3 rounded-sm border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-800" />
+                0 min
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-3 w-3 rounded-sm border border-amber-200 bg-amber-200 dark:border-amber-800 dark:bg-amber-900/50" />
+                1–{Math.max(1, Math.round(targetMinutes * 0.74))} min
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-3 w-3 rounded-sm border border-orange-400 bg-orange-500" />
+                {Math.max(2, Math.round(targetMinutes * 0.75))}–{Math.max(2, targetMinutes - 1)} min
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-3 w-3 rounded-sm border border-green-600 bg-green-700 dark:border-green-400 dark:bg-green-500" />
+                {targetMinutes}+ min
+              </span>
             </div>
             <div className="text-xs text-slate-500">Streak milestones:</div>
             <div className="flex flex-wrap gap-2">

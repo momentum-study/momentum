@@ -10,39 +10,40 @@ const BEST_STREAK_KEY = 'momentum-best-streak';
  * Every five consecutive logged days earns one automatic missed-day freeze.
  */
 export function useStreak(sessions: Session[], previewDates: Set<string> = new Set()) {
-  const { streak, freezesAvailable } = useMemo(() => {
-    const daySet = new Set<string>();
-    for (const s of sessions) daySet.add(toLocalDateString(s.startAt));
-    for (const d of previewDates) daySet.add(d);
-    let count = 0;
-    let consecutiveLogged = 0;
-    let freezes = 0;
-    let d = new Date();
+  const { streak, freezesAvailable, lastLoggedDate } = useMemo(() => {
+    const daySet = new Set<string>()
+    for (const s of sessions) daySet.add(toLocalDateString(s.startAt))
+    for (const d of previewDates) daySet.add(d)
+    let count = 0
+    let consecutiveLogged = 0
+    let freezes = 0
+    let lastDayChecked: Date | null = null
+    let d = new Date()
     // If today isn't logged, start checking from yesterday so the streak
     // doesn't immediately break when today is empty.
-    const todayStr = format(d, 'yyyy-MM-dd');
+    const todayStr = format(d, 'yyyy-MM-dd')
     if (!daySet.has(todayStr)) {
-      d = subDays(d, 1);
+      d = subDays(d, 1)
     }
     while (true) {
-      const ds = format(d, 'yyyy-MM-dd');
+      const ds = format(d, 'yyyy-MM-dd')
       if (daySet.has(ds)) {
-        count++;
-        consecutiveLogged++;
+        count++
+        consecutiveLogged++
+        lastDayChecked = d
         if (consecutiveLogged === 5) {
-          freezes++;
-          consecutiveLogged = 0;
+          freezes++
+          consecutiveLogged = 0
         }
       } else if (freezes > 0) {
-        freezes--;
-        consecutiveLogged = 0;
+        freezes--
+        consecutiveLogged = 0
       } else {
-        break;
+        break
       }
-      d = subDays(d, 1);
+      d = subDays(d, 1)
     }
-
-    return { streak: count, freezesAvailable: freezes };
+    return { streak: count, freezesAvailable: freezes, lastLoggedDate: lastDayChecked };
   }, [sessions, previewDates]);
 
   const longestStreak = useMemo(() => {
@@ -111,5 +112,5 @@ export function useStreak(sessions: Session[], previewDates: Set<string> = new S
     }
   }, [longestStreak, streak, bestStreak]);
 
-  return { streak, longestStreak, bestStreak, freezesAvailable };
+  return { streak, longestStreak, bestStreak, freezesAvailable, lastLoggedDate };
 }

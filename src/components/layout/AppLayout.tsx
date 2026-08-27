@@ -567,6 +567,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <h1 className="text-base font-medium text-slate-700 dark:text-slate-200">
             {NAV_ITEMS.find((n) => n.to === location.pathname)?.label ?? 'Momentum'}
           </h1>
+          {location.pathname === '/' && (
+            <button
+              type="button"
+              data-tour="customise-btn"
+              aria-label="Customise dashboard"
+              title="Customise dashboard"
+              className="ml-auto rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              onClick={() => window.dispatchEvent(new CustomEvent('momentum:dashboard-customise'))}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          )}
         </header>
         <main className="app-main flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>

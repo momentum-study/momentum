@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import { format, subDays, startOfWeek, endOfWeek, parseISO, eachDayOfInterval, isWithinInterval, isSameDay } from 'date-fns'
+import { format, subDays, startOfWeek, endOfWeek, endOfDay, parseISO, eachDayOfInterval, isWithinInterval, isSameDay } from 'date-fns'
 import { useData } from '../../app/providers'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { PageSpinner } from '../../components/ui/Spinner'
-import { cn, formatMinutes, getWeekStartsOn } from '../../lib/utils'
+import { cn, formatMinutes, getSessionScope, getWeekStartsOn } from '../../lib/utils'
 import { loadSettings } from '../../lib/settings-store'
 import type { DayOfWeek } from '../../domain/types'
 
@@ -15,31 +15,30 @@ type DatePreset = 'thisWeek' | 'lastWeek' | 'last2Weeks' | 'last7Days'
 function getDatePresetRange(preset: DatePreset): { start: Date; end: Date } {
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-
   switch (preset) {
     case 'thisWeek': {
       const weekStartsOn = getWeekStartsOn()
       const start = startOfWeek(today, { weekStartsOn }) // user preference
-      const end = endOfWeek(today, { weekStartsOn })
+      const end = endOfDay(endOfWeek(today, { weekStartsOn }))
       return { start, end }
     }
     case 'lastWeek': {
       const thisWeekStart = startOfWeek(today, { weekStartsOn: getWeekStartsOn() })
       const start = subDays(thisWeekStart, 7)
-      const end = subDays(thisWeekStart, 1)
+      const end = endOfDay(subDays(thisWeekStart, 1))
       return { start, end }
     }
     case 'last2Weeks': {
       const thisWeekStart = startOfWeek(today, { weekStartsOn: getWeekStartsOn() })
       const start = subDays(thisWeekStart, 14)
-      const end = subDays(thisWeekStart, 1)
+      const end = endOfDay(subDays(thisWeekStart, 1))
       return { start, end }
     }
     case 'last7Days': {
       // Sliding 7-day window ending today — guarantees a full week of data
       // regardless of which weekday the user opens the page on.
       const start = subDays(today, 6)
-      const end = today
+      const end = endOfDay(today)
       return { start, end }
     }
   }
@@ -108,51 +107,54 @@ export default function AIReviewPage() {
 
   // Calculate stats
   const stats = useMemo(() => {
+    // Split sessions by scope (academic vs non-academic)
+    const academicSessions = weekSessions.filter((s) => getSessionScope(s, data.subjects, data.categories) === 'academic')
+    const nonAcademicSessions = weekSessions.filter((s) => getSessionScope(s, data.subjects, data.categories) !== 'academic')
     const totalMinutes = weekSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
+    const academicMinutes = academicSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
+    const nonAcademicMinutes = nonAcademicSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
     const totalSessions = weekSessions.length
     const avgSessionLength = totalSessions > 0 ? Math.round(totalMinutes / totalSessions) : 0
-
-    // Daily breakdown
+    // Daily breakdown (academic only for target comparison)
     const days = eachDayOfInterval({ start: dateRange.start, end: dateRange.end })
     const dailyMinutes = days.map((day) => {
       const daySessions = weekSessions.filter((s) => isSameDay(parseISO(s.startAt), day))
       return daySessions.reduce((sum, s) => sum + s.durationMinutes, 0)
     })
-
-    // Most productive day
-    const maxDailyMinutes = Math.max(...dailyMinutes, 0)
-    const mostProductiveDayIdx = dailyMinutes.indexOf(maxDailyMinutes)
-    const mostProductiveDay = maxDailyMinutes > 0 ? DAY_NAMES[days[mostProductiveDayIdx]?.getDay() ?? 0] : null
-
+    const dailyAcademicMinutes = days.map((day) => {
+      const daySessions = academicSessions.filter((s) => isSameDay(parseISO(s.startAt), day))
+      return daySessions.reduce((sum, s) => sum + s.durationMinutes, 0)
+    })
+    // Most productive day (academic only)
+    const maxDailyAcademic = Math.max(...dailyAcademicMinutes, 0)
+    const mostProductiveDayIdx = dailyAcademicMinutes.indexOf(maxDailyAcademic)
+    const mostProductiveDay = maxDailyAcademic > 0 ? DAY_NAMES[days[mostProductiveDayIdx]?.getDay() ?? 0] : null
     // Time per subject
-    const subjectTime: Record<string, { minutes: number; sessions: number }> = {}
+    const subjectTime: Record<string, { minutes: number; sessions: number; scope: string }> = {}
     weekSessions.forEach((s) => {
       const subject = data.subjects.find((sub) => sub.id === s.subjectId)
       const name = subject?.name ?? 'Unknown'
+      const scope = getSessionScope(s, data.subjects, data.categories) ?? 'unknown'
       if (!subjectTime[name]) {
-        subjectTime[name] = { minutes: 0, sessions: 0 }
+        subjectTime[name] = { minutes: 0, sessions: 0, scope }
       }
       subjectTime[name].minutes += s.durationMinutes
       subjectTime[name].sessions += 1
     })
-
     // Session types
     const pomodoroSessions = weekSessions.filter((s) => s.source === 'pomodoro')
     const timerSessions = weekSessions.filter((s) => s.source === 'timer')
     const manualSessions = weekSessions.filter((s) => s.source === 'manual' || s.source === 'quickLog')
-
     const pomodoroMinutes = pomodoroSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
     const timerMinutes = timerSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
     const manualMinutes = manualSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
-
     // Longest session
     const longestSession = weekSessions.reduce(
       (max, s) => (s.durationMinutes > max ? s.durationMinutes : max),
       0
     )
-
-    // Days target met
-    const daysTargetMet = dailyMinutes.filter((m) => m >= settings.dailyTargetMinutes).length
+    // Days target met (academic only)
+    const daysTargetMet = dailyAcademicMinutes.filter((m) => m >= settings.dailyTargetMinutes).length
     const autoRoutineSessions = weekSessions.filter((s) => s.source === 'autoRoutine').length
     // Routine adherence: planned vs actual minutes across routines in range.
     const routineAdherence: Record<string, { planned: number; actual: number }> = {}
@@ -163,8 +165,6 @@ export default function AIReviewPage() {
       const actual = logs.reduce((sum, l) => sum + (l.actualMinutes ?? 0), 0)
       routineAdherence[routine.name] = { planned, actual }
     }
-
-
     // Streak as of the end of the range, using the same freeze logic as the
     // dashboard (every 5 consecutive logged days earns one missed-day freeze).
     // Build the set of days with study activity from ALL sessions (not just the
@@ -196,14 +196,18 @@ export default function AIReviewPage() {
       }
       d = subDays(d, 1)
     }
-
     return {
       totalMinutes,
+      academicMinutes,
+      nonAcademicMinutes,
       totalSessions,
+      academicSessions: academicSessions.length,
+      nonAcademicSessions: nonAcademicSessions.length,
       avgSessionLength,
       dailyMinutes,
+      dailyAcademicMinutes,
       mostProductiveDay,
-      mostProductiveDayMinutes: maxDailyMinutes,
+      mostProductiveDayMinutes: maxDailyAcademic,
       subjectTime,
       pomodoroSessions: pomodoroSessions.length,
       pomodoroMinutes,
@@ -218,7 +222,7 @@ export default function AIReviewPage() {
       autoRoutineSessions,
       routineAdherence,
     }
-  }, [weekSessions, data.subjects, data.routines, data.routineLogs, dateRange, settings.dailyTargetMinutes])
+  }, [weekSessions, data.subjects, data.categories, data.routines, data.routineLogs, dateRange, settings.dailyTargetMinutes])
 
   // Generate the AI prompt
   const aiPrompt = useMemo(() => {
@@ -248,17 +252,20 @@ export default function AIReviewPage() {
     lines.push('')
     lines.push('## My data')
     lines.push(`Weekly totals: ${formatMinutes(stats.totalMinutes)} across ${mergedSessions.length} study blocks (avg ${mergedSessions.length > 0 ? Math.round(stats.totalMinutes / mergedSessions.length) : 0}m, longest ${stats.longestSession}m). Most productive day: ${stats.mostProductiveDay ?? 'N/A'}${stats.mostProductiveDay ? ` (${stats.mostProductiveDayMinutes}m)` : ''}.`)
-    lines.push(`Daily target: ${settings.dailyTargetMinutes}m. Days target met: ${stats.daysTargetMet}/${stats.daysInRange}. Current streak: ${stats.currentStreak} days.`)
+    lines.push(`Academic: ${formatMinutes(stats.academicMinutes)} (${stats.academicSessions} sessions). Non-academic: ${formatMinutes(stats.nonAcademicMinutes)} (${stats.nonAcademicSessions} sessions).`)
+    lines.push(`Daily target: ${settings.dailyTargetMinutes}m (academic only). Days target met: ${stats.daysTargetMet}/${stats.daysInRange}. Current streak: ${stats.currentStreak} days.`)
     lines.push('')
-    lines.push('### Daily breakdown')
+    lines.push('### Daily breakdown (academic study time)')
     const days = eachDayOfInterval({ start: dateRange.start, end: dateRange.end })
     days.forEach((day, idx) => {
-      const minutes = stats.dailyMinutes[idx] ?? 0
+      const minutes = stats.dailyAcademicMinutes[idx] ?? 0
+      const total = stats.dailyMinutes[idx] ?? 0
       let marker = ''
       if (isFuture(day)) marker = ' [future]'
       else if (isToday(day) && minutes === 0) marker = ' [today, not yet]'
       else if (minutes === 0) marker = ' [missed]'
-      lines.push(`- ${format(day, 'EEE, MMM d')}: ${minutes}m${marker}`)
+      const nonAcad = total - minutes
+      lines.push(`- ${format(day, 'EEE, MMM d')}: ${minutes}m academic${nonAcad > 0 ? ` (+${nonAcad}m non-academic)` : ''}${marker}`)
     })
     lines.push('### Study blocks (sessions ≤10 min apart are merged into one block)')
     if (mergedSessions.length === 0) {
@@ -282,7 +289,7 @@ export default function AIReviewPage() {
       lines.push('- No focus area data')
     } else {
       sortedSubjects.forEach(([name, subj]) => {
-        lines.push(`- ${name}: ${formatMinutes(subj.minutes)} (${subj.sessions} sessions)`)
+        lines.push(`- ${name} [${subj.scope}]: ${formatMinutes(subj.minutes)} (${subj.sessions} sessions)`)
       })
     }
     lines.push('')

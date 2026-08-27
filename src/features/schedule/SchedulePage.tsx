@@ -824,7 +824,7 @@ function RoutineCard(props: {
     )
   }
 
-  if (existingLog && !existingLog.completed) {
+  if (existingLog && !existingLog.completed && loggedMins === 0) {
     if (!isExpanded) {
       return (
         <button
@@ -1053,6 +1053,12 @@ function WeeklyPlanGrid(props: {
   const filteredActivities = hideUnused
     ? activities.filter(a => Object.values(a.dayMinutes).some(v => (v ?? 0) > 0))
     : activities
+  // When hideUnused, only show day columns that have any non-zero total across
+  // routines and activities. This collapses all empty space — including the
+  // day heading row — so the user just sees populated blocks.
+  const visibleDays = hideUnused
+    ? WEEKDAYS.map((_, i) => i as DayOfWeek).filter(i => dailyTotals[i] > 0)
+    : WEEKDAYS.map((_, i) => i as DayOfWeek)
   // Sort routines and activities by scheduledTime so users can plan a day
   // in time order. Items without a scheduledTime come last.
   const timeKey = (t?: string) => t ?? '99:99'
@@ -1066,7 +1072,9 @@ function WeeklyPlanGrid(props: {
     if (order !== 0) return order
     return timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime))
   })
-
+  const gridTemplate = hideUnused
+    ? `200px repeat(${visibleDays.length}, minmax(70px, 1fr))`
+    : '200px repeat(7, minmax(70px, 1fr))'
   return (
     <div className="space-y-2">
       <label className="flex cursor-pointer items-center justify-end gap-2 text-xs text-slate-600 dark:text-slate-300">
@@ -1079,53 +1087,58 @@ function WeeklyPlanGrid(props: {
         Hide unused
       </label>
       <div className="overflow-x-auto">
-        <div className="grid min-w-[640px]" style={{ gridTemplateColumns: '200px repeat(7, minmax(70px, 1fr))' }}>
-        <div />
-        {WEEKDAYS.map((d) => (
-          <div key={d} className="text-center text-xs font-semibold text-slate-600 dark:text-slate-300 py-2 border-b border-slate-200 dark:border-slate-700">
-            {d}
+        <div className="grid min-w-[640px]" style={{ gridTemplateColumns: gridTemplate }}>
+          <div />
+          {visibleDays.map((d) => (
+            <div key={d} className="text-center text-xs font-semibold text-slate-600 dark:text-slate-300 py-2 border-b border-slate-200 dark:border-slate-700">
+              {WEEKDAYS[d]}
+            </div>
+          ))}
+          {sortedRoutines.map((r, i) => (
+            <RoutineGridRow
+              key={r.id}
+              routine={r}
+              maxMinutes={maxRoutineMin}
+              subjectName={subjects.get(r.subjectId)?.name ?? null}
+              onEditRoutine={onEditRoutine}
+              onEditCell={onEditCell}
+              blockHeight={blockHeight}
+              hideUnused={hideUnused}
+              visibleDays={visibleDays}
+              isFirst={i === 0}
+              isLast={i === sortedRoutines.length - 1}
+              onMove={onMoveRoutine}
+            />
+          ))}
+          {sortedActivities.map((a, i) => (
+            <ActivityGridRow
+              key={a.id}
+              activity={a}
+              maxMinutes={maxActivityMin}
+              subjectName={a.subjectId ? subjects.get(a.subjectId)?.name ?? null : null}
+              onEditActivity={onEditActivity}
+              onEditCell={onEditCell}
+              blockHeight={blockHeight}
+              hideUnused={hideUnused}
+              visibleDays={visibleDays}
+              isFirst={i === 0}
+              isLast={i === sortedActivities.length - 1}
+              onMove={onMoveActivity}
+            />
+          ))}
+          {/* Daily totals row */}
+          <div className="text-right pr-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 border-t-2 border-slate-300 dark:border-slate-600">
+            Daily total ({Math.round(weeklyTotal / 60)}h {weeklyTotal % 60}m / week)
           </div>
-        ))}
-        {sortedRoutines.map((r, i) => (
-          <RoutineGridRow
-            key={r.id}
-            routine={r}
-            maxMinutes={maxRoutineMin}
-            subjectName={subjects.get(r.subjectId)?.name ?? null}
-            onEditRoutine={onEditRoutine}
-            onEditCell={onEditCell}
-            blockHeight={blockHeight}
-            hideUnused={hideUnused}
-            isFirst={i === 0}
-            isLast={i === sortedRoutines.length - 1}
-            onMove={onMoveRoutine}
-          />
-        ))}
-        {sortedActivities.map((a, i) => (
-          <ActivityGridRow
-            key={a.id}
-            activity={a}
-            maxMinutes={maxActivityMin}
-            subjectName={a.subjectId ? subjects.get(a.subjectId)?.name ?? null : null}
-            onEditActivity={onEditActivity}
-            onEditCell={onEditCell}
-            blockHeight={blockHeight}
-            hideUnused={hideUnused}
-            isFirst={i === 0}
-            isLast={i === sortedActivities.length - 1}
-            onMove={onMoveActivity}
-          />
-        ))}
-        {/* Daily totals row */}
-        <div className="text-right pr-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 border-t-2 border-slate-300 dark:border-slate-600">
-          Daily total ({Math.round(weeklyTotal / 60)}h {weeklyTotal % 60}m / week)
+          {visibleDays.map((d) => {
+            const total = dailyTotals[d]
+            return (
+              <div key={d} className="text-center py-2 text-xs font-bold text-primary-700 dark:text-primary-300 border-t-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
+                {total > 0 ? `${total}m` : '—'}
+              </div>
+            )
+          })}
         </div>
-        {dailyTotals.map((total, i) => (
-          <div key={i} className="text-center py-2 text-xs font-bold text-primary-700 dark:text-primary-300 border-t-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
-            {total > 0 ? `${total}m` : '—'}
-          </div>
-        ))}
-      </div>
       </div>
     </div>
   )
@@ -1139,11 +1152,12 @@ function RoutineGridRow(props: {
   onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
   blockHeight: (mins: number, max: number) => string
   hideUnused: boolean
+  visibleDays: DayOfWeek[]
   isFirst: boolean
   isLast: boolean
   onMove: (id: string, dir: -1 | 1) => void
 }) {
-  const { routine, maxMinutes, subjectName, onEditRoutine, onEditCell, blockHeight, hideUnused, isFirst, isLast, onMove } = props
+  const { routine, maxMinutes, subjectName, onEditRoutine, onEditCell, blockHeight, hideUnused, visibleDays, isFirst, isLast, onMove } = props
   return (
     <>
       <div className="flex items-center gap-1 py-2 pr-3 text-sm font-medium text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800">
@@ -1175,14 +1189,13 @@ function RoutineGridRow(props: {
           >▼</button>
         </div>
       </div>
-      {WEEKDAYS.map((_, i) => {
-        const dow = i as DayOfWeek
+      {visibleDays.map((dow) => {
         const mins = routine.dayMinutes[dow] ?? 0
         if (mins <= 0 && hideUnused) {
           return null
         }
         return (
-          <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1">
+          <div key={dow} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
               <button
                 onClick={() => onEditCell(routine.id, dow, mins, false)}
@@ -1190,7 +1203,7 @@ function RoutineGridRow(props: {
                 style={{ backgroundColor: routine.color, height: blockHeight(mins, maxMinutes) }}
                 title={`${subjectName ? subjectName + ' · ' : ''}${mins}m on ${DAY_LABELS[dow]}`}
               >
-                {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
+                {subjectName && !hideUnused && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
                 <span className="leading-tight">{mins}m</span>
               </button>
             ) : (
@@ -1216,11 +1229,12 @@ function ActivityGridRow(props: {
   onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
   blockHeight: (mins: number, max: number) => string
   hideUnused: boolean
+  visibleDays: DayOfWeek[]
   isFirst: boolean
   isLast: boolean
   onMove: (id: string, dir: -1 | 1) => void
 }) {
-  const { activity, maxMinutes, subjectName, onEditActivity, onEditCell, blockHeight, hideUnused, isFirst, isLast, onMove } = props
+  const { activity, maxMinutes, subjectName, onEditActivity, onEditCell, blockHeight, hideUnused, visibleDays, isFirst, isLast, onMove } = props
   return (
     <>
       <div className="flex items-center gap-1 py-2 pr-3 text-sm text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
@@ -1252,14 +1266,13 @@ function ActivityGridRow(props: {
           >▼</button>
         </div>
       </div>
-      {WEEKDAYS.map((_, i) => {
-        const dow = i as DayOfWeek
+      {visibleDays.map((dow) => {
         const mins = activity.dayMinutes[dow] ?? 0
         if (mins <= 0 && hideUnused) {
           return null
         }
         return (
-          <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1">
+          <div key={dow} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
               <button
                 onClick={() => onEditCell(activity.id, dow, mins, true)}
@@ -1267,7 +1280,7 @@ function ActivityGridRow(props: {
                 style={{ backgroundColor: activity.color, height: blockHeight(mins, maxMinutes) }}
                 title={`${subjectName ? subjectName + ' · ' : ''}${activity.scheduledTime ? formatTime12h(activity.scheduledTime) : mins + 'm'} on ${DAY_LABELS[dow]}`}
               >
-                {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
+                {subjectName && !hideUnused && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
                 <span className="leading-tight">{activity.scheduledTime ? formatTime12h(activity.scheduledTime) : `${mins}m`}</span>
               </button>
             ) : (

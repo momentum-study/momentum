@@ -1,1 +1,0 @@
-import{ae as c,ab as o}from"./index-CnpHwdnd.js";function f(e,a,n){const t=c(e,n==null?void 0:n.in);if(isNaN(a))return o(e,NaN);if(!a)return t;const s=t.getDate(),r=o(e,t.getTime());r.setMonth(t.getMonth()+a+1,0);const u=r.getDate();return s>=u?r:(t.setFullYear(r.getFullYear(),r.getMonth(),s),t)}function M(e,a,n){return f(e,-1,n)}export{f as a,M as s};

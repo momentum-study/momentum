@@ -167,9 +167,9 @@ export default function AIReviewPage() {
 
     // Streak as of the end of the range, using the same freeze logic as the
     // dashboard (every 5 consecutive logged days earns one missed-day freeze).
-    // Build the set of days with study activity from the filtered sessions so
-    // soft-deleted sessions are excluded.
-    const daySet = new Set(weekSessions.map((s) => format(parseISO(s.startAt), 'yyyy-MM-dd')))
+    // Build the set of days with study activity from ALL sessions (not just the
+    // filtered weekSessions) so the streak calculation isn't limited by the date range.
+    const daySet = new Set(data.sessions.filter(s => !s.deletedAt).map((s) => format(parseISO(s.startAt), 'yyyy-MM-dd')))
     let currentStreak = 0
     let consecutiveLogged = 0
     let freezes = 0

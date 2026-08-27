@@ -78,7 +78,7 @@ export function TodayChecklist() {
             startAt: new Date(Date.now() - gap * 60_000).toISOString(),
             endAt: new Date().toISOString(),
             durationMinutes: gap,
-            source: 'activity',
+            source: 'autoRoutine',
             createdAt: isoNow(),
             updatedAt: isoNow(),
           }
@@ -334,12 +334,20 @@ export function TodayChecklist() {
         </span>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 select-none cursor-pointer">
-            <input
-              type="checkbox"
-              checked={logTime}
-              onChange={(e) => setLogTime(e.target.checked)}
-              className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
-            />
+            <button
+              onClick={() => setLogTime(!logTime)}
+              className={`h-5 w-5 rounded-full border-2 transition-colors flex items-center justify-center ${
+                logTime
+                  ? 'border-primary-500 bg-primary-500 text-white'
+                  : 'border-slate-300 hover:border-primary-500 dark:border-slate-600'
+              }`}
+            >
+              {logTime && (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
             Log time
           </label>
           <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">

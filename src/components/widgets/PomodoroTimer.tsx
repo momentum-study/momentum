@@ -1007,7 +1007,6 @@ export function PomodoroTimer() {
       const startAt = start.toISOString()
       const durationSeconds = Math.max(10, Math.round(delta))
       const durationMinutes = Math.max(1, Math.round(delta / 60))
-
       saveSessionWithMidnightCheck({
         id: sessionIdFor(startAt, actualSubjectId, durationMinutes),
         subjectId: actualSubjectId,
@@ -1025,11 +1024,12 @@ export function PomodoroTimer() {
         updatedAt: isoNow(),
       })
       clearPendingSession()
-      updateSessionGroup((g) => {
-        if (!g) return null
-        return { ...bumpLastSegment(g, delta), active: false, lastEndAt: Date.now() }
-      })
     }
+    updateSessionGroup((g) => {
+      if (!g) return null
+      return { ...bumpLastSegment(g, total - lastSavedCumulativeRef.current), active: false, lastEndAt: Date.now() }
+    })
+
     lastSavedCumulativeRef.current = total
     simpleSafetyFiredRef.current = false
     setSafetyMessage('')
@@ -1737,14 +1737,15 @@ export function PomodoroTimer() {
               Change Subject
             </button>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-center gap-2 w-full max-w-64">
               <select
-                className="input w-48"
-                value={subjectId}
-                onChange={(e) => { void changeSubject(e.target.value) }}
+                className="input w-full"
+                size={Math.min(6, data.subjects.filter((s) => s.id !== subjectId && !s.deletedAt).length + 1)}
+                value=""
+                onChange={(e) => { if (e.target.value) void changeSubject(e.target.value) }}
                 autoFocus
               >
-                <option value="">Select new subject...</option>
+                <option value="" disabled>Select new subject...</option>
                 {data.subjects.filter((s) => s.id !== subjectId && !s.deletedAt).map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}

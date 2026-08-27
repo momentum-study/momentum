@@ -1151,12 +1151,9 @@ function RoutineGridRow(props: {
           onClick={() => onEditRoutine(routine)}
           className="flex-1 min-w-0 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded"
         >
-          <div className="flex flex-col truncate">
-            <div className="flex items-center gap-2 truncate">
-              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: routine.color }} />
-              <span className="truncate">{routine.name}</span>
-            </div>
-            {subjectName && <span className="truncate text-[10px] text-slate-500">{subjectName}</span>}
+          <div className="flex items-center gap-2 truncate">
+            <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: routine.color }} />
+            <span className="truncate">{routine.name}</span>
           </div>
         </button>
         <div className="flex flex-col shrink-0">
@@ -1182,7 +1179,7 @@ function RoutineGridRow(props: {
         const dow = i as DayOfWeek
         const mins = routine.dayMinutes[dow] ?? 0
         if (mins <= 0 && hideUnused) {
-          return <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1" />
+          return null
         }
         return (
           <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1">
@@ -1231,12 +1228,9 @@ function ActivityGridRow(props: {
           onClick={() => onEditActivity(activity)}
           className="flex-1 min-w-0 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded"
         >
-          <div className="flex flex-col truncate">
-            <div className="flex items-center gap-2 truncate">
-              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activity.color }} />
-              <span className="truncate">{activity.name}{activity.scheduledTime ? ` (${formatTime12h(activity.scheduledTime)})` : ''}</span>
-            </div>
-            {subjectName && <span className="truncate text-[10px] text-slate-500">{subjectName}</span>}
+          <div className="flex items-center gap-2 truncate">
+            <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activity.color }} />
+            <span className="truncate">{activity.name}{activity.scheduledTime ? ` (${formatTime12h(activity.scheduledTime)})` : ''}</span>
           </div>
         </button>
         <div className="flex flex-col shrink-0">
@@ -1262,7 +1256,7 @@ function ActivityGridRow(props: {
         const dow = i as DayOfWeek
         const mins = activity.dayMinutes[dow] ?? 0
         if (mins <= 0 && hideUnused) {
-          return <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1" />
+          return null
         }
         return (
           <div key={i} className="border-b border-slate-100 dark:border-slate-800 p-1">

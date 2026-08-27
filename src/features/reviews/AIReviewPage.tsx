@@ -305,7 +305,7 @@ export default function AIReviewPage() {
     if (activeHabits.length > 0) {
       lines.push('### Habits')
       activeHabits.forEach(habit => {
-        const periodLogs = data.habitLogs.filter(l => l.habitId === habit.id && l.date >= startStr && l.date <= endStr)
+        const periodLogs = data.habitLogs.filter(l => l.habitId === habit.id && l.date >= format(dateRange.start, 'yyyy-MM-dd') && l.date <= format(dateRange.end, 'yyyy-MM-dd'))
         const uniqueDays = new Set(periodLogs.map(l => l.date)).size
         lines.push(`- ${habit.name} (${habit.kind}): ${uniqueDays} day${uniqueDays === 1 ? '' : 's'} in this period, target ${habit.targetPerDay ?? 1}/day`)
       })

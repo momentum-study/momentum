@@ -1,48 +1,14 @@
 import { useMemo, useState } from 'react'
-import { format, subDays, startOfWeek, endOfWeek, endOfDay, parseISO, eachDayOfInterval, isWithinInterval, isSameDay } from 'date-fns'
+import { format, parseISO, eachDayOfInterval, isWithinInterval, subDays } from 'date-fns'
+import { calculatePeriodStats } from '../../lib/ai-review-stats'
 import { useData } from '../../app/providers'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { PageSpinner } from '../../components/ui/Spinner'
-import { cn, formatMinutes, getSessionScope, getWeekStartsOn } from '../../lib/utils'
+import { cn, formatMinutes } from '../../lib/utils'
 import { loadSettings } from '../../lib/settings-store'
-import type { DayOfWeek } from '../../domain/types'
+import { getDatePresetRange, type DatePreset } from '../../lib/date-presets'
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-
-type DatePreset = 'thisWeek' | 'lastWeek' | 'last2Weeks' | 'last7Days'
-
-function getDatePresetRange(preset: DatePreset): { start: Date; end: Date } {
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  switch (preset) {
-    case 'thisWeek': {
-      const weekStartsOn = getWeekStartsOn()
-      const start = startOfWeek(today, { weekStartsOn }) // user preference
-      const end = endOfDay(endOfWeek(today, { weekStartsOn }))
-      return { start, end }
-    }
-    case 'lastWeek': {
-      const thisWeekStart = startOfWeek(today, { weekStartsOn: getWeekStartsOn() })
-      const start = subDays(thisWeekStart, 7)
-      const end = endOfDay(subDays(thisWeekStart, 1))
-      return { start, end }
-    }
-    case 'last2Weeks': {
-      const thisWeekStart = startOfWeek(today, { weekStartsOn: getWeekStartsOn() })
-      const start = subDays(thisWeekStart, 14)
-      const end = endOfDay(subDays(thisWeekStart, 1))
-      return { start, end }
-    }
-    case 'last7Days': {
-      // Sliding 7-day window ending today — guarantees a full week of data
-      // regardless of which weekday the user opens the page on.
-      const start = subDays(today, 6)
-      const end = endOfDay(today)
-      return { start, end }
-    }
-  }
-}
 
 export default function AIReviewPage() {
   const { data, isLoading } = useData()
@@ -105,124 +71,29 @@ export default function AIReviewPage() {
     return result
   }, [weekSessions])
 
-  // Calculate stats
-  const stats = useMemo(() => {
-    // Split sessions by scope (academic vs non-academic)
-    const academicSessions = weekSessions.filter((s) => getSessionScope(s, data.subjects, data.categories) === 'academic')
-    const nonAcademicSessions = weekSessions.filter((s) => getSessionScope(s, data.subjects, data.categories) !== 'academic')
-    const totalMinutes = weekSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
-    const academicMinutes = academicSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
-    const nonAcademicMinutes = nonAcademicSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
-    const totalSessions = weekSessions.length
-    const avgSessionLength = totalSessions > 0 ? Math.round(totalMinutes / totalSessions) : 0
-    // Daily breakdown (academic only for target comparison)
-    const days = eachDayOfInterval({ start: dateRange.start, end: dateRange.end })
-    const dailyMinutes = days.map((day) => {
-      const daySessions = weekSessions.filter((s) => isSameDay(parseISO(s.startAt), day))
-      return daySessions.reduce((sum, s) => sum + s.durationMinutes, 0)
-    })
-    const dailyAcademicMinutes = days.map((day) => {
-      const daySessions = academicSessions.filter((s) => isSameDay(parseISO(s.startAt), day))
-      return daySessions.reduce((sum, s) => sum + s.durationMinutes, 0)
-    })
-    // Most productive day (academic only)
-    const maxDailyAcademic = Math.max(...dailyAcademicMinutes, 0)
-    const mostProductiveDayIdx = dailyAcademicMinutes.indexOf(maxDailyAcademic)
-    const mostProductiveDay = maxDailyAcademic > 0 ? DAY_NAMES[days[mostProductiveDayIdx]?.getDay() ?? 0] : null
-    // Time per subject
-    const subjectTime: Record<string, { minutes: number; sessions: number; scope: string }> = {}
-    weekSessions.forEach((s) => {
-      const subject = data.subjects.find((sub) => sub.id === s.subjectId)
-      const name = subject?.name ?? 'Unknown'
-      const scope = getSessionScope(s, data.subjects, data.categories) ?? 'unknown'
-      if (!subjectTime[name]) {
-        subjectTime[name] = { minutes: 0, sessions: 0, scope }
-      }
-      subjectTime[name].minutes += s.durationMinutes
-      subjectTime[name].sessions += 1
-    })
-    // Session types
-    const pomodoroSessions = weekSessions.filter((s) => s.source === 'pomodoro')
-    const timerSessions = weekSessions.filter((s) => s.source === 'timer')
-    const manualSessions = weekSessions.filter((s) => s.source === 'manual' || s.source === 'quickLog')
-    const pomodoroMinutes = pomodoroSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
-    const timerMinutes = timerSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
-    const manualMinutes = manualSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
-    // Longest session
-    const longestSession = weekSessions.reduce(
-      (max, s) => (s.durationMinutes > max ? s.durationMinutes : max),
-      0
-    )
-    // Days target met (academic only)
-    const daysTargetMet = dailyAcademicMinutes.filter((m) => m >= settings.dailyTargetMinutes).length
-    const autoRoutineSessions = weekSessions.filter((s) => s.source === 'autoRoutine').length
-    // Routine adherence: planned vs actual minutes across routines in range.
-    const routineAdherence: Record<string, { planned: number; actual: number }> = {}
-    for (const routine of data.routines.filter((r) => !r.deletedAt)) {
-      const planned = days.reduce((sum, day) => sum + (routine.dayMinutes[day.getDay() as DayOfWeek] ?? 0), 0)
-      if (planned <= 0) continue
-      const logs = data.routineLogs.filter((l) => l.routineId === routine.id && l.date >= format(dateRange.start, 'yyyy-MM-dd') && l.date <= format(dateRange.end, 'yyyy-MM-dd'))
-      const actual = logs.reduce((sum, l) => sum + (l.actualMinutes ?? 0), 0)
-      routineAdherence[routine.name] = { planned, actual }
-    }
-    // Streak as of the end of the range, using the same freeze logic as the
-    // dashboard (every 5 consecutive logged days earns one missed-day freeze).
-    // Build the set of days with study activity from ALL sessions (not just the
-    // filtered weekSessions) so the streak calculation isn't limited by the date range.
-    const daySet = new Set(data.sessions.filter(s => !s.deletedAt).map((s) => format(parseISO(s.startAt), 'yyyy-MM-dd')))
-    let currentStreak = 0
-    let consecutiveLogged = 0
-    let freezes = 0
-    let d = new Date(dateRange.end.getFullYear(), dateRange.end.getMonth(), dateRange.end.getDate())
-    // If the anchor day isn't logged (e.g. range ends today before logging),
-    // start from the day before so the streak doesn't immediately break.
-    if (!daySet.has(format(d, 'yyyy-MM-dd'))) {
-      d = subDays(d, 1)
-    }
-    while (true) {
-      const ds = format(d, 'yyyy-MM-dd')
-      if (daySet.has(ds)) {
-        currentStreak++
-        consecutiveLogged++
-        if (consecutiveLogged === 5) {
-          freezes++
-          consecutiveLogged = 0
-        }
-      } else if (freezes > 0) {
-        freezes--
-        consecutiveLogged = 0
-      } else {
-        break
-      }
-      d = subDays(d, 1)
-    }
-    return {
-      totalMinutes,
-      academicMinutes,
-      nonAcademicMinutes,
-      totalSessions,
-      academicSessions: academicSessions.length,
-      nonAcademicSessions: nonAcademicSessions.length,
-      avgSessionLength,
-      dailyMinutes,
-      dailyAcademicMinutes,
-      mostProductiveDay,
-      mostProductiveDayMinutes: maxDailyAcademic,
-      subjectTime,
-      pomodoroSessions: pomodoroSessions.length,
-      pomodoroMinutes,
-      timerSessions: timerSessions.length,
-      timerMinutes,
-      manualSessions: manualSessions.length,
-      manualMinutes,
-      longestSession,
-      daysTargetMet,
-      daysInRange: days.length,
-      currentStreak,
-      autoRoutineSessions,
-      routineAdherence,
-    }
-  }, [weekSessions, data.subjects, data.categories, data.routines, data.routineLogs, dateRange, settings.dailyTargetMinutes])
+  const stats = useMemo(
+    () =>
+      calculatePeriodStats({
+        weekSessions,
+        allSessions: data.sessions,
+        subjects: data.subjects,
+        categories: data.categories,
+        routines: data.routines,
+        routineLogs: data.routineLogs,
+        dateRange,
+        dailyTargetMinutes: settings.dailyTargetMinutes,
+      }),
+    [
+      weekSessions,
+      data.sessions,
+      data.subjects,
+      data.categories,
+      data.routines,
+      data.routineLogs,
+      dateRange,
+      settings.dailyTargetMinutes,
+    ]
+  )
 
   // Generate the AI prompt
   const aiPrompt = useMemo(() => {

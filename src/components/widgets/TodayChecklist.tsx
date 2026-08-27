@@ -78,7 +78,7 @@ export function TodayChecklist() {
             startAt: new Date(Date.now() - gap * 60_000).toISOString(),
             endAt: new Date().toISOString(),
             durationMinutes: gap,
-            source: 'autoRoutine',
+            source: 'activity',
             createdAt: isoNow(),
             updatedAt: isoNow(),
           }

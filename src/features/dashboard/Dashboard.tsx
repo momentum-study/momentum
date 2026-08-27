@@ -1797,7 +1797,7 @@ export default function Dashboard() {
                                       startAt: now,
                                       endAt: now,
                                       durationMinutes: dayMinutes,
-                                      source: 'autoRoutine',
+                                      source: 'activity',
                                       createdAt: now,
                                       updatedAt: now,
                                     }

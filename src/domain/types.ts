@@ -54,7 +54,7 @@ export interface Session {
   durationMinutes: number
   durationSeconds?: number
   note?: string
-  source: 'manual' | 'timer' | 'pomodoro' | 'quickLog' | 'autoRoutine'
+  source: 'manual' | 'timer' | 'pomodoro' | 'quickLog' | 'autoRoutine' | 'activity'
   createdAt: string
   updatedAt: string
   deletedAt?: string | null

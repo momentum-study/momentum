@@ -210,7 +210,7 @@ export default function ActivitiesPage() {
           startAt: new Date(new Date(logDate + 'T12:00:00').getTime() - minutes * 60000).toISOString(),
           endAt: new Date(new Date(logDate + 'T12:00:00')).toISOString(),
           durationMinutes: minutes,
-          source: 'quickLog',
+          source: 'activity',
           note: `Activity: ${activity.name}`,
           createdAt: now,
           updatedAt: now,

@@ -21,6 +21,11 @@ import { subDays } from 'date-fns'
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as const
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 const DEFAULT_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444']
+function autoAssignedColor(seed: string): string {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0
+  return DEFAULT_COLORS[Math.abs(hash) % DEFAULT_COLORS.length]
+}
 
 interface CatchUpItem {
   kind: 'routine' | 'activity'
@@ -168,7 +173,7 @@ export function SchedulePage() {
         startAt,
         endAt: end.toISOString(),
         durationMinutes: mins,
-        source: 'autoRoutine',
+        source: 'activity',
         createdAt: isoNow(),
         updatedAt: isoNow(),
       }
@@ -238,7 +243,7 @@ export function SchedulePage() {
       startAt,
       endAt: now.toISOString(),
       durationMinutes: mins,
-      source: 'autoRoutine',
+      source: 'activity',
       createdAt: isoNow(),
       updatedAt: isoNow(),
     }
@@ -1392,7 +1397,15 @@ function RoutineEditModal(props: {
             />
           </Field>
           <Field label="Color">
-            <ColorPicker value={color} onChange={setColor} />
+            <div className="flex items-center justify-between gap-2">
+              <ColorPicker value={color} onChange={setColor} />
+              <button
+                type="button"
+                className="text-xs text-primary-600 hover:underline dark:text-primary-400"
+                onClick={() => setColor(autoAssignedColor(color))}>
+                🎲 Auto-assign
+              </button>
+            </div>
           </Field>
           <Field label="Schedule (days & minutes)">
             <div className="grid grid-cols-7 gap-1">
@@ -1529,7 +1542,15 @@ function ActivityEditModal(props: {
             </div>
           </Field>
           <Field label="Color">
-            <ColorPicker value={color} onChange={setColor} />
+            <div className="flex items-center justify-between gap-2">
+              <ColorPicker value={color} onChange={setColor} />
+              <button
+                type="button"
+                className="text-xs text-primary-600 hover:underline dark:text-primary-400"
+                onClick={() => setColor(autoAssignedColor(color))}>
+                🎲 Auto-assign
+              </button>
+            </div>
           </Field>
           <Field label="Notes">
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputCls} />

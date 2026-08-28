@@ -80,7 +80,7 @@ For small, self-contained tasks (a single fix, a quick feature), you can skip fo
 
 ## 2. App Name
 
-**Momentum** — branded in the sidebar and `<title>`. Version constant: `VERSION` in `src/lib/version.ts` (currently `0.20.0`). Build id stamped on `window.__MOMENTUM_BUILD_ID__` in `main.tsx`.
+**Momentum** — branded in the sidebar and `<title>`. The user-facing semantic version is the `VERSION` constant in `src/lib/version.ts`, sourced from `package.json` at build time. Settings displays only `vMAJOR.MINOR.PATCH`; the internal build id remains available only for stale-service-worker protection.
 
 ---
 
@@ -668,6 +668,8 @@ cd momentum && npx vitest run                 # tests
   npm run deploy
   ```
 - **Default workflow:** after `npx tsc --noEmit`, `npx vitest run`, and `npm run build` all pass, commit the changes, push to `org/main`, then run `npm run deploy`. Do not stop after a green build — the live site is the deliverable.
+
+- **Semantic versioning is mandatory for app releases:** `MAJOR.MINOR.PATCH` follows SemVer. Increment `PATCH` for bug fixes and small non-breaking corrections, `MINOR` for backward-compatible features or meaningful UX improvements, and `MAJOR` for breaking changes or a substantial new product generation. The app version in `package.json` and `src/lib/version.ts` MUST stay synchronized; Settings MUST display the semantic version without the internal build timestamp. Every release MUST bump the app version according to this rule, and every substantive change MUST be pushed to `org/main` and deployed to the live URL before being reported complete.
 - If README/comments mention `leightonmascord.github.io/momentum`, that is stale — correct to `momentum-study.github.io/momentum`.
 
 ---
@@ -787,3 +789,5 @@ Every instance MUST document significant logic pitfalls and durable user decisio
 **SPEC_VERSION: 38** — 2026-08-26 Three changes: (1) Current Session group now shows a "Expiring in Xm" countdown when idle within the 5-minute merge window; when the countdown reaches 0 the group is cleared. (2) Routines configured with "Any subject" (`ANY_SUBJECT_ID`) are now visible in the timer's routine dropdown alongside subject-specific routines, and auto-selected when the selected subject has no matching routines of its own. This makes any-subject routines visible and optional — the user can pick "No routine" to skip. (3) Fixed routine double-counting: when a session has an explicit `routineId`, `updateRoutineLogsForSession` logs only toward that routine instead of also auto-matching any-subject routines. (4) Streak heatmap legend shows concrete time thresholds (`nearThreshold = 75% of daily goal`) and `formatted` labels instead of percentage-based ranges.
 
 **SPEC_VERSION: 39** — 2026-08-28 UX batch: (1) Dashboard "This Week" relabeled "Last 7 Days" with the actual date range shown (it is a rolling 7-day window, not a calendar week). (2) Calendar/Tasks month navigation buttons moved inline next to the month label (← Prev · Month · Today · Next →) and the duplicate month title removed from the cards. (3) Dashboard "Customize" hamburger icon replaced with a labeled `Customize` button using a layout-grid icon (distinct from the sidebar hamburger). (4) AI Review Copy / Open in ChatGPT / Share buttons moved into a sticky bottom bar so they are always visible without scrolling. (5) All `<input type="checkbox">` instances across the app replaced with a shared `Checkbox` component (`src/components/ui/Checkbox.tsx`) that renders rounded, dark-mode-aware, checked-state-styled boxes instead of plain white squares. (6) Routine/Activity row reorder controls restyled from stacked `▲`/`▼` text triangles to horizontal chevron icon buttons in a bordered group. (7) Timer no longer auto-selects any-subject routines — the dropdown lists them but defaults to "No routine" so the user opts in.
+
+**SPEC_VERSION: 40** — 2026-08-28 established user-facing semantic versioning: app version is `0.22.0` for the current UX feature batch; PATCH is for bug fixes, MINOR for backward-compatible features/meaningful UX improvements, MAJOR for breaking/substantial product changes. Settings displays only `vMAJOR.MINOR.PATCH`; the internal build id is not user-facing. Every substantive change must bump the app version, push `org/main`, deploy, and report the displayed version.

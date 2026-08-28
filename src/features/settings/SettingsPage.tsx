@@ -746,7 +746,7 @@ export default function SettingsPage() {
             <div className="divide-y divide-slate-100 dark:divide-slate-700">
               <SettingsField label="Version">
                 <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
-                  v{VERSION} · {(window as Window & { __MOMENTUM_BUILD_ID__?: string }).__MOMENTUM_BUILD_ID__ ?? 'dev'}
+                  v{VERSION}
                 </span>
               </SettingsField>
               <SettingsField label="Check for updates">

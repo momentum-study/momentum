@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Checkbox } from '../../components/ui/Checkbox'
 import type { ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '../../lib/utils'
@@ -668,11 +669,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
                       {item.label}
                     </span>
                     <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={!isHidden}
                         onChange={() => toggleHidden(to)}
-                        className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                       />
                       Show
                     </label>

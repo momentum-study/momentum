@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { Checkbox } from '../../components/ui/Checkbox'
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, parseISO } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
@@ -976,11 +977,9 @@ export default function HabitsPage() {
           </div>
           {!editHabit && (
             <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={parkForLater}
                 onChange={(e) => setParkForLater(e.target.checked)}
-                className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
               />
               Park this for later (won't count toward your habit limit)
             </label>

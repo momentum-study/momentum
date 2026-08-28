@@ -13,6 +13,7 @@ import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { NumberInput } from '../../components/ui/NumberInput'
+import { Checkbox } from '../../components/ui/Checkbox'
 import { Modal } from '../../components/ui/Modal'
 import { HoverCard } from '../../components/ui/HoverCard'
 import { ContextMenu, type ContextMenuItem } from '../../components/ui/ContextMenu'
@@ -102,11 +103,9 @@ function formatLastSessionText(lastSession: { endAt: string } | null): string {
       >
         <span className="block text-base leading-none">⠿</span>
       </button>
-      <input
-        type="checkbox"
+      <Checkbox
         checked={visible}
         onChange={onToggle}
-        className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
         aria-label={visible ? `Hide ${label}` : `Show ${label}`}
       />
       <span className={cn('flex-1 text-sm min-w-[8rem]', !visible && 'text-slate-400 dark:text-slate-500')}>{label}</span>
@@ -211,11 +210,10 @@ function SessionRow({
         {...swipe}
       >
         {selectionMode && (
-          <input
-            type="checkbox"
+          <Checkbox
             checked={selected}
             onChange={() => onToggleSelect(session.id)}
-            className="h-5 w-5 shrink-0 cursor-pointer rounded-sm border-slate-300 accent-primary-600"
+            className="shrink-0"
             aria-label={`Select session ${session.subjectName}`}
           />
         )}
@@ -1116,15 +1114,23 @@ export default function Dashboard() {
                 </div>
               </div>
               <div>
-                <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">This Week</div>
+                <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Last 7 Days</div>
                 <div className="mt-0.5 text-2xl font-bold text-slate-800 dark:text-slate-100">
                   {(() => {
-                    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7)
+                    const now = new Date()
+                    const weekAgo = subDays(now, 6)
                     const weekAgoStr = format(weekAgo, 'yyyy-MM-dd')
                     const weekMins = academicSessions
                       .filter((s) => s.startAt >= weekAgoStr + 'T00:00:00')
                       .reduce((sum, s) => sum + s.durationMinutes, 0)
                     return formatMinutes(weekMins)
+                  })()}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                  {(() => {
+                    const now = new Date()
+                    const weekAgo = subDays(now, 6)
+                    return `${format(weekAgo, 'MMM d')} – ${format(now, 'MMM d')}`
                   })()}
                 </div>
               </div>
@@ -1219,6 +1225,11 @@ export default function Dashboard() {
         const targetMinutes = Math.max(1, settings.dailyTargetMinutes)
         const nextMilestone = STREAK_MILESTONES.find(m => m > streak) ?? streak
         const progressPercent = Math.min(100, Math.round((streak / nextMilestone) * 100))
+        // Concrete time thresholds derived from the daily goal. The existing
+        // four shades remain: no study, started, near goal, and goal met.
+        // For a 120-minute goal the legend reads 0 / 1-89 / 90-119 / 120+.
+        const nearThreshold = Math.max(2, Math.round(targetMinutes * 3 / 4))
+        const metThreshold = targetMinutes
         return (
           <div className="space-y-3">
             <div className="flex items-end justify-between gap-3">
@@ -1300,11 +1311,10 @@ export default function Dashboard() {
                 <div className="grid grid-cols-7 gap-px rounded-sm border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 p-px">
                   {(() => {
                     const HEATMAP_DAYS = 60
-                    const targetMinutes = Math.max(1, settings.dailyTargetMinutes)
                     function getHeatCategory(minutes: number): 'none' | 'started' | 'near' | 'met' {
                       if (minutes <= 0) return 'none'
-                      if (minutes >= targetMinutes) return 'met'
-                      if (minutes >= targetMinutes * 0.75) return 'near'
+                      if (minutes >= metThreshold) return 'met'
+                      if (minutes >= nearThreshold) return 'near'
                       return 'started'
                     }
                     const heatDays = Array.from({ length: HEATMAP_DAYS }, (_, i) => {
@@ -1353,15 +1363,15 @@ export default function Dashboard() {
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="h-3 w-3 rounded-sm border border-amber-200 bg-amber-200 dark:border-amber-800 dark:bg-amber-900/50" />
-                1–{Math.max(1, Math.round(targetMinutes * 0.74))} min
+                {formatMinutes(1)}–{formatMinutes(nearThreshold - 1)} min
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="h-3 w-3 rounded-sm border border-orange-400 bg-orange-500" />
-                {Math.max(2, Math.round(targetMinutes * 0.75))}–{Math.max(2, targetMinutes - 1)} min
+                {formatMinutes(nearThreshold)}–{formatMinutes(metThreshold - 1)} min
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="h-3 w-3 rounded-sm border border-green-600 bg-green-700 dark:border-green-400 dark:bg-green-500" />
-                {targetMinutes}+ min
+                {formatMinutes(metThreshold)}+ min
               </span>
             </div>
             <div className="text-xs text-slate-500">Streak milestones:</div>
@@ -1952,6 +1962,22 @@ export default function Dashboard() {
 
   return (
     <div data-tour="dashboard" className="space-y-6 overflow-x-hidden">
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          data-tour="customise-btn"
+          aria-label="Customise dashboard"
+          title="Customise dashboard"
+          className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 hover:border-slate-400 dark:hover:bg-slate-700 dark:hover:border-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          onClick={() => setCustomizeOpen(true)}
+        >
+          {/* Layout grid icon — distinct from sidebar's hamburger */}
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h6v6H4zM14 5h6v6h-6zM4 13h6v6H4zM14 13h6v6h-6z" />
+          </svg>
+          <span>Customize</span>
+        </button>
+      </div>
       {/* Dashboard grid with widgets */}
       {showActivityConfirmation && (
         <ActivityConfirmationCard onDismiss={() => setShowActivityConfirmation(false)} />

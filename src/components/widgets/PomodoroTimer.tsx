@@ -12,7 +12,7 @@ import type { Settings } from '../../lib/settings-store'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
 import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor, splitSessionAtMidnight, setLastNote, getLastNote } from '../../lib/timer-persistence'
-import { loadGroup as loadCurrentSessionGroup, saveGroup as saveCurrentSessionGroup, isGroupFresh as isCurrentSessionFresh, finalizedSeconds, bumpLastSegment, pushSegment, type CurrentSessionGroup } from '../../lib/current-session'
+import { loadGroup as loadCurrentSessionGroup, saveGroup as saveCurrentSessionGroup, isGroupFresh as isCurrentSessionFresh, finalizedSeconds, bumpLastSegment, pushSegment, GROUP_GAP_MS, type CurrentSessionGroup } from '../../lib/current-session'
 import { FocusTagSelector, type FocusTag } from '../ui/FocusTagSelector'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
 import { groupService } from '../../lib/group-service'
@@ -20,6 +20,7 @@ import { pushSettings } from '../../lib/settings-sync'
 import { sendNotification, requestNotificationPermission } from '../../lib/notification-service'
 import { useTimerTabLock } from '../../lib/use-timer-tab-lock'
 import { clearStreakPreviewDates, setTodayPreview } from '../../lib/streak-preview'
+import { ANY_SUBJECT_ID } from '../../lib/subject-mode'
 type Mode = 'pomodoro' | 'simple'
 const LAST_SUBJECT_KEY = 'momentum-last-subject'
 const LAST_PROJECT_KEY = 'momentum-last-project'
@@ -297,6 +298,39 @@ export function PomodoroTimer() {
       return next
     })
   }
+  // Countdown (seconds) until the current session group expires (5-min gap).
+  // Only active when the group exists, is NOT actively running, and is still
+  // within the merge window. When it reaches 0 the group is cleared.
+  const [groupCountdown, setGroupCountdown] = useState<number | null>(null)
+  const groupCountdownRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!sessionGroup || sessionGroup.active || !isCurrentSessionFresh(sessionGroup)) {
+      setGroupCountdown(null)
+      groupCountdownRef.current = null
+      return
+    }
+    const remaining = Math.max(0, Math.ceil((GROUP_GAP_MS - (Date.now() - sessionGroup.lastEndAt)) / 1000))
+    setGroupCountdown(remaining)
+    groupCountdownRef.current = remaining
+    if (remaining <= 0) {
+      updateSessionGroup(() => null)
+      return
+    }
+    const id = window.setInterval(() => {
+      const next = (groupCountdownRef.current ?? 0) - 1
+      if (next <= 0) {
+        clearInterval(id)
+        setGroupCountdown(null)
+        groupCountdownRef.current = null
+        updateSessionGroup(() => null)
+      } else {
+        setGroupCountdown(next)
+        groupCountdownRef.current = next
+      }
+    }, 1000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionGroup?.active, sessionGroup?.lastEndAt])
   /** Subject id the active timer run maps to (accounting for project override). */
   function currentEffectiveSubject(): string {
     return projectId
@@ -313,37 +347,38 @@ export function PomodoroTimer() {
   const selectedParentId = selectedParentSubject?.id ?? ''
   const availableProjects = data.projects.filter((p) => p.subjectId === subjectId && !p.deletedAt)
   const availableTasks = data.assignments.filter((a) => a.projectId === projectId && !a.completed && !a.deletedAt)
-  // Routines scheduled for today that match the selected subject (or any subject
-  // when none is selected). Lets the user log timer time toward a routine.
+  // Routines scheduled for today. Shows both subject-specific routines AND
+  // any-subject routines (wildcard). Any-subject routines are NOT auto-selected
+  // — the dropdown has "No routine" as the default and the user opts in.
   const todayDow = new Date().getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6
   const todayStr = format(new Date(), 'yyyy-MM-dd')
   const availableRoutines = data.routines.filter((r) => {
     if (r.deletedAt) return false
     if (!(r.dayMinutes[todayDow] ?? 0)) return false
-    // Block routines already finished for today — no need to keep studying
-    // toward a completed target.
     const doneToday = data.routineLogs.some((l) => l.routineId === r.id && l.date === todayStr && l.completed)
     if (doneToday) return false
-    if (subjectId && r.subjectId !== subjectId) return false
-    return true
+    if (!subjectId) return true
+    // Include both subject-specific and any-subject routines
+    return r.subjectId === subjectId || r.subjectId === ANY_SUBJECT_ID
   }).sort((a, b) => a.name.localeCompare(b.name))
-  // Auto-select routine if exactly one is scheduled today for the selected
-  // subject, but never override a routine the user has already picked or
-  // cleared. Only when a subject is actually selected.
+  // Auto-select routine: prefer subject-specific routines, fall back to
+  // any-subject routines when the subject has none of its own. Never override
+  // a routine the user has already picked or cleared.
   useEffect(() => {
     if (!subjectId) return
-    const matching = data.routines.filter((r) => {
+    const subjectRoutines = data.routines.filter((r) => {
       if (r.deletedAt) return false
       if (!(r.dayMinutes[todayDow] ?? 0)) return false
-      // Skip routines already completed today.
       const doneToday = data.routineLogs.some((l) => l.routineId === r.id && l.date === todayStr && l.completed)
       if (doneToday) return false
-      if (r.subjectId !== subjectId) return false
-      return true
+      return r.subjectId === subjectId
     })
-    if (matching.length === 1 && !timerRoutineId) {
-      setTimerRoutineId(matching[0].id)
+    if (subjectRoutines.length === 1 && !timerRoutineId) {
+      setTimerRoutineId(subjectRoutines[0].id)
+      return
     }
+    // Any-subject routines remain optional: the dropdown always includes
+    // "No routine" so the user can explicitly choose whether to use one.
   }, [subjectId, data.routines, data.routineLogs, todayDow, todayStr])
   // Clear session group if it ended more than 5 minutes ago (group is stale).
   useEffect(() => {
@@ -1469,6 +1504,7 @@ export function PomodoroTimer() {
         <div className="mb-3 text-center text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
           {cycleLabel}
         </div>
+
       )}
       {/* Break indicator */}
       {mode === 'pomodoro' && settings.pomodoroEnabled && (pomPhase === 'shortBreak' || pomPhase === 'longBreak') && (
@@ -1502,7 +1538,12 @@ export function PomodoroTimer() {
           across consecutive runs and subject changes. */}
       {isGroupVisible && (
         <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center dark:border-slate-700 dark:bg-slate-800/60">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current Session</div>
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current Session</div>
+            {groupCountdown !== null && (
+              <div className="text-[10px] font-medium text-slate-400 tabular-nums">Expiring in {fmt(groupCountdown)}</div>
+            )}
+          </div>
           <div className="text-xl font-bold tabular-nums text-slate-800 dark:text-slate-100">{fmt(groupLiveSeconds)}</div>
           {groupDistinctNames.length > 1 && (
             <div className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">

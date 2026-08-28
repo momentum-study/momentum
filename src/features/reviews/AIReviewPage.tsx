@@ -378,25 +378,28 @@ export default function AIReviewPage() {
             'focus:outline-none focus:ring-2 focus:ring-primary-500'
           )}
         />
-        <div className="mt-4 flex flex-wrap items-center gap-4">
-          <Button variant="primary" onClick={handleCopy}>
-            {copied ? '✓ Copied!' : 'Copy to Clipboard'}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => window.open(`https://chatgpt.com/?q=${encodeURIComponent(aiPrompt)}`, '_blank', 'noopener,noreferrer')}
-          >
-            Open in ChatGPT
-          </Button>
-          {typeof navigator !== 'undefined' && 'share' in navigator && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 p-4 shadow-lg backdrop-blur-sm dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-700">
+          <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-4">
+            <Button variant="primary" onClick={handleCopy}>
+              {copied ? '✓ Copied!' : 'Copy to Clipboard'}
+            </Button>
             <Button
               variant="secondary"
-              onClick={() => navigator.share({ title: 'Study Review', text: aiPrompt }).catch(() => {})}
+              onClick={() => window.open(`https://chatgpt.com/?q=${encodeURIComponent(aiPrompt)}`, '_blank', 'noopener,noreferrer')}
             >
-              Share
+              Open in ChatGPT
             </Button>
-          )}
+            {typeof navigator !== 'undefined' && 'share' in navigator && (
+              <Button
+                variant="secondary"
+                onClick={() => navigator.share({ title: 'Study Review', text: aiPrompt }).catch(() => {})}
+              >
+                Share
+              </Button>
+            )}
+          </div>
         </div>
+        <div className="h-20" /> {/* Spacer */}
       </Card>
     </div>
   )

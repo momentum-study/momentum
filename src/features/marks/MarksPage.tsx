@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
+import { Checkbox } from '../../components/ui/Checkbox'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
@@ -305,8 +306,7 @@ export default function MarksPage() {
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-700 text-left text-slate-500 dark:text-slate-400">
                 <th className="pb-2 pr-2 w-8">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     aria-label="Select all visible"
                     checked={visibleMarks.length > 0 && visibleMarks.every((m) => selectedMarkIds.has(m.id))}
                     onChange={(e) => {

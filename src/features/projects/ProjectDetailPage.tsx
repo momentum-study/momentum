@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Checkbox } from '../../components/ui/Checkbox'
 import { useParams, Link } from 'react-router-dom'
 import { format, parseISO, startOfWeek, endOfWeek } from 'date-fns'
 import { v4 as uuid } from 'uuid'
@@ -289,7 +290,7 @@ export default function ProjectDetailPage() {
           openTasks.map((t, idx) => (
           <div key={t.id} className="flex items-center justify-between border-b border-slate-100 py-2 dark:border-slate-700">
             <div className="flex items-center gap-2">
-              <input type="checkbox" checked={false} onChange={() => toggleTask(t)} className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer" />
+              <Checkbox checked={false} onChange={() => toggleTask(t)} />
               <span className="text-sm text-slate-800 dark:text-slate-100">{t.title}</span>
               <span className="text-xs text-slate-400">{t.dueDate ? format(parseISO(t.dueDate), 'd MMM') : 'No due date'}</span>
               <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
@@ -314,7 +315,7 @@ export default function ProjectDetailPage() {
             {doneTasks.map((t) => (
               <div key={t.id} className="flex items-center justify-between border-b border-slate-100 py-1.5 dark:border-slate-700">
                 <div className="flex items-center gap-2">
-                  <input type="checkbox" checked={true} onChange={() => toggleTask(t)} className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer" />
+                  <Checkbox checked={true} onChange={() => toggleTask(t)} />
                   <span className="text-sm text-slate-500 line-through">{t.title}</span>
                 </div>
                 <div className="flex gap-1">

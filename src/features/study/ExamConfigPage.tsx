@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Checkbox } from '../../components/ui/Checkbox'
 import { parseISO } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
@@ -131,11 +132,9 @@ export default function ExamConfigPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={selectedIds.has(area.id)}
                           onChange={() => toggleSelect(area.id)}
-                          className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                         />
                         <span className="font-medium">{area.name}</span>
                         <span className="text-xs text-slate-500">
@@ -189,11 +188,9 @@ export default function ExamConfigPage() {
               <Card key={area.id} className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selectedIds.has(area.id)}
                       onChange={() => toggleSelect(area.id)}
-                      className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                     />
                     <span className="font-medium">{area.name}</span>
                     <span className="text-xs text-slate-500">

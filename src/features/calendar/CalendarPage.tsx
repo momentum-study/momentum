@@ -6,6 +6,7 @@ import { cn, gradeColor, isoNow, pctToGrade, sessionLocalDate, softDelete } from
 import { filterActive } from '../../lib/filterActive'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
+import { Checkbox } from '../../components/ui/Checkbox'
 import { Select } from '../../components/ui/Select'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -400,16 +401,24 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
   return (
     <>
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Tasks</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Button onClick={prevMonth} size="sm" variant="secondary">‹</Button>
-          <Button onClick={goToday} size="sm" variant="secondary">Today</Button>
-          <Button onClick={nextMonth} size="sm" variant="secondary">›</Button>
+          <Button onClick={prevMonth} size="sm" variant="secondary" aria-label="Previous month" title="Previous month">
+            <span aria-hidden="true">←</span>
+            <span className="sr-only">Previous month</span>
+          </Button>
+          <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">{format(viewDate, 'MMMM yyyy')}</h2>
+          <Button onClick={goToday} size="sm" variant="secondary" title="Jump to current month">Today</Button>
+          <Button onClick={nextMonth} size="sm" variant="secondary" aria-label="Next month" title="Next month">
+            <span aria-hidden="true">→</span>
+            <span className="sr-only">Next month</span>
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-500 dark:text-slate-400">Tasks</span>
           <Button onClick={openAddModal} size="sm">Add Task</Button>
         </div>
       </div>
-
       {/* Category filter */}
       <div className="flex flex-wrap gap-2">
         <button
@@ -443,9 +452,6 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
       {/* Monthly calendar — list view on mobile, grid on desktop */}
       {isMobile ? (
         <Card>
-          <CardHeader>
-            <CardTitle>{format(monthStart, 'MMMM yyyy')}</CardTitle>
-          </CardHeader>
           {monthDays.every((d) => (tasksByDate.get(format(d, 'yyyy-MM-dd')) ?? []).length === 0 && (projectsByDate.get(format(d, 'yyyy-MM-dd')) ?? []).length === 0) ? (
             <EmptyState title="No tasks this month" description="Your calendar is clear." />
           ) : (
@@ -469,11 +475,9 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                       <ul className="space-y-1.5">
                         {items.map((it) => (
                           <li key={it.id} className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={it.completed}
                               onChange={() => void quickCompleteTask(it)}
-                              className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                             />
                             <button
                               onClick={() => openEditModal(it)}
@@ -511,10 +515,7 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
         </Card>
       ) : (
       <Card>
-        <CardHeader>
-          <CardTitle>{format(monthStart, 'MMMM yyyy')}</CardTitle>
-        </CardHeader>
-
+        {/* Month title moved to top toolbar — see header above */}
         <div className="grid grid-cols-7 gap-1 text-sm">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
             <div key={d} className="py-1 text-center font-medium text-slate-600 dark:text-slate-300">{d}</div>
@@ -553,11 +554,9 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                       <div className="flex flex-wrap items-center gap-1">
                         {items.slice(0, 4).map((it) => (
                           <div key={it.id} className="flex items-center gap-1">
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={it.completed}
                               onChange={() => void quickCompleteTask(it)}
-                              className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                             />
                             <button
                               onClick={() => openEditModal(it)}
@@ -623,11 +622,9 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
               return (
                 <li key={a.id} className="flex items-center justify-between gap-4 py-3 px-4">
                   <div className="flex items-start gap-3">
-                    <input
-                    type="checkbox"
+                    <Checkbox
                       checked={a.completed}
                       onChange={() => void quickCompleteTask(a)}
-                      className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                     />
                     <div>
                       <div className="font-medium text-slate-800 dark:text-slate-100">{a.title}</div>
@@ -682,11 +679,9 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
               return (
                 <li key={a.id} className="flex items-center justify-between gap-4 py-3">
                   <div className="flex items-start gap-3">
-                    <input
-                    type="checkbox"
+                    <Checkbox
                       checked={a.completed}
                       onChange={() => void quickCompleteTask(a)}
-                      className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                     />
                     <div>
                       <div className={cn('font-medium', a.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-100')}>
@@ -764,11 +759,9 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
                 return (
                   <li key={a.id} className="flex items-center justify-between gap-4 py-3">
                     <div className="flex items-start gap-3">
-                      <input
-                      type="checkbox"
+                      <Checkbox
                         checked={true}
                         onChange={() => void quickCompleteTask(a)}
-                        className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                       />
                       <div>
                         <div className="font-medium text-slate-400 line-through dark:text-slate-500">

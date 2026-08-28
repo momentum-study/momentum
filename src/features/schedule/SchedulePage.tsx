@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ColorPicker } from '../../components/ui/ColorPicker'
 import { Select } from '../../components/ui/Select'
+import { Checkbox } from '../../components/ui/Checkbox'
 import { Collapsible } from '../../components/ui/Collapsible'
 import { cn, isoNow, softDelete } from '../../lib/utils'
 import { v4 as uuid } from 'uuid'
@@ -1078,11 +1079,9 @@ function WeeklyPlanGrid(props: {
   return (
     <div className="space-y-2">
       <label className="flex cursor-pointer items-center justify-end gap-2 text-xs text-slate-600 dark:text-slate-300">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={hideUnused}
           onChange={(e) => setHideUnused(e.target.checked)}
-          className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
         />
         Hide unused
       </label>
@@ -1170,23 +1169,31 @@ function RoutineGridRow(props: {
             <span className="truncate">{routine.name}</span>
           </div>
         </button>
-        <div className="flex flex-col shrink-0">
+        <div className="flex shrink-0 items-center gap-0.5 rounded border border-slate-200 bg-white px-0.5 py-0.5 dark:border-slate-700 dark:bg-slate-800">
           <button
             type="button"
             disabled={isFirst}
             onClick={() => onMove(routine.id, -1)}
-            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed dark:hover:bg-slate-700 dark:hover:text-slate-200"
             title="Move up"
             aria-label={`Move ${routine.name} up`}
-          >▲</button>
+          >
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
           <button
             type="button"
             disabled={isLast}
             onClick={() => onMove(routine.id, 1)}
-            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed dark:hover:bg-slate-700 dark:hover:text-slate-200"
             title="Move down"
             aria-label={`Move ${routine.name} down`}
-          >▼</button>
+          >
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
         </div>
       </div>
       {visibleDays.map((dow) => {
@@ -1247,23 +1254,31 @@ function ActivityGridRow(props: {
             <span className="truncate">{activity.name}{activity.scheduledTime ? ` (${formatTime12h(activity.scheduledTime)})` : ''}</span>
           </div>
         </button>
-        <div className="flex flex-col shrink-0">
+        <div className="flex shrink-0 items-center gap-0.5 rounded border border-slate-200 bg-white px-0.5 py-0.5 dark:border-slate-700 dark:bg-slate-800">
           <button
             type="button"
             disabled={isFirst}
             onClick={() => onMove(activity.id, -1)}
-            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed dark:hover:bg-slate-700 dark:hover:text-slate-200"
             title="Move up"
             aria-label={`Move ${activity.name} up`}
-          >▲</button>
+          >
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
           <button
             type="button"
             disabled={isLast}
             onClick={() => onMove(activity.id, 1)}
-            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed dark:hover:bg-slate-700 dark:hover:text-slate-200"
             title="Move down"
             aria-label={`Move ${activity.name} down`}
-          >▼</button>
+          >
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
         </div>
       </div>
       {visibleDays.map((dow) => {

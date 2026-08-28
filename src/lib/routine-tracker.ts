@@ -34,17 +34,12 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
     await db.sessions.update(session.id, { routineId: autoMatch[0].id, updatedAt: isoNow() })
   }
 
-  // If the session explicitly picked a routine (e.g. via the study timer),
-  // add it to the set to log toward — even if its schedule doesn't include
-  // today. The user chose it deliberately.
-  const explicit = session.routineId
+  // When the session explicitly picked a routine (e.g. via the study timer
+  // dropdown), log ONLY toward that one. This prevents double-counting when
+  // auto-match (including any-subject routines) would also match the session.
+  const toLog = session.routineId
     ? allRoutines.filter((r) => r.id === session.routineId && !r.deletedAt)
-    : []
-  const toLog = [...autoMatch]
-  for (const r of explicit) {
-    if (!toLog.some((x) => x.id === r.id)) toLog.push(r)
-  }
-  if (toLog.length === 0) return
+    : autoMatch
 
   const logs = await db.routineLogs.toArray()
   for (const routine of toLog) {

@@ -404,13 +404,17 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button onClick={prevMonth} size="sm" variant="secondary" aria-label="Previous month" title="Previous month">
-            <span aria-hidden="true">←</span>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
             <span className="sr-only">Previous month</span>
           </Button>
           <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">{format(viewDate, 'MMMM yyyy')}</h2>
           <Button onClick={goToday} size="sm" variant="secondary" title="Jump to current month">Today</Button>
           <Button onClick={nextMonth} size="sm" variant="secondary" aria-label="Next month" title="Next month">
-            <span aria-hidden="true">→</span>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
             <span className="sr-only">Next month</span>
           </Button>
         </div>

@@ -17,6 +17,7 @@ export type Settings = {
   maxActiveHabits: number
   defaultArchiveDays: number
   weekStartsOn: 0 | 1 // 0 = Sun, 1 = Mon
+  dashboardWeekMode: 'rolling' | 'calendar' // rolling 7 days vs calendar week
   settingsUpdatedAt: string
   devMode?: boolean
 }
@@ -36,6 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   maxActiveHabits: 3,
   defaultArchiveDays: 66,
   weekStartsOn: 1,
+  dashboardWeekMode: 'rolling',
   settingsUpdatedAt: '',
 }
 

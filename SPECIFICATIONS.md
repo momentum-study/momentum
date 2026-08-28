@@ -194,6 +194,8 @@ type Settings = {
   soundEnabled: boolean                // default: true
   maxActiveHabits: number              // default: 3
   defaultArchiveDays: number           // default: 66
+  weekStartsOn: 0 | 1                  // default: 1 (Mon); 0 = Sun
+  dashboardWeekMode: 'rolling' | 'calendar' // default: 'rolling'; rolling = last 7 days, calendar = current week aligned to weekStartsOn
   settingsUpdatedAt: string            // ISO, set on save
   devMode?: boolean                    // optional preview banner
 }
@@ -280,6 +282,7 @@ AI-powered study review and feedback. Includes "Last 7 Days" sliding window date
 - **Skip link**: keyboard-accessible skip-to-content link in AppLayout.
 - **Backdrop layers**: modals use `backdrop-blur-sm` + layered depth.
 - **Shortcut display**: source registry uses `Cmd+...` canonically; renderer adapts per platform (`formatShortcutLabel` → `Ctrl` on Windows). Registry stays canonical.
+- **Australian English is mandatory for all user-facing copy**: use "Customise" (not "Customize"), "Colour" (not "Color"), "organisation", "recognise", etc. CSS property names (`color`, `background-color`) and internal identifiers stay as-is — only visible UI text is affected. New UI text MUST be written in Australian English.
 
 ---
 

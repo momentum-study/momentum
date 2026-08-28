@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { TodaysRoutinesList } from '../../components/widgets/TodaysRoutinesList'
 import { TodayChecklist } from '../../components/widgets/TodayChecklist'
 import { ActivityConfirmationCard } from '../../components/widgets/ActivityConfirmationCard'
 import { SubjectBreakdown } from '../../components/widgets/SubjectBreakdown'
 import { formatTotalToday, getLiveTimerSeconds, getLiveTimerSubjectId, getTotalTodayMinutes, isTimerActive } from '../../lib/timer-utils'
-import { addMonths, format, subDays, subMonths } from 'date-fns'
+import { addMonths, format, startOfWeek, subDays, subMonths } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { PomodoroTimer } from '../../components/widgets/PomodoroTimer'
 import { useData } from '../../app/providers'
@@ -16,7 +15,7 @@ import { NumberInput } from '../../components/ui/NumberInput'
 import { Checkbox } from '../../components/ui/Checkbox'
 import { Modal } from '../../components/ui/Modal'
 import { HoverCard } from '../../components/ui/HoverCard'
-import { ContextMenu, type ContextMenuItem } from '../../components/ui/ContextMenu'
+import { ContextMenu } from '../../components/ui/ContextMenu'
 import { Collapsible } from '../../components/ui/Collapsible'
 import { sendNotification, requestNotificationPermission } from '../../lib/notification-service'
 import { useSwipe } from '../../lib/use-swipe'
@@ -29,7 +28,7 @@ import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakD
 import { sessionIdFor } from '../../lib/timer-persistence'
 import { getDueCount } from '../../lib/fsrs-scheduler'
 import { useSessionSync } from '../../lib/use-session-sync'
-import type { Session, DayOfWeek, RoutineLog, Routine, Activity, ActivityLog, Project } from '../../domain/types'
+import type { Session, DayOfWeek, Activity, ActivityLog, Project } from '../../domain/types'
 import { Link, useNavigate } from 'react-router-dom'
 import { DashboardWidget } from '../../components/widgets/DashboardWidget'
 import { useDashboardWidgets, DASHBOARD_WIDGETS_METADATA, DEFAULT_CONFIGS, DEFAULT_WIDGET_IDS } from '../../lib/use-dashboard-widgets'
@@ -886,95 +885,6 @@ export default function Dashboard() {
       sessions: prev.sessions.map(s => selectedSessionIds.has(s.id) ? { ...s, subjectId: batchSubjectId, updatedAt: isoNow() } : s),
     }))
   }
-  const routineContextActions = (routine: Routine): ContextMenuItem[] => {
-    const todayDow = new Date().getDay() as DayOfWeek
-    const mins = routine.dayMinutes[todayDow] ?? 0
-    const existingLog = data.routineLogs.find(l => l.routineId === routine.id && l.date === todayStr)
-    const items: ContextMenuItem[] = []
-    if (mins > 0 && !existingLog?.completed) {
-      items.push({
-        label: 'Mark done',
-        action: () => {
-          const now = new Date()
-          const startAt = new Date(now.getTime() - mins * 60_000).toISOString()
-          const session: Session = {
-            id: sessionIdFor(startAt, routine.subjectId, mins),
-            subjectId: routine.subjectId,
-            projectId: routine.projectId ?? null,
-            routineId: routine.id,
-            startAt,
-            endAt: now.toISOString(),
-            durationMinutes: mins,
-            source: 'autoRoutine',
-            createdAt: isoNow(),
-            updatedAt: isoNow(),
-          }
-          const logId = existingLog?.id ?? uuid()
-          const log: RoutineLog = {
-            id: logId,
-            routineId: routine.id,
-            date: todayStr,
-            actualMinutes: mins,
-            completed: true,
-            createdAt: existingLog?.createdAt ?? isoNow(),
-          }
-          mutate(prev => ({
-            ...prev,
-            sessions: [...prev.sessions, session],
-            routineLogs: existingLog
-              ? prev.routineLogs.map(l => l.id === logId ? log : l)
-              : [...prev.routineLogs, log],
-          }))
-          void db.sessions.put(session).catch(err => console.error('Failed to save session:', err))
-          void db.routineLogs.put(log).catch(err => console.error('Failed to save routine log:', err))
-          const subjectName = data.subjects.find(s => s.id === routine.subjectId)?.name ?? 'Unknown'
-          syncSession(session, subjectName)
-          void updateRoutineLogsForSession(session).catch(err => console.error('Failed to update routine logs:', err))
-          void updateStreakDayForSession(session).catch(err => console.error('Failed to update streak:', err))
-          push({
-            description: `Logged ${mins}m for ${routine.name}`,
-            undo: async () => {
-              await softDelete(db.sessions, session.id)
-              if (!existingLog) await db.routineLogs.delete(logId)
-              await loadData()
-            },
-            redo: async () => {
-              await db.sessions.put(session)
-              await db.routineLogs.put(log)
-              await loadData()
-            },
-          })
-        },
-      })
-    }
-    if (!existingLog) {
-      items.push({
-        label: 'Skip today',
-        action: () => {
-          const log: RoutineLog = {
-            id: uuid(),
-            routineId: routine.id,
-            date: todayStr,
-            actualMinutes: 0,
-            completed: false,
-            createdAt: isoNow(),
-          }
-          mutate(prev => ({ ...prev, routineLogs: [...prev.routineLogs, log] }))
-          void db.routineLogs.add(log).catch(err => console.error('Failed to save routine log:', err))
-          push({
-            description: `Skipped ${routine.name}`,
-            undo: async () => { await db.routineLogs.delete(log.id); await loadData() },
-            redo: async () => { await db.routineLogs.add(log); await loadData() },
-          })
-        },
-      })
-    }
-    items.push({
-      label: 'Manage routines',
-      action: () => navigate('/routines'),
-    })
-    return items
-  }
   const toggleWidget = (id: string) => {
     if (visibleWidgets.includes(id)) {
       const next = visibleWidgets.filter((w) => w !== id)
@@ -1117,14 +1027,18 @@ export default function Dashboard() {
                 </div>
               </div>
               <div>
-                <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Last 7 Days</div>
+                <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  {settings.dashboardWeekMode === 'calendar' ? 'This week' : 'Last 7 days'}
+                </div>
                 <div className="mt-0.5 text-2xl font-bold text-slate-800 dark:text-slate-100">
                   {(() => {
                     const now = new Date()
-                    const weekAgo = subDays(now, 6)
-                    const weekAgoStr = format(weekAgo, 'yyyy-MM-dd')
+                    const start = settings.dashboardWeekMode === 'calendar'
+                      ? startOfWeek(now, { weekStartsOn: settings.weekStartsOn })
+                      : subDays(now, 6)
+                    const startStr = format(start, 'yyyy-MM-dd')
                     const weekMins = academicSessions
-                      .filter((s) => s.startAt >= weekAgoStr + 'T00:00:00')
+                      .filter((s) => s.startAt >= startStr + 'T00:00:00')
                       .reduce((sum, s) => sum + s.durationMinutes, 0)
                     return formatMinutes(weekMins)
                   })()}
@@ -1132,79 +1046,34 @@ export default function Dashboard() {
                 <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                   {(() => {
                     const now = new Date()
-                    const weekAgo = subDays(now, 6)
-                    return `${format(weekAgo, 'MMM d')} – ${format(now, 'MMM d')}`
+                    const start = settings.dashboardWeekMode === 'calendar'
+                      ? startOfWeek(now, { weekStartsOn: settings.weekStartsOn })
+                      : subDays(now, 6)
+                    return `${format(start, 'MMM d')} – ${format(now, 'MMM d')}`
                   })()}
                 </div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-8">
-              <div className="min-w-0 flex-1">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Routines</span>
-                  <Link to="/routines" className="text-xs text-primary-600 hover:underline">Manage</Link>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                  {(() => {
+                    const now = new Date()
+                    const start = settings.dashboardWeekMode === 'calendar'
+                      ? startOfWeek(now, { weekStartsOn: settings.weekStartsOn })
+                      : subDays(now, 6)
+                    const label = `${format(start, 'MMM d')} – ${format(now, 'MMM d')}`
+                    if (settings.dashboardWeekMode === 'calendar') {
+                      const lastWeekStart = subDays(start, 7)
+                      const lastWeekEnd = subDays(start, 1)
+                      const lastWeekMins = academicSessions
+                        .filter((s) => s.startAt >= format(lastWeekStart, 'yyyy-MM-dd') + 'T00:00:00' && s.startAt <= format(lastWeekEnd, 'yyyy-MM-dd') + 'T23:59:59')
+                        .reduce((sum, s) => sum + s.durationMinutes, 0)
+                      return (
+                        <>
+                          {label} · <span className="opacity-80">Last week: {formatMinutes(lastWeekMins)}</span>
+                        </>
+                      )
+                    }
+                    return label
+                  })()}
                 </div>
-                {(() => {
-                  const todayDow = new Date().getDay() as DayOfWeek
-                  const todaysRoutines = data.routines.filter((r) => !r.deletedAt && (r.dayMinutes[todayDow] ?? 0) > 0)
-                  if (todaysRoutines.length === 0) return <p className="text-sm text-slate-500">No routines scheduled</p>
-                  const logMap: Record<string, RoutineLog> = {}
-                  data.routineLogs.forEach((l) => { if (l.date === todayStr) logMap[l.routineId] = l })
-                  const scheduled = todaysRoutines.reduce((s, r) => s + (r.dayMinutes[todayDow] ?? 0), 0)
-                  const completed = todaysRoutines.reduce((s, r) => {
-                    const log = logMap[r.id]
-                    return s + (log ? Math.min(log.actualMinutes, r.dayMinutes[todayDow] ?? 0) : 0)
-                  }, 0)
-                  const pct = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0
-                  return (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-700 dark:text-slate-300">{completed} / {scheduled}m</span>
-                        <span className="font-medium text-primary-600">{pct}%</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700">
-                        <div className="h-2 rounded-full bg-primary-500" style={{ width: `${Math.min(100, pct)}%` }} />
-                      </div>
-                      <TodaysRoutinesList
-                        routines={data.routines}
-                        routineLogs={data.routineLogs}
-                        subjects={data.subjects}
-                        todayStr={todayStr}
-                        todayDow={new Date().getDay() as DayOfWeek}
-                        maxItems={5}
-                        onContextActions={routineContextActions}
-                      />
-                    </div>
-                  )
-                })()}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Tasks Due</span>
-                  <Link to="/calendar" className="text-xs text-primary-600 hover:underline">View</Link>
-                </div>
-                {(() => {
-                  const due = data.assignments
-                    .filter((a) => !a.deletedAt && !a.completed && a.dueDate !== '' && a.dueDate <= todayStr)
-                    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-                    .slice(0, 5)
-                  if (due.length === 0) return <p className="text-sm text-slate-500">No tasks due today</p>
-                  return (
-                    <ul className="space-y-1">
-                      {due.map((a) => (
-                        <li key={a.id} className="flex items-center justify-between text-sm">
-                          <span className="truncate text-slate-700 dark:text-slate-300">{a.title}</span>
-                          <span className={cn(
-                            'ml-2 shrink-0 text-xs',
-                            a.dueDate < todayStr ? 'text-red-500' : 'text-slate-400'
-                          )}>
-                            {a.dueDate === todayStr ? 'Today' : a.dueDate ? `Overdue ${format(new Date(a.dueDate), 'd MMM')}` : 'No date'}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )
-                })()}
               </div>
             </div>
             <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">

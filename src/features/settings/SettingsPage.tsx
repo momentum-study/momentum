@@ -603,6 +603,19 @@ export default function SettingsPage() {
                 <option value={0}>Sunday</option>
               </select>
             </SettingsField>
+            <SettingsField label="Dashboard week mode">
+              <select
+                className="input py-1 text-sm"
+                value={settings.dashboardWeekMode}
+                onChange={(e) => update({ dashboardWeekMode: e.target.value as 'rolling' | 'calendar' })}
+              >
+                <option value="rolling">Rolling (Last 7 days)</option>
+                <option value="calendar">Fixed (This week)</option>
+              </select>
+            </SettingsField>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              "Rolling" always shows the last 7 days. "Fixed" shows only the current week starting on your chosen day.
+            </p>
           </Card>
 
           <Card>

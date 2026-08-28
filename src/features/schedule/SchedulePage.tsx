@@ -1036,7 +1036,6 @@ function WeeklyPlanGrid(props: {
     const ratio = mins / max
     return `${Math.max(24, Math.round(ratio * 72))}px`
   }
-  // Compute daily totals across routines and activities.
   const dailyTotals: number[] = WEEKDAYS.map((_, i) => {
     const dow = i as DayOfWeek
     const routineTotal = routines.reduce((s, r) => s + (r.dayMinutes[dow] ?? 0), 0)
@@ -1047,36 +1046,105 @@ function WeeklyPlanGrid(props: {
   if (routines.length === 0 && activities.length === 0) {
     return <EmptyState title="No routines or activities yet" description="Add one using the buttons above to start planning your week." />
   }
-  const filteredRoutines = hideUnused
-    ? routines.filter(r => Object.values(r.dayMinutes).some(v => (v ?? 0) > 0))
-    : routines
-  const filteredActivities = hideUnused
-    ? activities.filter(a => Object.values(a.dayMinutes).some(v => (v ?? 0) > 0))
-    : activities
-  // When hideUnused, only show day columns that have any non-zero total across
-  // routines and activities. This collapses all empty space — including the
-  // day heading row — so the user just sees populated blocks.
-  const visibleDays = hideUnused
-    ? WEEKDAYS.map((_, i) => i as DayOfWeek).filter(i => dailyTotals[i] > 0)
-    : WEEKDAYS.map((_, i) => i as DayOfWeek)
-  // Sort routines and activities by scheduledTime so users can plan a day
-  // in time order. Items without a scheduledTime come last.
-  const timeKey = (t?: string) => t ?? '99:99'
-  const sortedRoutines = [...filteredRoutines].sort((a, b) => {
-    const order = (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
-    if (order !== 0) return order
-    return timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime))
-  })
-  const sortedActivities = [...filteredActivities].sort((a, b) => {
-    const order = (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
-    if (order !== 0) return order
-    return timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime))
-  })
-  // Always render 7 day columns so layout stays consistent regardless of view.
-  // When "Compact" is active, days with no blocks keep their column but render
-  // an empty placeholder so day widths do not squish.
   const allDays = WEEKDAYS.map((_, i) => i as DayOfWeek)
   const gridTemplate = '200px repeat(7, minmax(70px, 1fr))'
+  // Sort routines and activities by orderIndex, then scheduledTime.
+  const timeKey = (t?: string) => t ?? '99:99'
+  const sortedRoutines = [...routines].sort((a, b) => {
+    const order = (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+    if (order !== 0) return order
+    return timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime))
+  })
+  const sortedActivities = [...activities].sort((a, b) => {
+    const order = (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+    if (order !== 0) return order
+    return timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime))
+  })
+
+  // ── Compact: column-per-day layout ──────────────────────────────────
+  if (hideUnused) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-1 dark:border-slate-700">
+          <div className="flex gap-1" role="tablist" aria-label="Weekly plan view">
+            {(['all', 'compact'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                role="tab"
+                aria-selected={hideUnused === (mode === 'compact')}
+                onClick={() => setHideUnused(mode === 'compact')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium transition-colors rounded-md',
+                  mode === 'compact'
+                    ? 'bg-primary-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700'
+                )}
+              >
+                {mode === 'all' ? 'All days' : 'Compact'}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-slate-500">Only days with blocks are shown</div>
+        </div>
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {allDays.filter(d => dailyTotals[d] > 0).map((dow) => {
+            const total = dailyTotals[dow]
+            return (
+              <div key={dow} className="flex-shrink-0 min-w-[140px] w-[calc((100%-48px)/7)] max-w-[220px]">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2 mb-2">
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{WEEKDAYS[dow]}</span>
+                  <span className="text-xs text-primary-600 dark:text-primary-400 font-semibold">{total}m</span>
+                </div>
+                <div className="space-y-1.5">
+                  {sortedRoutines
+                    .filter(r => (r.dayMinutes[dow] ?? 0) > 0)
+                    .map((r) => {
+                      const mins = r.dayMinutes[dow] ?? 0
+                      const subjectName = subjects.get(r.subjectId)?.name ?? null
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => onEditCell(r.id, dow, mins, false)}
+                          className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
+                          style={{ backgroundColor: r.color, height: blockHeight(mins, maxRoutineMin) }}
+                          title={`${subjectName ? subjectName + ' · ' : ''}${mins}m ${r.name}`}
+                        >
+                          {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
+                          <span className="leading-tight">{mins}m</span>
+                        </button>
+                      )
+                    })}
+                  {sortedActivities
+                    .filter(a => (a.dayMinutes[dow] ?? 0) > 0)
+                    .map((a) => {
+                      const mins = a.dayMinutes[dow] ?? 0
+                      const subjectName = a.subjectId ? subjects.get(a.subjectId)?.name ?? null : null
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => onEditCell(a.id, dow, mins, true)}
+                          className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
+                          style={{ backgroundColor: a.color, height: blockHeight(mins, maxActivityMin) }}
+                          title={`${subjectName ? subjectName + ' · ' : ''}${a.scheduledTime ? formatTime12h(a.scheduledTime) : mins + 'm'} ${a.name}`}
+                        >
+                          {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
+                          <span className="leading-tight">{a.scheduledTime ? formatTime12h(a.scheduledTime) : `${mins}m`}</span>
+                        </button>
+                      )
+                    })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // ── All days: original row-based grid ──────────────────────────────
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between border-b border-slate-200 pb-1 dark:border-slate-700">
@@ -1086,11 +1154,11 @@ function WeeklyPlanGrid(props: {
               key={mode}
               type="button"
               role="tab"
-              aria-selected={hideUnused === (mode === 'compact')}
+              aria-selected={mode === 'all'}
               onClick={() => setHideUnused(mode === 'compact')}
               className={cn(
                 'px-3 py-1.5 text-xs font-medium transition-colors rounded-md',
-                hideUnused === (mode === 'compact')
+                mode === 'all'
                   ? 'bg-primary-600 text-white'
                   : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700'
               )}
@@ -1099,16 +1167,12 @@ function WeeklyPlanGrid(props: {
             </button>
           ))}
         </div>
-        <div className="text-xs text-slate-500">
-          {hideUnused
-            ? 'Empty days stay in place but show no blocks'
-            : 'Every day and every block shown'}
-        </div>
+        <div className="text-xs text-slate-500">Every day and every block shown</div>
       </div>
       <div className="overflow-x-auto">
         <div className="grid min-w-[640px]" style={{ gridTemplateColumns: gridTemplate }}>
           <div />
-          {visibleDays.map((d) => (
+          {allDays.map((d) => (
             <div key={d} className="text-center text-xs font-semibold text-slate-600 dark:text-slate-300 py-2 border-b border-slate-200 dark:border-slate-700">
               {WEEKDAYS[d]}
             </div>
@@ -1122,8 +1186,6 @@ function WeeklyPlanGrid(props: {
               onEditRoutine={onEditRoutine}
               onEditCell={onEditCell}
               blockHeight={blockHeight}
-              hideUnused={hideUnused}
-              visibleDays={allDays}
               isFirst={i === 0}
               isLast={i === sortedRoutines.length - 1}
               onMove={onMoveRoutine}
@@ -1138,8 +1200,6 @@ function WeeklyPlanGrid(props: {
               onEditActivity={onEditActivity}
               onEditCell={onEditCell}
               blockHeight={blockHeight}
-              hideUnused={hideUnused}
-              visibleDays={allDays}
               isFirst={i === 0}
               isLast={i === sortedActivities.length - 1}
               onMove={onMoveActivity}
@@ -1170,13 +1230,11 @@ function RoutineGridRow(props: {
   onEditRoutine: (r: Routine) => void
   onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
   blockHeight: (mins: number, max: number) => string
-  hideUnused: boolean
-  visibleDays: DayOfWeek[]
   isFirst: boolean
   isLast: boolean
   onMove: (id: string, dir: -1 | 1) => void
 }) {
-  const { routine, maxMinutes, subjectName, onEditRoutine, onEditCell, blockHeight, hideUnused, visibleDays, isFirst, isLast, onMove } = props
+  const { routine, maxMinutes, subjectName, onEditRoutine, onEditCell, blockHeight, isFirst, isLast, onMove } = props
   return (
     <>
       <div className="flex items-center gap-1 py-2 pr-3 text-sm font-medium text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800">
@@ -1216,11 +1274,9 @@ function RoutineGridRow(props: {
           </button>
         </div>
       </div>
-      {visibleDays.map((dow) => {
+      {WEEKDAYS.map((_, i) => {
+        const dow = i as DayOfWeek
         const mins = routine.dayMinutes[dow] ?? 0
-        if (mins <= 0 && hideUnused) {
-          return <div key={dow} className="border-b border-slate-100 dark:border-slate-800" />
-        }
         return (
           <div key={dow} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
@@ -1230,7 +1286,7 @@ function RoutineGridRow(props: {
                 style={{ backgroundColor: routine.color, height: blockHeight(mins, maxMinutes) }}
                 title={`${subjectName ? subjectName + ' · ' : ''}${mins}m on ${DAY_LABELS[dow]}`}
               >
-                {subjectName && !hideUnused && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
+                {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
                 <span className="leading-tight">{mins}m</span>
               </button>
             ) : (
@@ -1255,13 +1311,11 @@ function ActivityGridRow(props: {
   onEditActivity: (a: Activity) => void
   onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
   blockHeight: (mins: number, max: number) => string
-  hideUnused: boolean
-  visibleDays: DayOfWeek[]
   isFirst: boolean
   isLast: boolean
   onMove: (id: string, dir: -1 | 1) => void
 }) {
-  const { activity, maxMinutes, subjectName, onEditActivity, onEditCell, blockHeight, hideUnused, visibleDays, isFirst, isLast, onMove } = props
+  const { activity, maxMinutes, subjectName, onEditActivity, onEditCell, blockHeight, isFirst, isLast, onMove } = props
   return (
     <>
       <div className="flex items-center gap-1 py-2 pr-3 text-sm text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
@@ -1301,11 +1355,9 @@ function ActivityGridRow(props: {
           </button>
         </div>
       </div>
-      {visibleDays.map((dow) => {
+      {WEEKDAYS.map((_, i) => {
+        const dow = i as DayOfWeek
         const mins = activity.dayMinutes[dow] ?? 0
-        if (mins <= 0 && hideUnused) {
-          return <div key={dow} className="border-b border-slate-100 dark:border-slate-800" />
-        }
         return (
           <div key={dow} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
@@ -1315,7 +1367,7 @@ function ActivityGridRow(props: {
                 style={{ backgroundColor: activity.color, height: blockHeight(mins, maxMinutes) }}
                 title={`${subjectName ? subjectName + ' · ' : ''}${activity.scheduledTime ? formatTime12h(activity.scheduledTime) : mins + 'm'} on ${DAY_LABELS[dow]}`}
               >
-                {subjectName && !hideUnused && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
+                {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
                 <span className="leading-tight">{activity.scheduledTime ? formatTime12h(activity.scheduledTime) : `${mins}m`}</span>
               </button>
             ) : (

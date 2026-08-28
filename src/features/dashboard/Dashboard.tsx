@@ -1962,22 +1962,6 @@ export default function Dashboard() {
 
   return (
     <div data-tour="dashboard" className="space-y-6 overflow-x-hidden">
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          data-tour="customise-btn"
-          aria-label="Customise dashboard"
-          title="Customise dashboard"
-          className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 hover:border-slate-400 dark:hover:bg-slate-700 dark:hover:border-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
-          onClick={() => setCustomizeOpen(true)}
-        >
-          {/* Layout grid icon — distinct from sidebar's hamburger */}
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h6v6H4zM14 5h6v6h-6zM4 13h6v6H4zM14 13h6v6h-6z" />
-          </svg>
-          <span>Customize</span>
-        </button>
-      </div>
       {/* Dashboard grid with widgets */}
       {showActivityConfirmation && (
         <ActivityConfirmationCard onDismiss={() => setShowActivityConfirmation(false)} />
@@ -2078,13 +2062,13 @@ export default function Dashboard() {
               {DASHBOARD_WIDGETS_METADATA.map((w) => {
                 const isVisible = visibleWidgets.includes(w.id)
                 return (
-                  <CustomizeRow
-                    key={w.id}
-                    id={w.id}
-                    label={w.label}
-                    visible={isVisible}
-                    onToggle={() => toggleWidget(w.id)}
-                  />
+                <CustomizeRow
+                  key={w.id}
+                  id={w.id}
+                  label={w.label}
+                  visible={isVisible}
+                  onToggle={() => toggleWidget(w.id)}
+                />
                 )
               })}
             </div>

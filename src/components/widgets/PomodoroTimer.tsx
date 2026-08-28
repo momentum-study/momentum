@@ -1751,9 +1751,7 @@ export function PomodoroTimer() {
                   ) : (
                     <Button variant="primary" onClick={mode === 'simple' ? resumeSimple : resumePomodoro}>Resume</Button>
                   )}
-                  <Button variant="danger" onClick={mode === 'simple' ? () => void stopSimple() : () => void resetPomodoro()}>
-                    Stop &amp; Save
-                  </Button>
+                  <Button variant="secondary" onClick={mode === 'simple' ? () => void stopSimple() : () => void resetPomodoro()}>Save</Button>
                   <DiscardButton
                     showConfirm={showDiscardConfirm}
                     onShowConfirm={() => setShowDiscardConfirm(true)}

@@ -316,7 +316,6 @@ export default function MarksPage() {
                         setSelectedMarkIds(new Set())
                       }
                     }}
-                    className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
                   />
                 </th>
                 <th className="pb-2 pr-4 font-medium cursor-pointer hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort('name')}>Name<SortIcon column="name" /></th>
@@ -344,18 +343,15 @@ export default function MarksPage() {
                 return (
                   <tr key={m.id} className="border-b border-slate-100 dark:border-slate-700/50">
                     <td className="py-2.5 pr-2">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${m.name}`}
-                        checked={selectedMarkIds.has(m.id)}
-                        onChange={() => setSelectedMarkIds((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(m.id)) next.delete(m.id)
-                          else next.add(m.id)
-                          return next
-                        })}
-                        className="h-5 w-5 rounded-sm border-slate-300 accent-primary-600 cursor-pointer"
-                      />
+                    <Checkbox
+                      checked={selectedMarkIds.has(m.id)}
+                      onChange={() => setSelectedMarkIds((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(m.id)) next.delete(m.id)
+                        else next.add(m.id)
+                        return next
+                      })}
+                    />
                     </td>
                     <td className="py-2.5 pr-4 font-medium text-slate-800 dark:text-slate-100">{m.name}</td>
                     <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{subjectName(m.subjectId)}</td>

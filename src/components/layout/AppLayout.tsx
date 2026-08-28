@@ -574,12 +574,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
               data-tour="customise-btn"
               aria-label="Customise dashboard"
               title="Customise dashboard"
-              className="ml-auto rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              className="ml-auto inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:border-slate-500"
               onClick={() => window.dispatchEvent(new CustomEvent('momentum:dashboard-customise'))}
             >
+              {/* Layout grid icon — distinct from the sidebar's hamburger */}
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h6v6H4zM14 5h6v6h-6zM4 13h6v6H4zM14 13h6v6h-6z" />
               </svg>
+              <span>Customize</span>
             </button>
           )}
         </header>

@@ -9,7 +9,6 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ColorPicker } from '../../components/ui/ColorPicker'
 import { Select } from '../../components/ui/Select'
-import { Checkbox } from '../../components/ui/Checkbox'
 import { Collapsible } from '../../components/ui/Collapsible'
 import { cn, isoNow, softDelete } from '../../lib/utils'
 import { v4 as uuid } from 'uuid'
@@ -1077,14 +1076,33 @@ function WeeklyPlanGrid(props: {
     ? `200px repeat(${visibleDays.length}, minmax(70px, 1fr))`
     : '200px repeat(7, minmax(70px, 1fr))'
   return (
-    <div className="space-y-2">
-      <label className="flex cursor-pointer items-center justify-end gap-2 text-xs text-slate-600 dark:text-slate-300">
-        <Checkbox
-          checked={hideUnused}
-          onChange={(e) => setHideUnused(e.target.checked)}
-        />
-        Hide unused
-      </label>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-1 dark:border-slate-700">
+        <div className="flex gap-1" role="tablist" aria-label="Weekly plan view">
+          {(['all', 'used-only'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="tab"
+              aria-selected={hideUnused === (mode === 'used-only')}
+              onClick={() => setHideUnused(mode === 'used-only')}
+              className={cn(
+                'px-3 py-1.5 text-xs font-medium transition-colors rounded-md',
+                hideUnused === (mode === 'used-only')
+                  ? 'bg-primary-600 text-white'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700'
+              )}
+            >
+              {mode === 'all' ? 'All blocks' : 'Used blocks only'}
+            </button>
+          ))}
+        </div>
+        <div className="text-xs text-slate-500">
+          {hideUnused
+            ? 'Showing only days and blocks you have time scheduled for'
+            : 'Showing every block on every day'}
+        </div>
+      </div>
       <div className="overflow-x-auto">
         <div className="grid min-w-[640px]" style={{ gridTemplateColumns: gridTemplate }}>
           <div />

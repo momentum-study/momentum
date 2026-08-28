@@ -26,7 +26,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const isChunkError =
       error instanceof TypeError &&
       /Failed to fetch dynamically imported module|Importing a module script failed|dynamically imported/i.test(error.message)
-    const isHookError = /Minified React error #310|Rendered more hooks than during the previous render/i.test(error.message)
+    const isHookError = /Minified React error #310|Minified React error #185|Rendered more hooks than during the previous render/i.test(error.message)
     if (isChunkError && !sessionStorage.getItem('momentum-reloaded-on-chunk-error')) {
       sessionStorage.setItem('momentum-reloaded-on-chunk-error', '1')
       window.location.reload()

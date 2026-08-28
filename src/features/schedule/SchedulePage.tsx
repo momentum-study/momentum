@@ -1072,35 +1072,37 @@ function WeeklyPlanGrid(props: {
     if (order !== 0) return order
     return timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime))
   })
-  const gridTemplate = hideUnused
-    ? `200px repeat(${visibleDays.length}, minmax(70px, 1fr))`
-    : '200px repeat(7, minmax(70px, 1fr))'
+  // Always render 7 day columns so layout stays consistent regardless of view.
+  // When "Compact" is active, days with no blocks keep their column but render
+  // an empty placeholder so day widths do not squish.
+  const allDays = WEEKDAYS.map((_, i) => i as DayOfWeek)
+  const gridTemplate = '200px repeat(7, minmax(70px, 1fr))'
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between border-b border-slate-200 pb-1 dark:border-slate-700">
         <div className="flex gap-1" role="tablist" aria-label="Weekly plan view">
-          {(['all', 'used-only'] as const).map((mode) => (
+          {(['all', 'compact'] as const).map((mode) => (
             <button
               key={mode}
               type="button"
               role="tab"
-              aria-selected={hideUnused === (mode === 'used-only')}
-              onClick={() => setHideUnused(mode === 'used-only')}
+              aria-selected={hideUnused === (mode === 'compact')}
+              onClick={() => setHideUnused(mode === 'compact')}
               className={cn(
                 'px-3 py-1.5 text-xs font-medium transition-colors rounded-md',
-                hideUnused === (mode === 'used-only')
+                hideUnused === (mode === 'compact')
                   ? 'bg-primary-600 text-white'
                   : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700'
               )}
             >
-              {mode === 'all' ? 'All blocks' : 'Used blocks only'}
+              {mode === 'all' ? 'All days' : 'Compact'}
             </button>
           ))}
         </div>
         <div className="text-xs text-slate-500">
           {hideUnused
-            ? 'Showing only days and blocks you have time scheduled for'
-            : 'Showing every block on every day'}
+            ? 'Empty days stay in place but show no blocks'
+            : 'Every day and every block shown'}
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -1121,7 +1123,7 @@ function WeeklyPlanGrid(props: {
               onEditCell={onEditCell}
               blockHeight={blockHeight}
               hideUnused={hideUnused}
-              visibleDays={visibleDays}
+              visibleDays={allDays}
               isFirst={i === 0}
               isLast={i === sortedRoutines.length - 1}
               onMove={onMoveRoutine}
@@ -1137,7 +1139,7 @@ function WeeklyPlanGrid(props: {
               onEditCell={onEditCell}
               blockHeight={blockHeight}
               hideUnused={hideUnused}
-              visibleDays={visibleDays}
+              visibleDays={allDays}
               isFirst={i === 0}
               isLast={i === sortedActivities.length - 1}
               onMove={onMoveActivity}
@@ -1147,7 +1149,7 @@ function WeeklyPlanGrid(props: {
           <div className="text-right pr-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 border-t-2 border-slate-300 dark:border-slate-600">
             Daily total ({Math.round(weeklyTotal / 60)}h {weeklyTotal % 60}m / week)
           </div>
-          {visibleDays.map((d) => {
+          {allDays.map((d) => {
             const total = dailyTotals[d]
             return (
               <div key={d} className="text-center py-2 text-xs font-bold text-primary-700 dark:text-primary-300 border-t-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
@@ -1217,7 +1219,7 @@ function RoutineGridRow(props: {
       {visibleDays.map((dow) => {
         const mins = routine.dayMinutes[dow] ?? 0
         if (mins <= 0 && hideUnused) {
-          return null
+          return <div key={dow} className="border-b border-slate-100 dark:border-slate-800" />
         }
         return (
           <div key={dow} className="border-b border-slate-100 dark:border-slate-800 p-1">
@@ -1302,7 +1304,7 @@ function ActivityGridRow(props: {
       {visibleDays.map((dow) => {
         const mins = activity.dayMinutes[dow] ?? 0
         if (mins <= 0 && hideUnused) {
-          return null
+          return <div key={dow} className="border-b border-slate-100 dark:border-slate-800" />
         }
         return (
           <div key={dow} className="border-b border-slate-100 dark:border-slate-800 p-1">

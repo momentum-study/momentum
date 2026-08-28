@@ -81,7 +81,7 @@ function TimerNotesAndTag({
   )
 }
 
-/** Discard button with inline confirm/cancel. Used in both idle and active timer states. */
+/** Discard button with confirmation modal. Used in both idle and active timer states. */
 function DiscardButton({
   showConfirm,
   onShowConfirm,
@@ -93,19 +93,21 @@ function DiscardButton({
   onCancel: () => void
   onConfirm: () => void
 }) {
-  if (showConfirm) {
-    return (
-      <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm dark:border-red-800 dark:bg-red-900/30">
-        <span className="text-red-700 dark:text-red-300">Discard?</span>
-        <Button variant="danger" size="sm" onClick={onConfirm}>Confirm</Button>
-        <Button variant="secondary" size="sm" onClick={onCancel}>Cancel</Button>
-      </div>
-    )
-  }
   return (
-    <Button variant="secondary" onClick={onShowConfirm}>
-      Discard
-    </Button>
+    <>
+      <Button variant="secondary" onClick={onShowConfirm}>Discard</Button>
+      <Modal open={showConfirm} onClose={onCancel} title="Discard session?">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            This session's time will not be saved. You cannot undo this action.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+            <Button variant="danger" onClick={onConfirm}>Yes, discard</Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   )
 }
 

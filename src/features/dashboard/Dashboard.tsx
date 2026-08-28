@@ -587,7 +587,10 @@ export default function Dashboard() {
     const map: Record<string, number> = {}
     for (const s of academicSessions) {
       const day = toLocalDateString(s.startAt)
-      map[day] = (map[day] ?? 0) + s.durationMinutes
+      // Prefer seconds precision so the heatmap agrees with the live timer.
+      // Fall back to integer minutes for sessions logged without seconds.
+      const mins = s.durationSeconds != null ? s.durationSeconds / 60 : s.durationMinutes
+      map[day] = (map[day] ?? 0) + mins
     }
     return map
   }, [academicSessions])

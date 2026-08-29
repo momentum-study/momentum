@@ -2,8 +2,15 @@
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
 
-## [v0.22.3] — 2026-08-28
+## [v0.22.4] — 2026-08-28
 
+### UX Improvements
+- Compact weekly plan blocks are now draggable for reordering within each column.
+- Reordering persists the new block order to the database.
+
+---
+
+## [v0.22.3] — 2026-08-28
 ### Quick Fixes
 - Fixed the paused timer UI to show Resume / Save / Discard instead of Start. isTimerActive now correctly recognises a paused timer with retained progress, so the user is no longer trapped into clicking Start (which would zero the accumulator).
 

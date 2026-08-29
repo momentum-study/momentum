@@ -1,4 +1,7 @@
 import { useState, useMemo } from 'react'
+import { DndContext, PointerSensor, useSensor, useSensors, closestCenter, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { ANY_SUBJECT_ID } from '../../lib/subject-mode'
 import { format } from 'date-fns'
 import { useData } from '../../app/providers'
@@ -90,7 +93,7 @@ export function SchedulePage() {
   const [todayFilter, setTodayFilter] = useState<'all' | 'study' | 'activities'>('all')
   const [routineEditing, setRoutineEditing] = useState<Routine | null>(null)
   const [activityEditing, setActivityEditing] = useState<Activity | null>(null)
-  const [cellEditing, setCellEditing] = useState<{ itemId: string; dow: DayOfWeek; minutes: string; isActivity: boolean } | null>(null)
+  const [cellEditing, setCellEditing] = useState<{ itemId: string; dow: DayOfWeek; minutes: string; isActivity: boolean; scheduledTime: string } | null>(null)
   const [logCustomFor, setLogCustomFor] = useState<string | null>(null)
   const [customMinutes, setCustomMinutes] = useState('')
   const [addRoutineOpen, setAddRoutineOpen] = useState(false)
@@ -459,6 +462,29 @@ export function SchedulePage() {
       { ...a, orderIndex: bOrder, updatedAt: isoNow() },
       { ...b, orderIndex: aOrder, updatedAt: isoNow() },
     ])
+  }
+  async function reorderPlanColumn(dow: DayOfWeek, orderedIds: string[]) {
+    // orderedIds: e.g. ["routine:abc", "activity:xyz", ...]
+    // We need to update the global orderIndex of these items based on the new order.
+    // To avoid orderIndex collisions across days, we use a base offset and step.
+    const STEP = 1
+    const baseOffset = dow * 1000  // ensure distinct ranges per day
+    const routineUpdates: Routine[] = []
+    const activityUpdates: Activity[] = []
+    orderedIds.forEach((compositeId, i) => {
+      const [type, ...rest] = compositeId.split(':')
+      const itemId = rest.join(':')
+      const newOrder = baseOffset + i * STEP
+      if (type === 'routine') {
+        const r = routines.find(x => x.id === itemId)
+        if (r) routineUpdates.push({ ...r, orderIndex: newOrder, updatedAt: isoNow() })
+      } else {
+        const a = activities.find(x => x.id === itemId)
+        if (a) activityUpdates.push({ ...a, orderIndex: newOrder, updatedAt: isoNow() })
+      }
+    })
+    if (routineUpdates.length > 0) await db.routines.bulkPut(routineUpdates)
+    if (activityUpdates.length > 0) await db.activities.bulkPut(activityUpdates)
     await loadData()
   }
 
@@ -676,9 +702,10 @@ export function SchedulePage() {
           subjects={subjectsMap}
           onEditRoutine={r => setRoutineEditing(r)}
           onEditActivity={a => setActivityEditing(a)}
-          onEditCell={(itemId, d, mins, isActivity) => setCellEditing({ itemId, dow: d, minutes: String(mins), isActivity })}
+          onEditCell={(itemId, d, mins, isActivity, scheduledTime) => setCellEditing({ itemId, dow: d, minutes: String(mins), isActivity, scheduledTime: scheduledTime ?? '' })}
           onMoveRoutine={moveRoutine}
           onMoveActivity={moveActivity}
+          onReorder={(dow, orderedIds) => reorderPlanColumn(dow, orderedIds)}
         />
       )}
 
@@ -707,9 +734,9 @@ export function SchedulePage() {
         const routine = !cellEditing.isActivity ? routines.find(r => r.id === cellEditing.itemId) : null
         const activity = cellEditing.isActivity ? activities.find(a => a.id === cellEditing.itemId) : null
         const next = routine
-          ? { ...routine, dayMinutes: { ...routine.dayMinutes, [cellEditing.dow]: Number(cellEditing.minutes) || 0 }, updatedAt: isoNow() } as Routine
+          ? { ...routine, dayMinutes: { ...routine.dayMinutes, [cellEditing.dow]: Number(cellEditing.minutes) || 0 }, scheduledTime: cellEditing.scheduledTime || undefined, updatedAt: isoNow() } as Routine
           : activity
-            ? { ...activity, dayMinutes: { ...activity.dayMinutes, [cellEditing.dow]: Number(cellEditing.minutes) || 0 }, updatedAt: isoNow() } as Activity
+            ? { ...activity, dayMinutes: { ...activity.dayMinutes, [cellEditing.dow]: Number(cellEditing.minutes) || 0 }, scheduledTime: cellEditing.scheduledTime || null, updatedAt: isoNow() } as Activity
             : null
         if (!next) return null
         const currentMins = next.dayMinutes[cellEditing.dow] ?? 0
@@ -717,8 +744,10 @@ export function SchedulePage() {
           <CellEditModal
             dayLabel={DAY_LABELS[cellEditing.dow]}
             currentMinutes={currentMins}
-            value={cellEditing.minutes}
-            onChange={v => setCellEditing({ ...cellEditing, minutes: v })}
+            minutesValue={cellEditing.minutes}
+            timeValue={cellEditing.scheduledTime}
+            onMinutesChange={v => setCellEditing({ ...cellEditing, minutes: v })}
+            onTimeChange={v => setCellEditing({ ...cellEditing, scheduledTime: v })}
             onCancel={() => setCellEditing(null)}
             onSave={async () => {
               if (routine) await saveRoutine(next as Routine)
@@ -727,8 +756,8 @@ export function SchedulePage() {
             }}
             onClear={async () => {
               const cleared = routine
-                ? { ...routine, dayMinutes: { ...routine.dayMinutes, [cellEditing.dow]: 0 }, updatedAt: isoNow() } as Routine
-                : { ...activity!, dayMinutes: { ...activity!.dayMinutes, [cellEditing.dow]: 0 }, updatedAt: isoNow() } as Activity
+                ? { ...routine, dayMinutes: { ...routine.dayMinutes, [cellEditing.dow]: 0 }, scheduledTime: cellEditing.scheduledTime || undefined, updatedAt: isoNow() } as Routine
+                : { ...activity!, dayMinutes: { ...activity!.dayMinutes, [cellEditing.dow]: 0 }, scheduledTime: cellEditing.scheduledTime || null, updatedAt: isoNow() } as Activity
               if (routine) await saveRoutine(cleared as Routine)
               else if (activity) await saveActivity(cleared as Activity)
               setCellEditing(null)
@@ -1013,7 +1042,41 @@ function ActivityCard(props: {
     </Card>
   )
 }
-
+// =============================================================================
+// SortableBlock — used in the compact weekly plan for drag-to-reorder
+// =============================================================================
+function SortableBlock(props: {
+  id: string
+  blockStyle: React.CSSProperties
+  displayName: string
+  timeText: string
+  title: string
+  onClick: () => void
+}) {
+  const { id, blockStyle, displayName, timeText, title, onClick } = props
+  const { setNodeRef, listeners, attributes, transform, transition, isDragging } = useSortable({ id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : undefined,
+    zIndex: isDragging ? 50 : undefined,
+  }
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <button
+        type="button"
+        onPointerDown={(e) => { e.stopPropagation() }}
+        onClick={(e) => { e.stopPropagation(); onClick() }}
+        className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
+        style={blockStyle}
+        title={title}
+      >
+        <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{displayName}</span>
+        <span className="leading-tight">{timeText}</span>
+      </button>
+    </div>
+  )
+}
 // =============================================================================
 // Weekly Plan grid
 // =============================================================================
@@ -1023,11 +1086,12 @@ function WeeklyPlanGrid(props: {
   subjects: Map<string, Subject>
   onEditRoutine: (r: Routine) => void
   onEditActivity: (a: Activity) => void
-  onEditCell: (itemId: string, dow: DayOfWeek, minutes: number, isActivity: boolean) => void
+  onEditCell: (itemId: string, dow: DayOfWeek, minutes: number, isActivity: boolean, scheduledTime?: string | null) => void
   onMoveRoutine: (id: string, dir: -1 | 1) => void
   onMoveActivity: (id: string, dir: -1 | 1) => void
+  onReorder: (dow: DayOfWeek, orderedIds: string[]) => void
 }) {
-  const { routines, activities, subjects, onEditRoutine, onEditActivity, onEditCell, onMoveRoutine, onMoveActivity } = props
+  const { routines, activities, subjects, onEditRoutine, onEditActivity, onEditCell, onMoveRoutine, onMoveActivity, onReorder } = props
   const [hideUnused, setHideUnused] = useState(false)
   const maxRoutineMin = routines.reduce((m, r) => Math.max(m, ...Object.values(r.dayMinutes).map(v => v ?? 0)), 0)
   const maxActivityMin = activities.reduce((m, a) => Math.max(m, ...Object.values(a.dayMinutes).map(v => v ?? 0)), 0)
@@ -1060,11 +1124,40 @@ function WeeklyPlanGrid(props: {
     if (order !== 0) return order
     return timeKey(a.scheduledTime).localeCompare(timeKey(b.scheduledTime))
   })
+  const sensors = useSensors(useSensor(PointerSensor))
+  // Compute the interleaved, time-sorted list of blocks for a given day.
+  const getColumnItems = (dow: DayOfWeek) => {
+    return [
+      ...sortedRoutines.filter(r => (r.dayMinutes[dow] ?? 0) > 0).map(r => ({ ...r, _type: 'routine' as const })),
+      ...sortedActivities.filter(a => (a.dayMinutes[dow] ?? 0) > 0).map(a => ({ ...a, _type: 'activity' as const })),
+    ].sort((a, b) => {
+      const ta = a.scheduledTime ?? '99:99'
+      const tb = b.scheduledTime ?? '99:99'
+      if (ta !== tb) return ta.localeCompare(tb)
+      return (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+    })
+  }
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    // Find which day column contains the dragged item.
+    const activeId = String(active.id)
+    const dow = allDays.find(d => getColumnItems(d).some(i => `${i._type}:${i.id}` === activeId))
+    if (dow === undefined) return
+    const items = getColumnItems(dow)
+    const ids = items.map(i => `${i._type}:${i.id}`)
+    const oldIndex = ids.indexOf(activeId)
+    const newIndex = ids.indexOf(String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
+    const reordered = arrayMove(ids, oldIndex, newIndex)
+    onReorder(dow, reordered)
+  }
 
   // ── Compact: column-per-day layout ──────────────────────────────────
   if (hideUnused) {
     return (
-      <div className="space-y-3">
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <div className="space-y-3">
         <div className="flex items-center justify-between border-b border-slate-200 pb-1 dark:border-slate-700">
           <div className="flex gap-1" role="tablist" aria-label="Weekly plan view">
             {(['all', 'compact'] as const).map((mode) => (
@@ -1090,57 +1183,50 @@ function WeeklyPlanGrid(props: {
         <div className="flex gap-3 overflow-x-auto pb-2">
           {allDays.filter(d => dailyTotals[d] > 0).map((dow) => {
             const total = dailyTotals[dow]
+            const columnItems = [...sortedRoutines.filter(r => (r.dayMinutes[dow] ?? 0) > 0).map(r => ({ ...r, _type: 'routine' as const })), ...sortedActivities.filter(a => (a.dayMinutes[dow] ?? 0) > 0).map(a => ({ ...a, _type: 'activity' as const }))]
+              .sort((a, b) => {
+                const ta = a.scheduledTime ?? '99:99'
+                const tb = b.scheduledTime ?? '99:99'
+                if (ta !== tb) return ta.localeCompare(tb)
+                return (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+              })
+            const columnIds = columnItems.map(item => `${item._type}:${item.id}`)
             return (
               <div key={dow} className="flex-shrink-0 min-w-[140px] w-[calc((100%-48px)/7)] max-w-[220px]">
                 <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2 mb-2">
                   <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{WEEKDAYS[dow]}</span>
                   <span className="text-xs text-primary-600 dark:text-primary-400 font-semibold">{total}m</span>
                 </div>
-                <div className="space-y-1.5">
-                  {sortedRoutines
-                    .filter(r => (r.dayMinutes[dow] ?? 0) > 0)
-                    .map((r) => {
-                      const mins = r.dayMinutes[dow] ?? 0
-                      const subjectName = subjects.get(r.subjectId)?.name ?? null
+                <SortableContext items={columnIds} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-1.5">
+                    {columnItems.map((item) => {
+                      const mins = item.dayMinutes[dow] ?? 0
+                      const subject = item.subjectId ? subjects.get(item.subjectId) : null
+                      const isMisc = subject?.id === 'subj-seed-0' || !subject
+                      const displayName = isMisc ? item.name : subject?.name ?? item.name
+                      const isActivity = item._type === 'activity'
+                      const max = isActivity ? maxActivityMin : maxRoutineMin
+                      const sortableId = `${item._type}:${item.id}`
                       return (
-                        <button
-                          key={r.id}
-                          type="button"
-                          onClick={() => onEditCell(r.id, dow, mins, false)}
-                          className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
-                          style={{ backgroundColor: r.color, height: blockHeight(mins, maxRoutineMin) }}
-                          title={`${subjectName ? subjectName + ' · ' : ''}${mins}m ${r.name}`}
-                        >
-                          {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
-                          <span className="leading-tight">{mins}m</span>
-                        </button>
+                        <SortableBlock
+                          key={sortableId}
+                          id={sortableId}
+                          blockStyle={{ backgroundColor: item.color, height: blockHeight(mins, max) }}
+                          displayName={displayName}
+                          timeText={item.scheduledTime ? formatTime12h(item.scheduledTime) : `${mins}m`}
+                          title={`${displayName} · ${item.scheduledTime ? formatTime12h(item.scheduledTime) : mins + 'm'}`}
+                          onClick={() => onEditCell(item.id, dow, mins, isActivity, item.scheduledTime)}
+                        />
                       )
                     })}
-                  {sortedActivities
-                    .filter(a => (a.dayMinutes[dow] ?? 0) > 0)
-                    .map((a) => {
-                      const mins = a.dayMinutes[dow] ?? 0
-                      const subjectName = a.subjectId ? subjects.get(a.subjectId)?.name ?? null : null
-                      return (
-                        <button
-                          key={a.id}
-                          type="button"
-                          onClick={() => onEditCell(a.id, dow, mins, true)}
-                          className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
-                          style={{ backgroundColor: a.color, height: blockHeight(mins, maxActivityMin) }}
-                          title={`${subjectName ? subjectName + ' · ' : ''}${a.scheduledTime ? formatTime12h(a.scheduledTime) : mins + 'm'} ${a.name}`}
-                        >
-                          {subjectName && <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{subjectName}</span>}
-                          <span className="leading-tight">{a.scheduledTime ? formatTime12h(a.scheduledTime) : `${mins}m`}</span>
-                        </button>
-                      )
-                    })}
-                </div>
+                  </div>
+                </SortableContext>
               </div>
             )
           })}
         </div>
       </div>
+      </DndContext>
     )
   }
 
@@ -1228,7 +1314,7 @@ function RoutineGridRow(props: {
   maxMinutes: number
   subjectName: string | null
   onEditRoutine: (r: Routine) => void
-  onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
+  onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean, scheduledTime?: string | null) => void
   blockHeight: (mins: number, max: number) => string
   isFirst: boolean
   isLast: boolean
@@ -1281,7 +1367,7 @@ function RoutineGridRow(props: {
           <div key={dow} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
               <button
-                onClick={() => onEditCell(routine.id, dow, mins, false)}
+                onClick={() => onEditCell(routine.id, dow, mins, false, routine.scheduledTime)}
                 className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
                 style={{ backgroundColor: routine.color, height: blockHeight(mins, maxMinutes) }}
                 title={`${subjectName ? subjectName + ' · ' : ''}${mins}m on ${DAY_LABELS[dow]}`}
@@ -1309,7 +1395,7 @@ function ActivityGridRow(props: {
   maxMinutes: number
   subjectName: string | null
   onEditActivity: (a: Activity) => void
-  onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean) => void
+  onEditCell: (id: string, dow: DayOfWeek, m: number, isActivity: boolean, scheduledTime?: string | null) => void
   blockHeight: (mins: number, max: number) => string
   isFirst: boolean
   isLast: boolean
@@ -1362,7 +1448,7 @@ function ActivityGridRow(props: {
           <div key={dow} className="border-b border-slate-100 dark:border-slate-800 p-1">
             {mins > 0 ? (
               <button
-                onClick={() => onEditCell(activity.id, dow, mins, true)}
+                onClick={() => onEditCell(activity.id, dow, mins, true, activity.scheduledTime)}
                 className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
                 style={{ backgroundColor: activity.color, height: blockHeight(mins, maxMinutes) }}
                 title={`${subjectName ? subjectName + ' · ' : ''}${activity.scheduledTime ? formatTime12h(activity.scheduledTime) : mins + 'm'} on ${DAY_LABELS[dow]}`}
@@ -1391,27 +1477,40 @@ function ActivityGridRow(props: {
 function CellEditModal(props: {
   dayLabel: string
   currentMinutes: number
-  value: string
-  onChange: (v: string) => void
+  minutesValue: string
+  timeValue: string
+  onMinutesChange: (v: string) => void
+  onTimeChange: (v: string) => void
   onSave: () => void
   onCancel: () => void
   onClear: () => void
 }) {
-  const { dayLabel, value, currentMinutes, onChange, onSave, onCancel, onClear } = props
+  const { dayLabel, minutesValue, timeValue, currentMinutes, onMinutesChange, onTimeChange, onSave, onCancel, onClear } = props
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
       <div className="bg-white dark:bg-slate-800 rounded-lg p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold mb-1 text-slate-800 dark:text-slate-100">Edit minutes</h3>
+        <h3 className="text-lg font-semibold mb-1 text-slate-800 dark:text-slate-100">Edit schedule</h3>
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Currently {currentMinutes}m on {dayLabel}</p>
-        <input
-          autoFocus
-          type="number"
-          min="0"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel() }}
-          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 mb-4"
-        />
+        <div className="mb-4">
+          <label className="text-xs text-slate-500 mb-1 block">Minutes</label>
+          <input
+            autoFocus
+            type="number"
+            min="0"
+            value={minutesValue}
+            onChange={e => onMinutesChange(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+          />
+        </div>
+        <div className="mb-4">
+          <label className="text-xs text-slate-500 mb-1 block">Scheduled Time (optional)</label>
+          <input
+            type="time"
+            value={timeValue}
+            onChange={e => onTimeChange(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+          />
+        </div>
         <div className="flex justify-between gap-2">
           <Button size="sm" variant="danger" onClick={onClear}>Clear</Button>
           <div className="flex gap-2">

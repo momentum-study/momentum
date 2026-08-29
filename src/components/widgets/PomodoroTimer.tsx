@@ -716,7 +716,7 @@ export function PomodoroTimer() {
       // Only the owning tab may write a pending session — a peer tab would
       // otherwise create a duplicate on close.
       if (!isOwnerRef.current) return null
-      if (simpleStartedAt) {
+      if (mode === 'simple') {
         const total = simpleSeconds
         const actualSubjId = projectId
           ? (dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId)
@@ -743,31 +743,33 @@ export function PomodoroTimer() {
             source: 'timer',
           }
         }
-      } else if (pomStartedAt && pomPhase === 'focus') {
+      } else if (mode === 'pomodoro' && pomPhase === 'focus') {
         const actualSubjId = projectId
           ? (dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId)
           : subjectId
         if (actualSubjId) {
           const project = projectId ? dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
           const task = taskId ? dataRef.current.assignments.find((a) => a.id === taskId) : undefined
-          const elapsedMs = Date.now() - pomStartedAt
-          const start = new Date(pomStartedAt)
-          const end = new Date()
-          const startAt = start.toISOString()
-          const durationSeconds = Math.max(10, Math.round(elapsedMs / 1000))
-          const durationMinutes = Math.max(1, Math.round(elapsedMs / 60000))
-          return {
-            id: sessionIdFor(startAt, actualSubjId, durationMinutes),
-            subjectId: actualSubjId,
-            projectId: project?.id ?? null,
-            assignmentId: task?.id ?? null,
-            routineId: timerRoutineId || null,
-            startAt,
-            endAt: end.toISOString(),
-            durationMinutes,
-            durationSeconds,
-            note: task ? `Task: ${task.title}` : undefined,
-            source: 'pomodoro',
+          const elapsedSeconds = pomStartedAt 
+            ? Math.floor((Date.now() - pomStartedAt) / 1000)
+            : Math.max(0, getPhaseDuration(pomPhase, configRef.current) - pomSeconds)
+          if (elapsedSeconds >= 10) {
+            const start = new Date(Date.now() - elapsedSeconds * 1000)
+            const startAt = start.toISOString()
+            const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60))
+            return {
+              id: sessionIdFor(startAt, actualSubjId, durationMinutes),
+              subjectId: actualSubjId,
+              projectId: project?.id ?? null,
+              assignmentId: task?.id ?? null,
+              routineId: timerRoutineId || null,
+              startAt,
+              endAt: new Date().toISOString(),
+              durationMinutes,
+              durationSeconds: Math.max(10, elapsedSeconds),
+              note: task ? `Task: ${task.title}` : undefined,
+              source: 'pomodoro',
+            }
           }
         }
       }
@@ -935,7 +937,7 @@ export function PomodoroTimer() {
       phase: 'focus',
       cyclesCompleted: 0,
       config: configRef.current,
-      simplePausedOffset: simplePausedOffset,
+      simplePausedOffset: carryover,
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
       focusTag: timerFocusTag ?? undefined,
@@ -958,7 +960,7 @@ export function PomodoroTimer() {
       phase: 'focus',
       cyclesCompleted: 0,
       config: configRef.current,
-      simplePausedOffset: simplePausedOffset,
+      simplePausedOffset: elapsed,
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
       focusTag: timerFocusTag ?? undefined,

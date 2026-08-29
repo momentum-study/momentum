@@ -2,12 +2,21 @@
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
 
+## [v0.22.2] — 2026-08-28
+
+### Quick Fixes
+- Fixed timer bug where pausing the timer would persist the wrong elapsed time (stale state closure), leading to progress loss on reload.
+- Fixed timer bug where accumulated progress during a pause was not saved as a pending session.
+
+---
+
 ## [v0.22.1] — 2026-08-28
 
 ### Quick Fixes
 - ErrorBoundary now catches "Minified React error #185" (Maximum update depth exceeded) and triggers a hard reload to recover from stale service worker caches (§10.31).
 
 ---
+
 
 ## [v0.22.0] — 2026-08-28
 

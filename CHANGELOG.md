@@ -2,8 +2,26 @@
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
 
+## [v0.22.1] — 2026-08-28
+
+### Quick Fixes
+- ErrorBoundary now catches "Minified React error #185" (Maximum update depth exceeded) and triggers a hard reload to recover from stale service worker caches (§10.31).
+
 ---
 
+## [v0.22.0] — 2026-08-28
+
+### UX Improvements
+- Dashboard "This Week" card relabeled "Last 7 Days" with explicit date range.
+- Dashboard "Customize" hamburger replaced with a labeled button using a layout-grid icon.
+- Calendar/Tasks month navigation buttons moved inline next to the month label.
+- AI Review action buttons (Copy / Open in ChatGPT / Share) moved into a sticky bottom bar.
+- All `<input type="checkbox">` instances replaced with a shared dark-mode-aware `Checkbox` component.
+- Routine/Activity row reorder controls restyled to horizontal chevron icon buttons.
+- Timer no longer auto-selects any-subject routines — the dropdown lists them but defaults to "No routine" so the user opts in.
+- User-facing semantic versioning established; Settings displays `vMAJOR.MINOR.PATCH`.
+
+---
 ## [v0.21.0] — 2026-08-17
 
 ### Quick Fixes

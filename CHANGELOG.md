@@ -2,6 +2,13 @@
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
 
+## [v0.22.3] — 2026-08-28
+
+### Quick Fixes
+- Fixed the paused timer UI to show Resume / Save / Discard instead of Start. isTimerActive now correctly recognises a paused timer with retained progress, so the user is no longer trapped into clicking Start (which would zero the accumulator).
+
+---
+
 ## [v0.22.2] — 2026-08-28
 
 ### Quick Fixes

@@ -1383,7 +1383,7 @@ export function PomodoroTimer() {
   const cycleLabel = mode === 'pomodoro' && settings.pomodoroEnabled
     ? `Cycle ${(pomCycles % config.cycles) + 1} of ${config.cycles}`
     : ''
-  const isTimerActive = simpleStartedAt != null || pomStartedAt != null
+  const isTimerActive = simpleStartedAt != null || pomStartedAt != null || simplePausedOffset > 0 || (mode === 'pomodoro' && settings.pomodoroEnabled && pomSeconds < pomGoalSeconds)
   // Current-session group display values. The group shows whenever it's
   // active OR when it ended within the 5-minute "still in the same study
   // block" window.
@@ -1588,7 +1588,7 @@ export function PomodoroTimer() {
           <div className="mt-4">
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Recent Sessions</h3>
             <div className="space-y-2">
-              {data.sessions.filter((s) => s.source === 'pomodoro').slice(0, 3).map((session) => {
+              {data.sessions.filter((s) => s.source === 'pomodoro' && s.startAt.startsWith(todayStr)).slice(0, 3).map((session) => {
                 const subject = data.subjects.find((s) => s.id === session.subjectId)
                 return (
                   <div key={session.id} className="flex items-center gap-2 text-xs">
@@ -1604,7 +1604,7 @@ export function PomodoroTimer() {
                   </div>
                 )
               })}
-              {data.sessions.filter((s) => s.source === 'pomodoro').length === 0 && (
+              {data.sessions.filter((s) => s.source === 'pomodoro' && s.startAt.startsWith(todayStr)).length === 0 && (
                 <p className="text-xs text-slate-400 dark:text-slate-500">No sessions yet</p>
               )}
             </div>

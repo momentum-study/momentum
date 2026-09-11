@@ -1077,11 +1077,12 @@ export function PomodoroTimer() {
     }
     clearPendingSession()
 
-    // Update the session group to reflect the accumulated time (as a single focus block)
+    // Preserve only time from completed phases in the session-group total. The
+    // current phase is already represented by the backdated Pomodoro timer.
     if (elapsed > 0) {
       updateSessionGroup((g) => {
         if (!g) return null
-        return { ...bumpLastSegment(g, elapsed), active: true, lastEndAt: now }
+        return { ...bumpLastSegment(g, Math.max(0, elapsed - result.phaseElapsedSeconds)), active: true, lastEndAt: now }
       })
     }
 
@@ -1105,7 +1106,7 @@ export function PomodoroTimer() {
       subjectId: subjectId,
       parentSubjectId: selectedParentId || null,
       simplePausedOffset: 0,
-      startedAt: now,
+      startedAt: phaseStartMs,
       phaseRemaining: result.remainingSeconds,
       phase: result.phase,
       cyclesCompleted: result.cyclesCompleted,
@@ -1837,7 +1838,7 @@ export function PomodoroTimer() {
                 Total today: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatTotalToday(totalTodayMinutes, true)}</span>
               </div>
             )}
-            <div className="flex justify-center gap-2">
+            <div className="flex flex-wrap justify-center gap-2">
               {isOwnedElsewhere ? (
                 <p className="text-xs text-amber-600 dark:text-amber-400">Timer is running in another tab — controls disabled here</p>
               ) : (
@@ -1851,7 +1852,7 @@ export function PomodoroTimer() {
                   )}
                   <Button variant="secondary" onClick={mode === 'simple' ? () => void stopSimple() : () => void resetPomodoro()}>Save</Button>
                   {mode === 'simple' && settings.pomodoroEnabled && (
-                    <Button variant="secondary" onClick={switchToPomodoro} title="Switch to Pomodoro mode">
+                    <Button variant="secondary" size="sm" onClick={switchToPomodoro} title="Switch to Pomodoro mode">
                       Switch → 🍅
                     </Button>
                   )}

@@ -167,7 +167,7 @@ function SessionRow({
   setEditLog, setEditDuration, setEditDate, setEditSubjectId,
   deleteSession,
   selected, onToggleSelect, selectionMode,
-  setViewSession, setViewModalOpen,
+  setViewSession, setViewModalOpen, onViewDetails,
 }: {
   session: Session & { subjectName: string; subjectColor: string }
   project: { name: string } | undefined
@@ -183,6 +183,7 @@ function SessionRow({
   selectionMode: boolean
   setViewSession: (s: Session | null) => void
   setViewModalOpen: (open: boolean) => void
+  onViewDetails?: () => void
 }) {
   const swipe = useSwipe({
     onSwipeLeft: () => deleteSession(session.id),
@@ -255,10 +256,10 @@ function SessionRow({
                   role="menu"
                   className="absolute right-0 z-30 mt-1 w-36 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800"
                 >
-                  <button type="button" role="menuitem" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { setViewSession(session); setViewModalOpen(true); setMenuSessionId(null) }}>
+                  <button type="button" role="menuitem" className="block w-full px-3 py-1.5 text-left text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { setViewSession(session); setViewModalOpen(true); setMenuSessionId(null); onViewDetails?.() }}>
                     View details
                   </button>
-                  <button type="button" role="menuitem" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { copySessionInfo(session); setMenuSessionId(null) }}>
+                  <button type="button" role="menuitem" className="block w-full px-3 py-1.5 text-left text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { copySessionInfo(session); setMenuSessionId(null) }}>
                     Copy
                   </button>
                   <button type="button" role="menuitem" className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => { deleteSession(session.id); setMenuSessionId(null) }}>
@@ -345,6 +346,7 @@ function AllSessionsModal({
                     selectionMode={selectionMode || selectedSessionIds.size > 0}
                     setViewSession={setViewSession}
                     setViewModalOpen={setViewModalOpen}
+                    onViewDetails={onClose}
                   />
                 );
               })}
@@ -1049,15 +1051,6 @@ export default function Dashboard() {
                     const start = settings.dashboardWeekMode === 'calendar'
                       ? startOfWeek(now, { weekStartsOn: settings.weekStartsOn })
                       : subDays(now, 6)
-                    return `${format(start, 'MMM d')} – ${format(now, 'MMM d')}`
-                  })()}
-                </div>
-                <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                  {(() => {
-                    const now = new Date()
-                    const start = settings.dashboardWeekMode === 'calendar'
-                      ? startOfWeek(now, { weekStartsOn: settings.weekStartsOn })
-                      : subDays(now, 6)
                     const label = `${format(start, 'MMM d')} – ${format(now, 'MMM d')}`
                     if (settings.dashboardWeekMode === 'calendar') {
                       const lastWeekStart = subDays(start, 7)
@@ -1250,7 +1243,7 @@ export default function Dashboard() {
             <div className="flex flex-wrap gap-2">
               {STREAK_MILESTONES.map((m) => {
                 const reached = streak >= m
-                const approached = m === nextMilestone
+                const isGoalWindow = streak === m - 1 || streak === m
                 return (
                   <div key={m} className="group relative">
                     <div
@@ -1259,7 +1252,7 @@ export default function Dashboard() {
                         reached
                           ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
                           : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
-                        approached && !reached && 'animate-[milestone-pulse_2s_ease-in-out_infinite]'
+                        isGoalWindow && 'animate-[milestone-pulse_2s_ease-in-out_infinite]'
                       )}
                     >
                       {reached && <span className="mr-1">🔥</span>}

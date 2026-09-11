@@ -104,14 +104,14 @@ export function SessionDetailsModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
-        className="bg-white dark:bg-slate-900 rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto"
+        className="bg-white dark:bg-slate-900 rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto text-slate-800 dark:text-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Session Details</h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-lg"
+            className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200 text-lg"
             aria-label="Close"
           >
             ×

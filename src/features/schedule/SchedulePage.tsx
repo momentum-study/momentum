@@ -1061,18 +1061,20 @@ function SortableBlock(props: {
     opacity: isDragging ? 0.4 : undefined,
     zIndex: isDragging ? 50 : undefined,
   }
+  // The outer div handles drag (via listeners). The button handles click.
+  // We do NOT stopPropagation on pointerDown — that blocks drag detection.
+  // Instead, we use onClick which only fires on a short tap (not a drag).
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
       <button
         type="button"
-        onPointerDown={(e) => { e.stopPropagation() }}
-        onClick={(e) => { e.stopPropagation(); onClick() }}
-        className="w-full rounded text-xs text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
+        onClick={onClick}
+        className="w-full rounded text-[10px] text-white font-medium flex flex-col items-center justify-center transition-opacity hover:opacity-80 overflow-hidden"
         style={blockStyle}
         title={title}
       >
-        <span className="truncate max-w-full px-1 text-[10px] leading-tight opacity-90">{displayName}</span>
-        <span className="leading-tight">{timeText}</span>
+        <span className="truncate max-w-full px-1 leading-tight opacity-90">{displayName}</span>
+        <span className="leading-tight opacity-80">{timeText}</span>
       </button>
     </div>
   )
@@ -1180,7 +1182,7 @@ function WeeklyPlanGrid(props: {
           </div>
           <div className="text-xs text-slate-500">Only days with blocks are shown</div>
         </div>
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        <div className="flex flex-wrap gap-3 pb-2">
           {allDays.filter(d => dailyTotals[d] > 0).map((dow) => {
             const total = dailyTotals[dow]
             const columnItems = [...sortedRoutines.filter(r => (r.dayMinutes[dow] ?? 0) > 0).map(r => ({ ...r, _type: 'routine' as const })), ...sortedActivities.filter(a => (a.dayMinutes[dow] ?? 0) > 0).map(a => ({ ...a, _type: 'activity' as const }))]
@@ -1192,7 +1194,7 @@ function WeeklyPlanGrid(props: {
               })
             const columnIds = columnItems.map(item => `${item._type}:${item.id}`)
             return (
-              <div key={dow} className="flex-shrink-0 min-w-[140px] w-[calc((100%-48px)/7)] max-w-[220px]">
+              <div key={dow} className="flex-shrink-0 w-[calc(50%-6px)] sm:w-[calc(33.333%-8px)] lg:w-[calc((100%-72px)/7)] max-w-[220px]">
                 <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2 mb-2">
                   <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{WEEKDAYS[dow]}</span>
                   <span className="text-xs text-primary-600 dark:text-primary-400 font-semibold">{total}m</span>

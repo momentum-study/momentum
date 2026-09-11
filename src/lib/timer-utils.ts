@@ -168,3 +168,106 @@ export function getTotalTodayMinutes(
   total += getLiveTimerSeconds(subjects, categories) / 60
   return total
 }
+
+/** Result of switching from Simple to Pomodoro mode. */
+export interface PomodoroSwitchResult {
+  /** Phase to enter after the switch. */
+  phase: TimerPhase
+  /** Remaining seconds in the current phase (for pomodoro's internal countdown). */
+  remainingSeconds: number
+  /** Seconds already elapsed in the current phase. */
+  phaseElapsedSeconds: number
+  /** How many pomodoro cycles have been fully completed. */
+  cyclesCompleted: number
+  /** Completed focus blocks that should be saved as sessions.
+   *  Each block's timestamps are anchored to the original session start. */
+  completedFocusBlocks: Array<{
+    startAt: string
+    endAt: string
+    durationMinutes: number
+    durationSeconds: number
+  }>
+}
+
+/** Compute the pomodoro phase state when switching from Simple to Pomodoro mode.
+ *  Walks the pomodoro cycle from the beginning, saves completed focus blocks,
+ *  and returns the phase + remaining time to enter.
+ *
+ *  @param elapsedSeconds - total seconds elapsed in simple mode
+ *  @param config - pomodoro configuration (focus/break/longBreak minutes, cycles before long break)
+ *  @param sessionStartMs - wall-clock ms when the simple timer started (for anchoring session timestamps)
+ */
+export function computePomodoroSwitchState(
+  elapsedSeconds: number,
+  config: { focusMinutes: number; breakMinutes: number; longBreakMinutes: number; cycles: number },
+  sessionStartMs: number,
+): PomodoroSwitchResult {
+  const focusLen = Math.max(1, config.focusMinutes * 60)
+  const shortBreakLen = Math.max(1, config.breakMinutes * 60)
+  const longBreakLen = Math.max(1, config.longBreakMinutes * 60)
+  const cycleCount = Math.max(1, config.cycles)
+  const completedBlocks: PomodoroSwitchResult['completedFocusBlocks'] = []
+  let remaining = Math.max(0, Math.floor(elapsedSeconds))
+  let cursor = 0
+  let cyclesCompleted = 0
+  let phase: TimerPhase = 'focus'
+  // No elapsed time — start fresh at the beginning of focus
+  if (elapsedSeconds <= 0) {
+    return {
+      phase: 'focus',
+      remainingSeconds: focusLen,
+      phaseElapsedSeconds: 0,
+      cyclesCompleted: 0,
+      completedFocusBlocks: [],
+    }
+  }
+  while (true) {
+    const duration = phase === 'focus'
+      ? focusLen
+      : phase === 'shortBreak' ? shortBreakLen : longBreakLen
+    if (remaining < duration) {
+      // `remaining` is the time left to consume before this phase completes.
+      // We've consumed `elapsedSeconds - remaining` seconds so far, all within
+      // the current phase since nothing was completed before it.
+      // phaseElapsedSeconds = remaining.
+      const phaseElapsedSeconds = remaining
+      return {
+        phase,
+        remainingSeconds: duration - remaining,
+        phaseElapsedSeconds,
+        cyclesCompleted,
+        completedFocusBlocks: completedBlocks,
+      }
+    }
+    if (phase === 'focus') {
+      const startMs = sessionStartMs + cursor * 1000
+      const endMs = startMs + duration * 1000
+      completedBlocks.push({
+        startAt: new Date(startMs).toISOString(),
+        endAt: new Date(endMs).toISOString(),
+        durationMinutes: config.focusMinutes,
+        durationSeconds: duration,
+      })
+      cyclesCompleted += 1
+      phase = cyclesCompleted % cycleCount === 0 ? 'longBreak' : 'shortBreak'
+    } else if (phase === 'shortBreak') {
+      phase = 'focus'
+    } else {
+      phase = 'focus'
+    }
+    remaining -= duration
+    cursor += duration
+    if (remaining === 0) {
+      const nextDuration = phase === 'focus'
+        ? focusLen
+        : phase === 'shortBreak' ? shortBreakLen : longBreakLen
+      return {
+        phase,
+        remainingSeconds: nextDuration,
+        phaseElapsedSeconds: 0,
+        cyclesCompleted,
+        completedFocusBlocks: completedBlocks,
+      }
+    }
+  }
+}

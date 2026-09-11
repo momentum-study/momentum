@@ -367,3 +367,87 @@ describe('getLiveTimerSeconds', () => {
     expect(getLiveTimerSeconds()).toBe(90)
   })
 })
+
+// ---------------------------------------------------------------------------
+// computePomodoroSwitchState — pure function for simple→pomodoro switch
+// ---------------------------------------------------------------------------
+
+import { computePomodoroSwitchState } from '../timer-utils'
+
+describe('computePomodoroSwitchState', () => {
+  const defaultConfig = {
+    focusMinutes: 25,
+    breakMinutes: 5,
+    longBreakMinutes: 15,
+    cycles: 4,
+  }
+  const sessionStart = new Date('2025-06-24T10:00:00').getTime()
+
+  it('returns focus phase with full duration when elapsed is 0', () => {
+    const result = computePomodoroSwitchState(0, defaultConfig, sessionStart)
+    expect(result.phase).toBe('focus')
+    expect(result.remainingSeconds).toBe(25 * 60)
+    expect(result.cyclesCompleted).toBe(0)
+    expect(result.completedFocusBlocks).toHaveLength(0)
+  })
+  it('enters focus phase with offset when elapsed < focus duration', () => {
+    const result = computePomodoroSwitchState(10 * 60, defaultConfig, sessionStart) // 10 min
+    expect(result.phase).toBe('focus')
+    expect(result.remainingSeconds).toBe(15 * 60) // 25 - 10 = 15 min remaining
+    expect(result.phaseElapsedSeconds).toBe(10 * 60) // 10 min into the phase
+    expect(result.cyclesCompleted).toBe(0)
+    expect(result.completedFocusBlocks).toHaveLength(0)
+  })
+
+  it('saves a completed focus block and enters break when elapsed >= focus duration', () => {
+    const result = computePomodoroSwitchState(25 * 60, defaultConfig, sessionStart) // exactly 25 min
+    expect(result.phase).toBe('shortBreak')
+    expect(result.remainingSeconds).toBe(5 * 60)
+    expect(result.cyclesCompleted).toBe(1)
+    expect(result.completedFocusBlocks).toHaveLength(1)
+    expect(result.completedFocusBlocks[0].durationMinutes).toBe(25)
+  })
+
+  it('saves multiple completed focus blocks and handles long break after N cycles', () => {
+    // 25 + 5 + 25 + 5 + 25 = 85 minutes = 5100 seconds
+    // After 3 focus blocks (3 * 25 = 75 min elapsed), we're 10 min into the 3rd focus
+    const result = computePomodoroSwitchState(75 * 60, defaultConfig, sessionStart)
+    // 75 min = focus(25) + shortBreak(5) + focus(25) + shortBreak(5) + focus(15 remaining)
+    expect(result.phase).toBe('focus')
+    expect(result.cyclesCompleted).toBe(2)
+    expect(result.completedFocusBlocks).toHaveLength(2)
+  })
+
+  it('enters long break after completing N cycles (4 by default)', () => {
+    // 4 focus blocks + 3 short breaks = 4*25 + 3*5 = 100 + 15 = 115 min
+    const result = computePomodoroSwitchState(115 * 60, defaultConfig, sessionStart)
+    expect(result.phase).toBe('longBreak')
+    expect(result.cyclesCompleted).toBe(4)
+    expect(result.completedFocusBlocks).toHaveLength(4)
+    expect(result.remainingSeconds).toBe(15 * 60)
+  })
+
+  it('wraps around after long break back to focus', () => {
+    // 4 focus + 3 short + 1 long = 4*25 + 3*5 + 15 = 100 + 15 + 15 = 130 min
+    const result = computePomodoroSwitchState(130 * 60, defaultConfig, sessionStart)
+    expect(result.phase).toBe('focus')
+    expect(result.cyclesCompleted).toBe(4)
+    expect(result.completedFocusBlocks).toHaveLength(4)
+  })
+
+  it('handles edge case exactly on focus boundary (remaining === 0)', () => {
+    // Exactly 50 min = focus(25) + shortBreak(5) + focus(20)
+    // At 25 min: completed 1 focus, remaining = 0 → next is shortBreak
+    const result = computePomodoroSwitchState(25 * 60, defaultConfig, sessionStart)
+    expect(result.phase).toBe('shortBreak')
+    expect(result.remainingSeconds).toBe(5 * 60)
+    expect(result.completedFocusBlocks).toHaveLength(1)
+  })
+
+  it('handles large elapsed times spanning multiple cycles', () => {
+    // 10 hours = 600 minutes = many cycles
+    const result = computePomodoroSwitchState(600 * 60, defaultConfig, sessionStart)
+    expect(result.completedFocusBlocks.length).toBeGreaterThan(10)
+    expect(result.cyclesCompleted).toBeGreaterThan(10)
+  })
+})

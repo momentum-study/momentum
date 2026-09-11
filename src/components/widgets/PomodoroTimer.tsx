@@ -6,7 +6,7 @@ import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { Modal } from '../ui/Modal'
 import { cn, isoNow, isTopLevelSubject, getChildSubjects, getSubjectPathLabel } from '../../lib/utils'
-import { formatTotalToday, getTotalTodayMinutes } from '../../lib/timer-utils'
+import { formatTotalToday, getTotalTodayMinutes, computePomodoroSwitchState } from '../../lib/timer-utils'
 import { loadSettings, saveSettings } from '../../lib/settings-store'
 import type { Settings } from '../../lib/settings-store'
 import { useSessionSync } from '../../lib/use-session-sync'
@@ -518,9 +518,18 @@ export function PomodoroTimer() {
       if (!pending) return
       clearPendingSession()
       const timerState = loadTimerState()
+      // Timer is still in progress if:
+      // - running (startedAt set)
+      // - simple mode paused (simplePausedOffset > 0)
+      // - pomodoro mode paused (phaseRemaining exists but startedAt is null)
+      const isPomodoroPaused = timerState?.mode === 'pomodoro' &&
+        !timerState.startedAt &&
+        timerState.phaseRemaining != null &&
+        timerState.phaseRemaining > 0
       if (
         timerState?.startedAt ||
-        (timerState?.mode === 'simple' && (timerState.simplePausedOffset ?? 0) > 0)
+        (timerState?.mode === 'simple' && (timerState.simplePausedOffset ?? 0) > 0) ||
+        isPomodoroPaused
       ) {
         // Timer is still in progress (running or paused). The accumulated time
         // will be included when the user resumes/stops later, so recovering the
@@ -1031,6 +1040,82 @@ export function PomodoroTimer() {
     }
     if (session.note) setLastNote(session.subjectId, session.note)
    }
+  /** Switch from Simple to Pomodoro mode mid-session.
+   *  Computes elapsed time, walks the pomodoro cycle saving completed focus
+   *  blocks as sessions, then positions the timer in the current phase. */
+  function switchToPomodoro() {
+    const elapsed = simpleSeconds
+    const sessionStartMs = simpleStartedAt ?? (Date.now() - elapsed * 1000)
+    const result = computePomodoroSwitchState(elapsed, config, sessionStartMs)
+    const now = Date.now()
+
+    // Save completed focus blocks (if any)
+    const actualSubjId = projectId
+      ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId)
+      : subjectId
+    if (actualSubjId && result.completedFocusBlocks.length > 0) {
+      const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
+      const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
+      for (const block of result.completedFocusBlocks) {
+        saveSessionWithMidnightCheck({
+          id: sessionIdFor(block.startAt, actualSubjId, block.durationMinutes),
+          subjectId: actualSubjId,
+          projectId: project?.id ?? null,
+          assignmentId: task?.id ?? null,
+          routineId: timerRoutineId || null,
+          startAt: block.startAt,
+          endAt: block.endAt,
+          durationMinutes: block.durationMinutes,
+          durationSeconds: block.durationSeconds,
+          note: task ? `Task: ${task.title}` : undefined,
+          focusTag: timerFocusTag ?? undefined,
+          source: 'pomodoro',
+          createdAt: isoNow(),
+          updatedAt: isoNow(),
+        })
+      }
+    }
+    clearPendingSession()
+
+    // Update the session group to reflect the accumulated time (as a single focus block)
+    if (elapsed > 0) {
+      updateSessionGroup((g) => {
+        if (!g) return null
+        return { ...bumpLastSegment(g, elapsed), active: true, lastEndAt: now }
+      })
+    }
+
+    // Enter pomodoro: set pomStartedAt so wall-clock elapsed = phaseElapsedSeconds,
+    // so the display shows the correct position in the phase as if pomodoro had
+    // been running from the start. Continue running (not paused).
+    const phaseStartMs = now - result.phaseElapsedSeconds * 1000
+    setPomPhase(result.phase)
+    setPomCycles(result.cyclesCompleted)
+    setPomStartedAt(phaseStartMs) // running, at the computed position
+    setPomSeconds(result.remainingSeconds)
+    // Reset simple state
+    setSimpleStartedAt(null)
+    setSimplePausedOffset(0)
+    setSimpleSeconds(0)
+    setMode('pomodoro')
+    setTodayPreview(true)
+
+    const state: PersistedTimerState = {
+      mode: 'pomodoro',
+      subjectId: subjectId,
+      parentSubjectId: selectedParentId || null,
+      simplePausedOffset: 0,
+      startedAt: now,
+      phaseRemaining: result.remainingSeconds,
+      phase: result.phase,
+      cyclesCompleted: result.cyclesCompleted,
+      config: configRef.current,
+      notes: timerNotes,
+      routineId: timerRoutineId || undefined,
+      focusTag: timerFocusTag ?? undefined,
+    }
+    saveTimerState(state)
+  }
 
   async function stopSimple() {
     setSimpleStartedAt(null)
@@ -1391,7 +1476,13 @@ export function PomodoroTimer() {
   const isGroupVisible = sessionGroup
     ? (sessionGroup.active || isCurrentSessionFresh(sessionGroup))
     : false
-  const groupLiveSeconds = groupFinalized + (isTimerActive && sessionGroup?.active ? currentSeconds : 0)
+  // In pomodoro mode `currentSeconds` is the phase *remaining* (counts down);
+  // the group must count up, so convert to elapsed within the current phase.
+  const groupLiveSeconds = groupFinalized + (isTimerActive && sessionGroup?.active
+    ? (mode === 'pomodoro' && settings.pomodoroEnabled
+        ? Math.max(0, pomGoalSeconds - currentSeconds)
+        : currentSeconds)
+    : 0)
   const groupSubjectNames = sessionGroup?.segments
     .map((seg) => data.subjects.find((s) => s.id === seg.subjectId)?.name ?? 'Unknown')
     ?? []
@@ -1726,6 +1817,9 @@ export function PomodoroTimer() {
           <>
             <div className="text-sm text-slate-600 dark:text-slate-300">
               Studying <span className="font-semibold">{getSubjectPathLabel(subjectId, data.subjects)}</span>
+              <span className="text-slate-500">
+                {timerRoutineId ? ` — ${data.routines.find(r => r.id === timerRoutineId)?.name ?? 'Unknown routine'}` : ' — No routine'}
+              </span>
             </div>
             <TimerNotesAndTag
               notes={timerNotes}
@@ -1756,6 +1850,11 @@ export function PomodoroTimer() {
                     <Button variant="primary" onClick={mode === 'simple' ? resumeSimple : resumePomodoro}>Resume</Button>
                   )}
                   <Button variant="secondary" onClick={mode === 'simple' ? () => void stopSimple() : () => void resetPomodoro()}>Save</Button>
+                  {mode === 'simple' && settings.pomodoroEnabled && (
+                    <Button variant="secondary" onClick={switchToPomodoro} title="Switch to Pomodoro mode">
+                      Switch → 🍅
+                    </Button>
+                  )}
                   <DiscardButton
                     showConfirm={showDiscardConfirm}
                     onShowConfirm={() => setShowDiscardConfirm(true)}

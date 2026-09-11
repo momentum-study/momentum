@@ -751,7 +751,7 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
               className="flex w-full items-center justify-between text-left"
             >
               <CardTitle>Completed ({completedTasks.length})</CardTitle>
-              <span className={cn('text-slate-500 transition-transform', completedOpen && 'rotate-90')}>
+              <span className={cn('text-slate-500 dark:text-slate-400 shrink-0 transition-transform', completedOpen && 'rotate-90')}>
                 ▶
               </span>
             </button>

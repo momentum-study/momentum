@@ -260,7 +260,7 @@ export default function AIReviewPage() {
   if (isLoading) return <PageSpinner />
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       <Card>
         <CardHeader>
           <CardTitle>Select Date Range</CardTitle>
@@ -360,26 +360,28 @@ export default function AIReviewPage() {
         </div>
       </Card>
 
-      {/* Generated Prompt */}
-      <Card>
+      {/* ...Stats card... */}
+      {/* ...Prompt card... */}
+      {/* Generated Prompt — sticky at viewport bottom so Copy bar is always accessible */}
+      <Card className="sticky bottom-0 z-10 shadow-lg dark:shadow-slate-900/50">
         <CardHeader>
           <CardTitle>AI Review Prompt</CardTitle>
         </CardHeader>
         <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">
           Copy this prompt and paste it into ChatGPT, Gemini, Claude, or any AI assistant for a detailed weekly review.
         </p>
-        <textarea
-          readOnly
-          value={aiPrompt}
-          className={cn(
-            'w-full h-96 resize-none rounded-md border p-3 text-sm font-mono',
-            'bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100',
-            'border-slate-200 dark:border-slate-700',
-            'focus:outline-none focus:ring-2 focus:ring-primary-500'
-          )}
-        />
-        <div className="fixed bottom-0 left-0 right-0 z-20 bg-white/90 p-4 shadow-lg backdrop-blur-sm dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-700">
-          <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-4">
+        <div className="flex flex-col">
+          <textarea
+            readOnly
+            value={aiPrompt}
+            className={cn(
+              'flex-1 w-full min-h-48 resize-none rounded-md border p-3 text-sm font-mono',
+              'bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100',
+              'border-slate-200 dark:border-slate-700',
+              'focus:outline-none focus:ring-2 focus:ring-primary-500'
+            )}
+          />
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-4">
             <Button variant="primary" onClick={handleCopy}>
               {copied ? '✓ Copied!' : 'Copy to Clipboard'}
             </Button>
@@ -399,7 +401,6 @@ export default function AIReviewPage() {
             )}
           </div>
         </div>
-        <div className="h-20" /> {/* Spacer */}
       </Card>
     </div>
   )

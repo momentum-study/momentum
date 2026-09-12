@@ -76,6 +76,10 @@ export interface PersistedTimerState {
   phase: TimerPhase
   cyclesCompleted: number
   config: TimerConfig
+  /** One-time custom focus duration (minutes) for the first focus phase of the
+   *  current session. Cleared after the first focus completes so subsequent
+   *  cycles use the normal config. */
+  customFirstFocusMinutes?: number | null
   /** Simple timer: total seconds accumulated before the most recent pause (0 if not paused). */
   simplePausedOffset: number
   subjectId?: string

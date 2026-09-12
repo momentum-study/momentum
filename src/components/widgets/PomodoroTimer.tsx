@@ -137,10 +137,14 @@ function playNotificationSound() {
   }
 }
 
-function getPhaseDuration(phase: Phase, cfg?: { focusMinutes: number; breakMinutes: number; longBreakMinutes: number }): number {
+function getPhaseDuration(phase: Phase, cfg?: { focusMinutes: number; breakMinutes: number; longBreakMinutes: number; customFirstFocusMinutes?: number | null }): number {
   const settings = loadSettings()
-  const c = cfg ?? { focusMinutes: settings.pomodoroFocusMinutes, breakMinutes: settings.pomodoroBreakMinutes, longBreakMinutes: settings.pomodoroLongBreakMinutes }
-  if (phase === 'focus') return c.focusMinutes * 60
+  const c = cfg ?? { focusMinutes: settings.pomodoroFocusMinutes, breakMinutes: settings.pomodoroBreakMinutes, longBreakMinutes: settings.pomodoroLongBreakMinutes, customFirstFocusMinutes: null }
+  if (phase === 'focus') {
+    // Use custom override for the first focus phase if set; fall back to config.
+    const focusMin = c.customFirstFocusMinutes ?? c.focusMinutes
+    return focusMin * 60
+  }
   if (phase === 'shortBreak') return c.breakMinutes * 60
   return c.longBreakMinutes * 60
 }
@@ -459,6 +463,13 @@ export function PomodoroTimer() {
     const saved = loadTimerState()
     return saved?.cyclesCompleted ?? 0
   })
+  // One-time custom focus duration for the next Pomodoro session — cleared after start.
+  const [customFirstFocusMinutes, setCustomFirstFocusMinutes] = useState<number | null>(null)
+  // Active first-phase override remains available until that phase completes.
+  const [activeFirstFocusMinutes, setActiveFirstFocusMinutes] = useState<number | null>(() => {
+    const saved = loadTimerState()
+    return saved?.mode === 'pomodoro' ? (saved.customFirstFocusMinutes ?? null) : null
+  })
   const pomIntervalRef = useRef<number | null>(null)
   // Guards the phase-transition effect against re-firing. When a phase
   // completes, the effect sets a new `pomStartedAt`/`pomPhase`; React batches
@@ -598,7 +609,7 @@ export function PomodoroTimer() {
     const tick = () => {
       const saved = loadTimerState()
       const currentPhase = saved?.phase ?? pomPhase
-      const duration = getPhaseDuration(currentPhase, configRef.current)
+      const duration = getPhaseDuration(currentPhase, saved?.config ?? configRef.current)
       const elapsed = Math.floor((Date.now() - pomStartedAt) / 1000)
       const remaining = Math.max(0, duration - elapsed)
       setPomSeconds(remaining)
@@ -1324,23 +1335,34 @@ export function PomodoroTimer() {
       }
       return { startedAt: now, segments: [{ subjectId: subjId, seconds: 0 }], lastEndAt: now, active: true }
     })
+    // Use the custom duration for the first focus phase if one is active.
+    const initialDuration = getPhaseDuration('focus', {
+      ...configRef.current,
+      customFirstFocusMinutes: activeFirstFocusMinutes,
+    })
     setPomStartedAt(now)
-    setPomStartedAt(now)
+    setPomSeconds(initialDuration)
+    setPomPhase('focus')
+    setPomCycles(0)
     const state: PersistedTimerState = {
       mode: 'pomodoro',
       subjectId: subjectId,
       parentSubjectId: selectedParentId || null,
       simplePausedOffset: 0,
       startedAt: now,
-      phaseRemaining: getPhaseDuration(pomPhase, configRef.current),
-      phase: pomPhase,
-      cyclesCompleted: pomCycles,
+      phaseRemaining: initialDuration,
+      phase: 'focus',
+      cyclesCompleted: 0,
       config: configRef.current,
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
       focusTag: timerFocusTag ?? undefined,
+      customFirstFocusMinutes: activeFirstFocusMinutes,
     }
     saveTimerState(state)
+    // The active duration is consumed by this start — clear it so the next
+    // session reverts to normal config unless a new one-time override is set.
+    setActiveFirstFocusMinutes(null)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
   }
   function resumePomodoro() {
@@ -1801,6 +1823,36 @@ export function PomodoroTimer() {
                 </Button>
               ) : (
                 <>
+                  {mode === 'pomodoro' && !customFirstFocusMinutes && (
+                    <div className="mb-2 flex items-center justify-center gap-2">
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Focus:</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="180"
+                        className="input w-16 py-1 text-center text-sm"
+                        placeholder={`${config.focusMinutes}m`}
+                        value=""
+                        onChange={(e) => {
+                          const val = e.target.value ? parseInt(e.target.value, 10) : null
+                          setCustomFirstFocusMinutes(val && val > 0 ? val : null)
+                        }}
+                      />
+                      <span className="text-xs text-slate-400">min</span>
+                    </div>
+                  )}
+                  {mode === 'pomodoro' && customFirstFocusMinutes && (
+                    <div className="mb-2 text-center text-xs text-slate-500 dark:text-slate-400">
+                      One-time focus: {customFirstFocusMinutes}m
+                      <button
+                        type="button"
+                        className="ml-1 text-primary-600 hover:underline dark:text-primary-400"
+                        onClick={() => setCustomFirstFocusMinutes(null)}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
                   <Button variant="primary" onClick={startPomodoro} disabled={!subjectId && !projectId}>
                     Start
                   </Button>

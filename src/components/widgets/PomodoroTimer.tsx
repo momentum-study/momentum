@@ -465,11 +465,6 @@ export function PomodoroTimer() {
   })
   // One-time custom focus duration for the next Pomodoro session — cleared after start.
   const [customFirstFocusMinutes, setCustomFirstFocusMinutes] = useState<number | null>(null)
-  // Active first-phase override remains available until that phase completes.
-  const [activeFirstFocusMinutes, setActiveFirstFocusMinutes] = useState<number | null>(() => {
-    const saved = loadTimerState()
-    return saved?.mode === 'pomodoro' ? (saved.customFirstFocusMinutes ?? null) : null
-  })
   const pomIntervalRef = useRef<number | null>(null)
   // Guards the phase-transition effect against re-firing. When a phase
   // completes, the effect sets a new `pomStartedAt`/`pomPhase`; React batches
@@ -1338,12 +1333,13 @@ export function PomodoroTimer() {
     // Use the custom duration for the first focus phase if one is active.
     const initialDuration = getPhaseDuration('focus', {
       ...configRef.current,
-      customFirstFocusMinutes: activeFirstFocusMinutes,
+      customFirstFocusMinutes,
     })
     setPomStartedAt(now)
     setPomSeconds(initialDuration)
     setPomPhase('focus')
     setPomCycles(0)
+    // Store customFirstFocusMinutes inside config so tick reads it from localStorage.
     const state: PersistedTimerState = {
       mode: 'pomodoro',
       subjectId: subjectId,
@@ -1353,16 +1349,15 @@ export function PomodoroTimer() {
       phaseRemaining: initialDuration,
       phase: 'focus',
       cyclesCompleted: 0,
-      config: configRef.current,
+      config: { ...configRef.current, customFirstFocusMinutes },
       notes: timerNotes,
       routineId: timerRoutineId || undefined,
       focusTag: timerFocusTag ?? undefined,
-      customFirstFocusMinutes: activeFirstFocusMinutes,
+      customFirstFocusMinutes,
     }
     saveTimerState(state)
-    // The active duration is consumed by this start — clear it so the next
-    // session reverts to normal config unless a new one-time override is set.
-    setActiveFirstFocusMinutes(null)
+    // Consumed by this start — clear so next session uses normal config.
+    setCustomFirstFocusMinutes(null)
     if (subjectId) localStorage.setItem(LAST_SUBJECT_KEY, subjectId)
   }
   function resumePomodoro() {
@@ -1484,10 +1479,15 @@ export function PomodoroTimer() {
   // Pomodoro counts up: display elapsed within the current phase, with the
   // phase goal shown alongside in brackets. Internally `pomSeconds` still
   // tracks remaining (so the phase-transition effect that fires at 0 is
-  // untouched); we only swap the *rendered* value to (goal - remaining).
-  const pomGoalSeconds = mode === 'pomodoro' && settings.pomodoroEnabled
-    ? getPhaseDuration(pomPhase, config)
-    : 0
+  // Pomodoro goal: read from localStorage to get custom first-focus duration if set.
+  const pomGoalSeconds = (() => {
+    if (mode !== 'pomodoro' || !settings.pomodoroEnabled) return 0
+    const saved = loadTimerState()
+    if (saved?.mode === 'pomodoro') {
+      return getPhaseDuration(pomPhase, saved.config)
+    }
+    return getPhaseDuration(pomPhase, config)
+  })()
   const cycleLabel = mode === 'pomodoro' && settings.pomodoroEnabled
     ? `Cycle ${(pomCycles % config.cycles) + 1} of ${config.cycles}`
     : ''

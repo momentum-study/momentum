@@ -64,6 +64,8 @@ export interface TimerConfig {
   breakMinutes: number
   longBreakMinutes: number
   cycles: number
+  soundEnabled?: boolean
+  customFirstFocusMinutes?: number | null
 }
 
 export interface PersistedTimerState {

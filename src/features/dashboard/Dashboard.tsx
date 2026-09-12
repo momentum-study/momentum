@@ -29,7 +29,7 @@ import { sessionIdFor } from '../../lib/timer-persistence'
 import { getDueCount } from '../../lib/fsrs-scheduler'
 import { useSessionSync } from '../../lib/use-session-sync'
 import type { Session, DayOfWeek, Activity, ActivityLog, Project } from '../../domain/types'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { DashboardWidget } from '../../components/widgets/DashboardWidget'
 import { useDashboardWidgets, DASHBOARD_WIDGETS_METADATA, DEFAULT_CONFIGS, DEFAULT_WIDGET_IDS } from '../../lib/use-dashboard-widgets'
 import { overColumn$, overId$, activeWidgetSize$, subscribeDragHover, emitDragHover, resetDragState } from '../../lib/dashboard-drag-store'
@@ -107,7 +107,7 @@ function formatLastSessionText(lastSession: { endAt: string } | null): string {
         onChange={onToggle}
         aria-label={visible ? `Hide ${label}` : `Show ${label}`}
       />
-      <span className={cn('flex-1 text-sm min-w-[8rem]', !visible && 'text-slate-400 dark:text-slate-500')}>{label}</span>
+      <span className={cn('flex-1 min-w-[8rem] text-sm text-slate-700 dark:text-slate-100', !visible && 'text-slate-400 dark:text-slate-500')}>{label}</span>
     </div>
   )
 }
@@ -369,7 +369,6 @@ export default function Dashboard() {
   const [allSessionsModalOpen, setAllSessionsModalOpen] = useState(false)
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
   const [showCelebration, setShowCelebration] = useState(false)
-  const navigate = useNavigate()
   const [activeId, setActiveId] = useState<string | null>(null)
   // Composite snapshot forces a re-render when the hovered column, hovered
   // widget, or measured active-widget size changes — all three drive the
@@ -1088,9 +1087,9 @@ export default function Dashboard() {
         return <TodayChecklist />
       case 'study-streak': {
         const targetMinutes = Math.max(1, settings.dailyTargetMinutes)
-        const nextMilestone = STREAK_MILESTONES.find(m => m > streak) ?? streak
+        const nextMilestone = STREAK_MILESTONES.find(m => m > streak) ?? streak + 1
         const progressPercent = Math.min(100, Math.round((streak / nextMilestone) * 100))
-        // Concrete time thresholds derived from the daily goal. The existing
+        const daysToGoal = Math.max(0, nextMilestone - streak)
         // four shades remain: no study, started, near goal, and goal met.
         // For a 120-minute goal the legend reads 0 / 1-89 / 90-119 / 120+.
         const nearThreshold = Math.max(2, Math.round(targetMinutes * 3 / 4))
@@ -1131,6 +1130,9 @@ export default function Dashboard() {
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm text-slate-500">day{streak !== 1 ? 's' : ''}</span>
+                  <span className="text-xs font-medium text-orange-500">
+                    {daysToGoal === 0 ? `${nextMilestone}d reached!` : `${daysToGoal} day${daysToGoal !== 1 ? 's' : ''} to ${nextMilestone}d`}
+                  </span>
                   <HoverCard
                     content={
                       <div className="space-y-1 text-xs">
@@ -1955,42 +1957,15 @@ export default function Dashboard() {
       </Modal>
 
       <div className="fixed bottom-6 right-6 z-40 fab-container">
-        {fabOpen && (
-          <div className="absolute bottom-16 right-0 mb-4 flex flex-col items-end gap-2">
-            {[
-              { label: 'Log study time', icon: '⏱', onClick: () => { setLogModalOpen(true); setFabOpen(false) } },
-              { label: 'Start quick Pomodoro', icon: '🍅', onClick: () => { window.dispatchEvent(new CustomEvent('momentum:timer-toggle')); setFabOpen(false) } },
-              { label: 'Add a new mark', icon: '📝', onClick: () => { navigate('/marks', { state: { openAdd: true } }); setFabOpen(false) } },
-              { label: 'Add a new task', icon: '📅', onClick: () => { navigate('/calendar', { state: { openAdd: true } }); setFabOpen(false) } },
-              { label: 'Add a new subject', icon: '+', onClick: () => { navigate('/subjects', { state: { openAdd: true } }); setFabOpen(false) } },
-            ].map((action, i) => (
-              <div key={i} className="group relative flex items-center">
-                <div className="absolute right-14 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-slate-200 dark:text-slate-800 pointer-events-none">
-                  {action.label}
-                </div>
-                <button
-                  onClick={action.onClick}
-                  className="h-10 w-10 rounded-full border border-slate-200 bg-white shadow-md transition-all duration-200 hover:scale-110 dark:border-slate-600 dark:bg-slate-700 flex items-center justify-center"
-                >
-                  {action.icon}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
         <button
-          onClick={() => setFabOpen(!fabOpen)}
-          className={cn(
-            "h-14 w-14 rounded-full bg-primary-600 text-white shadow-lg transition-all duration-200 text-2xl flex items-center justify-center",
-            !fabOpen && "animate-pulse",
-            fabOpen && "rotate-45"
-          )}
-          aria-label="Quick add"
+          onClick={() => setLogModalOpen(true)}
+          className="h-14 w-14 rounded-full bg-primary-600 text-white shadow-lg transition-all duration-200 text-2xl flex items-center justify-center hover:bg-primary-700"
+          aria-label="Log study time"
+          title="Log study time"
         >
           +
         </button>
       </div>
-
       <Modal open={logModalOpen} onClose={() => setLogModalOpen(false)} title="Log Study Time">
         <div className="space-y-3">
           {(() => {

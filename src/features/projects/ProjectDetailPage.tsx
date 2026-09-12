@@ -310,8 +310,13 @@ export default function ProjectDetailPage() {
           ))
         )}
         {doneTasks.length > 0 && (
-          <details className="mt-2">
-            <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700">{doneTasks.length} completed</summary>
+          <details className="mt-2 group">
+            <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 [&::-webkit-details-marker]:hidden">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 transition-transform group-open:rotate-90" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M7.05 4.05a.75.75 0 0 1 1.06 0l4.4 4.4a.75.75 0 0 1 0 1.06l-4.4 4.4a.75.75 0 1 1-1.06-1.06L10.92 9 7.05 5.11a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              </svg>
+              {doneTasks.length} completed
+            </summary>
             {doneTasks.map((t) => (
               <div key={t.id} className="flex items-center justify-between border-b border-slate-100 py-1.5 dark:border-slate-700">
                 <div className="flex items-center gap-2">

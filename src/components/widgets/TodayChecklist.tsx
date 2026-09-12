@@ -11,12 +11,12 @@ import { useUndo } from '../../lib/use-undo'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateStreakDayForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
 import { sessionIdFor } from '../../lib/timer-persistence'
-import type { Routine, Activity, RoutineLog, ActivityLog, DayOfWeek, Session } from '../../domain/types'
+import type { Routine, Activity, Assignment, RoutineLog, ActivityLog, DayOfWeek, Session } from '../../domain/types'
 
 type Row =
   | { kind: 'routine'; data: Routine; completed: boolean; skipped: boolean; log?: RoutineLog }
   | { kind: 'activity'; data: Activity; completed: boolean; skipped: boolean; log?: ActivityLog }
-
+  | { kind: 'assignment'; data: Assignment; completed: boolean; skipped: false }
 export function TodayChecklist() {
   const { data, mutate } = useData()
   const { push } = useUndo()
@@ -26,6 +26,8 @@ export function TodayChecklist() {
   // When true, checking off also creates a study session (default: false per
   // user request — study time is typically logged via the timer).
   const [logTime, setLogTime] = useState(false)
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskSubjectId, setTaskSubjectId] = useState('')
 
   const rows = useMemo<Row[]>(() => {
     const rlogs = data.routineLogs.filter(l => l.date === todayStr)
@@ -45,17 +47,36 @@ export function TodayChecklist() {
         const log = alogs.find(l => l.activityId === a.id)
         return { kind: 'activity' as const, data: a, completed: log?.status === 'completed', skipped: log?.status === 'skipped', log }
       })
-    return [...rRows, ...aRows].sort((a, b) => {
+    const tRows: Row[] = data.assignments
+      .filter(a => !a.deletedAt && a.dueDate === todayStr)
+      .map(a => ({ kind: 'assignment' as const, data: a, completed: a.completed, skipped: false }))
+    return [...rRows, ...aRows, ...tRows].sort((a, b) => {
       // Pending first, then by target minutes desc
       const aDone = a.completed || a.skipped ? 1 : 0
       const bDone = b.completed || b.skipped ? 1 : 0
       if (aDone !== bDone) return aDone - bDone
-      const aMins = a.data.dayMinutes[todayDow] ?? 0
-      const bMins = b.data.dayMinutes[todayDow] ?? 0
+      const aMins = a.kind === 'assignment' ? 0 : (a.data.dayMinutes[todayDow] ?? 0)
+      const bMins = b.kind === 'assignment' ? 0 : (b.data.dayMinutes[todayDow] ?? 0)
       return bMins - aMins
     })
-  }, [data.routines, data.routineLogs, data.activities, data.activityLogs, todayStr, todayDow])
+  }, [data.routines, data.routineLogs, data.activities, data.activityLogs, data.assignments, todayStr, todayDow])
+  const addTask = useCallback(async () => {
+    const title = taskTitle.trim()
+    if (!title || !taskSubjectId) return
+    const now = isoNow()
+    const a: Assignment = { id: uuid(), subjectId: taskSubjectId, title, dueDate: todayStr, category: 'miscellaneous', weight: 0, completed: false, createdAt: now, updatedAt: now }
+    await db.assignments.add(a)
+    mutate(prev => ({ ...prev, assignments: [...prev.assignments, a] }))
+    setTaskTitle('')
+  }, [taskTitle, taskSubjectId, todayStr, mutate])
+  const toggleAssignment = useCallback((row: Extract<Row, { kind: 'assignment' }>) => {
+    const completed = !row.data.completed
+    const updated = { ...row.data, completed, updatedAt: isoNow() }
+    mutate(prev => ({ ...prev, assignments: prev.assignments.map(a => a.id === updated.id ? updated : a) }))
+    void db.assignments.put(updated).catch(err => console.error('Failed to toggle assignment:', err))
+  }, [mutate])
   const markDone = useCallback((row: Row) => {
+    if (row.kind === 'assignment') { toggleAssignment(row); return }
     if (row.kind === 'routine') {
       const routine = row.data
       const mins = routine.dayMinutes[todayDow] ?? 0
@@ -164,7 +185,7 @@ export function TodayChecklist() {
   }, [logTime, todayDow, todayStr, data, mutate, push, syncSession])
 
   function markSkipped(row: Row) {
-    if (row.skipped || row.completed) return
+    if (row.skipped || row.completed || row.kind === 'assignment') return
     if (row.kind === 'routine') {
       const prevLog = row.log
       const log: RoutineLog = {
@@ -229,6 +250,7 @@ export function TodayChecklist() {
     }
   }
   function untick(row: Row) {
+    if (row.kind === 'assignment') return
     if (!row.log) return
     if (row.kind === 'routine') {
       const removedLog = row.log
@@ -319,8 +341,13 @@ export function TodayChecklist() {
 
   if (rows.length === 0) {
     return (
-      <div className="px-3 py-4 text-center text-xs text-slate-500 dark:text-slate-400">
-        Nothing scheduled for today
+      <div className="flex h-full flex-col">
+        <div className="px-3 py-4 text-center text-xs text-slate-500 dark:text-slate-400">Nothing scheduled for today</div>
+        <form className="flex items-center gap-1 border-t border-slate-100 px-3 py-2 dark:border-slate-700" onSubmit={(e) => { e.preventDefault(); void addTask() }}>
+          <input className="input min-w-0 flex-1 py-1 text-xs" placeholder="Add today's task..." value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} aria-label="Task title" />
+          <select className="input w-20 py-1 text-xs" value={taskSubjectId} onChange={(e) => setTaskSubjectId(e.target.value)} aria-label="Focus area"><option value="">Focus</option>{data.subjects.filter(s => !s.deletedAt).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          <button type="submit" className="rounded bg-primary-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50" disabled={!taskTitle.trim() || !taskSubjectId}>Add</button>
+        </form>
       </div>
     )
   }
@@ -352,6 +379,7 @@ export function TodayChecklist() {
       <ul className="flex-1 overflow-y-auto">
         {rows.map(row => {
           const isDone = row.completed || row.skipped
+          const name = row.kind === 'assignment' ? row.data.title : row.data.name
           return (
             <li
               key={`${row.kind}-${row.data.id}`}
@@ -382,19 +410,19 @@ export function TodayChecklist() {
                 className={`h-2 w-2 shrink-0 rounded-full ${
                   isDone ? 'opacity-40' : ''
                 }`}
-                style={{ backgroundColor: row.data.color || '#6366f1' }}
+                style={{ backgroundColor: row.kind === 'assignment' ? (data.subjects.find(s => s.id === row.data.subjectId)?.color || '#6366f1') : (row.data.color || '#6366f1') }}
               />
               <span
                 className={`flex-1 truncate text-sm ${
                   isDone ? 'text-slate-400 line-through dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'
                 }`}
               >
-                {row.data.name}
+                {name}
               </span>
               <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                {row.kind === 'routine' ? `${row.data.dayMinutes[todayDow]}m` : '✓'}
+                {row.kind === 'routine' ? `${row.data.dayMinutes[todayDow]}m` : row.kind === 'assignment' ? 'task' : '✓'}
               </span>
-              {!isDone && (
+              {!isDone && row.kind !== 'assignment' && (
                 <button
                   onClick={() => markSkipped(row)}
                   className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
@@ -406,6 +434,16 @@ export function TodayChecklist() {
             </li>
           )
         })}
+        <li key="add-task-form" className="border-b-0">
+          <form className="flex items-center gap-1 py-1" onSubmit={(e) => { e.preventDefault(); void addTask() }}>
+            <input className="input min-w-0 flex-1 py-1 text-xs" placeholder="Add today's task..." value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} aria-label="Task title" />
+            <select className="input w-20 py-1 text-xs" value={taskSubjectId} onChange={(e) => setTaskSubjectId(e.target.value)} aria-label="Focus area">
+              <option value="">Focus</option>
+              {data.subjects.filter(s => !s.deletedAt).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <button type="submit" className="rounded bg-primary-600 px-2 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50" disabled={!taskTitle.trim() || !taskSubjectId}>Add</button>
+          </form>
+        </li>
       </ul>
     </div>
   )

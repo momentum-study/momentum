@@ -202,26 +202,63 @@ export function SchedulePage() {
     } else {
       const activity = data.activities.find(a => a.id === item.id)
       if (!activity) return
+      const mins = activity.dayMinutes[new Date(item.date).getDay() as DayOfWeek] ?? activity.duration ?? 0
       const log: ActivityLog = {
         id: uuid(),
         activityId: activity.id,
         date: item.date,
         status: 'completed',
-        actualMinutes: activity.dayMinutes[new Date(item.date).getDay() as DayOfWeek] ?? activity.duration ?? 0,
+        actualMinutes: mins,
         createdAt: isoNow(),
       }
+      // Create session if activity has a subject (to count toward study time)
+      let sessionToUndo: Session | null = null
+      if (activity.subjectId && mins > 0) {
+        const [y, m, d] = item.date.split('-').map(Number)
+        const end = new Date(y, m - 1, d, 12, 0, 0, 0)
+        const start = new Date(end.getTime() - mins * 60_000)
+        const startAt = start.toISOString()
+        const sessionId = sessionIdFor(startAt, activity.subjectId, mins)
+        const session: Session = {
+          id: sessionId,
+          subjectId: activity.subjectId,
+          startAt,
+          endAt: end.toISOString(),
+          durationMinutes: mins,
+          source: 'activity',
+          createdAt: isoNow(),
+          updatedAt: isoNow(),
+        }
+        sessionToUndo = session
+        // Persist session
+        void db.sessions.put(session).catch(err => console.error('Failed to save session:', err))
+        const subjectName = subjectsMap.get(activity.subjectId)?.name ?? 'Unknown'
+        syncSession(session, subjectName)
+        void updateRoutineLogsForSession(session).catch(err => console.error('Failed to update routine logs:', err))
+        void updateStreakDayForSession(session).catch(err => console.error('Failed to update streak:', err))
+      }
+      // Link session to log if created
+      if (sessionToUndo) {
+        log.sessionId = sessionToUndo.id
+      }
       // Instant UI update FIRST
-      mutate(prev => ({ ...prev, activityLogs: [...prev.activityLogs, log] }))
+      mutate(prev => ({
+        ...prev,
+        activityLogs: [...prev.activityLogs, log],
+        sessions: sessionToUndo ? [...prev.sessions, sessionToUndo] : prev.sessions,
+      }))
       // Fire-and-forget DB write
       void db.activityLogs.add(log).catch(err => console.error('Failed to save activity log:', err))
       push({
         description: `Marked ${activity.name} attended (catch-up for ${item.date})`,
         undo: async () => {
           await db.activityLogs.delete(log.id)
+          if (sessionToUndo) await softDelete(db.sessions, sessionToUndo.id)
           await loadData()
         },
         redo: async () => {
           await db.activityLogs.add(log)
+          if (sessionToUndo) await db.sessions.put(sessionToUndo)
           await loadData()
         },
       })

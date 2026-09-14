@@ -1845,7 +1845,13 @@ export default function Dashboard() {
           const prevCol = overColumn$.current
           const prevId = overId$.current
           overId$.current = overId
-          overColumn$.current = overId ? columnFor(overId) : null
+          // During a cross-column drag the active widget is represented by a
+          // synthetic ghost in the destination column. If dnd-kit reports that
+          // ghost as the hovered item, resolving its configured column would
+          // jump back to the source column and make the ghost oscillate.
+          overColumn$.current = overId === activeId && overColumn$.current != null
+            ? overColumn$.current
+            : overId ? columnFor(overId) : null
           // Emit when the column changes OR the hovered widget changes, so the
           // target column's placeholder tracks the pointer. SortableContext
           // items are memoized (columnItems), so re-rendering here does not

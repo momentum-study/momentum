@@ -1156,11 +1156,14 @@ export function PomodoroTimer() {
       })
       clearPendingSession()
     }
+    // Compute delta BEFORE bumping the ref so the group accumulates the full
+    // unsaved time. After the update, lastSavedCumulativeRef tracks the new
+    // cumulative total (groupFinalized after the bump).
+    const delta = total - lastSavedCumulativeRef.current
     updateSessionGroup((g) => {
       if (!g) return null
-      return { ...bumpLastSegment(g, total - lastSavedCumulativeRef.current), active: false, lastEndAt: Date.now() }
+      return { ...bumpLastSegment(g, Math.max(0, delta)), active: false, lastEndAt: Date.now() }
     })
-
     lastSavedCumulativeRef.current = total
     simpleSafetyFiredRef.current = false
     setSafetyMessage('')
@@ -1215,11 +1218,14 @@ export function PomodoroTimer() {
         })
       }
       clearPendingSession()
-      lastSavedCumulativeRef.current = elapsed
+      // Compute delta BEFORE bumping the ref so the group gets the full
+      // unsaved time for the old subject.
+      const delta = elapsed - lastSavedCumulativeRef.current
       updateSessionGroup((g) => {
         if (!g) return null
-        return pushSegment(bumpLastSegment(g, elapsed - lastSavedCumulativeRef.current), newSubjectId)
+        return pushSegment(bumpLastSegment(g, Math.max(0, delta)), newSubjectId)
       })
+      lastSavedCumulativeRef.current = elapsed
     } else {
       // Save current pomodoro focus session (only if focus phase and has been running)
       if (pomPhase === 'focus' && pomStartedAt) {
@@ -1410,39 +1416,55 @@ export function PomodoroTimer() {
     // Save partial focus session before discarding. Works whether the timer is
     // running (elapsed from wall clock) or paused (elapsed = goal − remaining,
     // since pomStartedAt is null while paused).
-    if (pomPhase === 'focus') {
+    const [savedSubjId, savedMinutes] = (() => {
+      if (pomPhase !== 'focus') return [null, 0] as [null, 0]
       const elapsedSeconds = pomStartedAt != null
         ? Math.floor((Date.now() - pomStartedAt) / 1000)
         : Math.max(0, pomGoalSeconds - pomSeconds)
-      if (elapsedSeconds >= 10) {
-        const actualSubjId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
-        if (actualSubjId) {
-          const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
-          const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
-          const end = new Date()
-          const start = new Date(end.getTime() - elapsedSeconds * 1000)
-          const partialSeconds = Math.max(10, elapsedSeconds)
-          const partialMinutes = Math.max(1, Math.round(elapsedSeconds / 60))
-          const startAt = start.toISOString()
-          saveSessionWithMidnightCheck({
-            id: sessionIdFor(startAt, actualSubjId, partialMinutes),
-            subjectId: actualSubjId,
-            projectId: project?.id ?? null,
-            assignmentId: task?.id ?? null,
-            routineId: timerRoutineId || null,
-            startAt,
-            endAt: end.toISOString(),
-            durationMinutes: partialMinutes,
-            durationSeconds: partialSeconds,
-            note: timerNotes || (task ? `Task: ${task.title}` : undefined),
-            source: 'pomodoro',
-            focusTag: timerFocusTag ?? undefined,
-            createdAt: isoNow(),
-            updatedAt: isoNow(),
-          })
-            clearPendingSession()
-        }
-      }
+      if (elapsedSeconds < 10) return [null, 0] as [null, 0]
+      const actualSubjId = projectId ? (data.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId) : subjectId
+      if (!actualSubjId) return [null, 0] as [null, 0]
+      const task = taskId ? data.assignments.find((a) => a.id === taskId) : undefined
+      const project = projectId ? data.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
+      const end = new Date()
+      const start = new Date(end.getTime() - elapsedSeconds * 1000)
+      const startAt = start.toISOString()
+      const partialMinutes = Math.max(1, Math.round(elapsedSeconds / 60))
+      saveSessionWithMidnightCheck({
+        id: sessionIdFor(startAt, actualSubjId, partialMinutes),
+        subjectId: actualSubjId,
+        projectId: project?.id ?? null,
+        assignmentId: task?.id ?? null,
+        routineId: timerRoutineId || null,
+        startAt,
+        endAt: end.toISOString(),
+        durationMinutes: partialMinutes,
+        durationSeconds: Math.max(10, elapsedSeconds),
+        note: timerNotes || (task ? `Task: ${task.title}` : undefined),
+        source: 'pomodoro',
+        focusTag: timerFocusTag ?? undefined,
+        createdAt: isoNow(),
+        updatedAt: isoNow(),
+      })
+      clearPendingSession()
+      return [actualSubjId, partialMinutes] as [string, number]
+    })()
+    // Preserve the session group so the "Current Session" total persists after
+    // saving. After a save the group's segment for this subject reflects all
+    // accumulated time (saved sessions + any live time from this run).
+    if (savedSubjId !== null) {
+      updateSessionGroup((g) => {
+        if (!g) return null
+        const existingSecs = g.segments
+          .filter((s) => s.subjectId === savedSubjId)
+          .reduce((sum, s) => sum + s.seconds, 0)
+        const newSecs = savedMinutes * 60 + existingSecs
+        const segments = g.segments.map((s) =>
+          s.subjectId === savedSubjId ? { ...s, seconds: newSecs } : s
+        )
+        return { ...g, segments, active: false, lastEndAt: Date.now() }
+      })
+      lastSavedCumulativeRef.current = finalizedSeconds(sessionGroup) + savedMinutes * 60
     }
     setPomStartedAt(null)
     clearTimerState()

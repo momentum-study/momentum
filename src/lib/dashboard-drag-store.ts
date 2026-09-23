@@ -22,8 +22,22 @@ export function subscribeDragHover(cb: () => void): () => void {
   }
 }
 
-export function emitDragHover(): void {
+
+// Throttle drag-hover events: a fast cross-column drag can cross every
+// column boundary within a few frames, firing many draghover events. Each
+// event re-renders the dashboard (useSyncExternalStore bridge), and each
+// re-render can change SortableContext items, which makes dnd-kit fire
+// onDragOver again — a feedback loop that manifests as Minified React
+// error #185 ("Maximum update depth exceeded"). One event per animation
+// frame is plenty for placeholder tracking.
+let rafId: number | null = null
+function emitNow(): void {
+  rafId = null
   window.dispatchEvent(new Event('draghover'))
+}
+export function emitDragHover(): void {
+  if (rafId != null) return
+  rafId = requestAnimationFrame(emitNow)
 }
 
 export function emitDragMeasure(): void {

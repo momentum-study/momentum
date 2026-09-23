@@ -85,6 +85,16 @@ export function getSessionScope(
   return category?.scope ?? null
 }
 
+/**
+ * Returns true if the subject belongs to an academic-scoped category.
+ * Returns false if subject or category is missing.
+ */
+export function isAcademicSubject(subjectId: string, subjects: Subject[], categories: Category[]): boolean {
+  const subject = subjects.find((s) => s.id === subjectId)
+  if (!subject) return false
+  const category = categories.find((c) => c.id === subject.categoryId)
+  return category?.scope === 'academic'
+}
 
 /** Normalize an ISO timestamp to a local date string YYYY-MM-DD.
  *  Uses the browser's local timezone. Returns '' for invalid inputs. */

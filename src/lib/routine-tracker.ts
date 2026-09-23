@@ -37,9 +37,15 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
   // When the session explicitly picked a routine (e.g. via the study timer
   // dropdown), log ONLY toward that one. This prevents double-counting when
   // auto-match (including any-subject routines) would also match the session.
+  // Auto-match otherwise applies only to autoRoutine sessions: manual,
+  // timer, quickLog, and activity sessions must never tick a routine toward
+  // completion — attending an activity is not the same as completing the
+  // study block it happens to share a subject with.
   const toLog = session.routineId
     ? allRoutines.filter((r) => r.id === session.routineId && !r.deletedAt)
-    : autoMatch
+    : session.source === 'autoRoutine'
+      ? autoMatch
+      : []
 
   const logs = await db.routineLogs.toArray()
   for (const routine of toLog) {

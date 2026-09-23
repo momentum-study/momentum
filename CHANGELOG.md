@@ -1,6 +1,20 @@
 # Changelog
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
+## [v0.24.0] — 2026-09-23
+
+### Bug Fixes
+- Fixed Minified React error #185 when dragging dashboard widgets between distant columns (drag-hover events now coalesce to one animation frame).
+- Fixed streak freezes: the streak now simulates chronologically, so a freeze earned by a 5-day run covers the missed day that follows it; a missed day with no freeze still breaks the chain, and long-dead streaks no longer linger.
+- Ticking an activity (checklist or catch-up) no longer marks study routines as completed.
+- Pausing a habit now moves it to Potential Habits instead of archiving it.
+- Tasks page "Completed" collapse chevron replaced the emoji glyph with a themed SVG icon.
+
+### Marks
+- Marks are now limited to academic focus areas; marks on non-academic areas are hidden (with a note) but never deleted.
+- New year filter: All years + a chip per year, plus a "+ New year" action to start recording in the next year ahead of time.
+- New Subject summary card showing each focus area's overall weighted percentage and grade.
+
 
 ## [v0.22.4] — 2026-08-28
 

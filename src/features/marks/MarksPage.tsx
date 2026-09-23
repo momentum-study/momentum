@@ -3,10 +3,11 @@ import { Checkbox } from '../../components/ui/Checkbox'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
-import { cn, gradeColor, isoNow, pctToGrade, getSubjectPathLabel, getSubjectPickerOptions } from '../../lib/utils'
+import { cn, gradeColor, isoNow, pctToGrade, getSubjectPathLabel, getSubjectPickerOptions, isAcademicSubject } from '../../lib/utils'
 import { filterActive } from '../../lib/filterActive'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { v4 as uuid } from 'uuid'
@@ -68,10 +69,20 @@ export default function MarksPage() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [filterSubjects, setFilterSubjects] = useState<Set<string>>(new Set())
   const [filterName, setFilterName] = useState('')
+  const [filterYear, setFilterYear] = useState<'all' | number>('all')
+  // Years the user has explicitly started (e.g. next year before any marks
+  // exist in it). Persisted so the filter chip survives a reload.
+  const [extraYears, setExtraYears] = useState<number[]>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem('momentum-marks-years') ?? '[]')
+      return Array.isArray(v) ? v.filter((y) => typeof y === 'number') : []
+    } catch {
+      return []
+    }
+  })
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [visibleCount, setVisibleCount] = useState(20)
-  const marks = data.marks.filter((m) => !m.deletedAt)
   const [selectedMarkIds, setSelectedMarkIds] = useState<Set<string>>(new Set())
   const [compareOpen, setCompareOpen] = useState(false)
   const subjects = filterActive(data.subjects)
@@ -79,19 +90,44 @@ export default function MarksPage() {
 
   const subjectName = (id: string) => getSubjectPathLabel(id, subjects)
 
-  const subjectOptions = useMemo(() => {
-    return [...subjects].sort((a, b) => {
-      const aA = categories.find((c) => c.id === a.categoryId)?.scope === 'academic' ? 0 : 1
-      const bA = categories.find((c) => c.id === b.categoryId)?.scope === 'academic' ? 0 : 1
-      if (aA !== bA) return aA - bA
-      return a.name.localeCompare(b.name)
-    })
-  }, [subjects, categories])
+  // Marks are academic-only. Non-academic marks are hidden from the page but
+  // left untouched in the database (never destroyed by a display decision).
+  const academicIds = useMemo(
+    () => new Set(subjects.filter((s) => isAcademicSubject(s.id, subjects, categories)).map((s) => s.id)),
+    [subjects, categories]
+  )
+  const academicSubjects = useMemo(
+    () => subjects.filter((s) => academicIds.has(s.id)),
+    [subjects, academicIds]
+  )
+  const allMarks = data.marks.filter((m) => !m.deletedAt)
+  const hiddenNonAcademicCount = allMarks.filter((m) => !academicIds.has(m.subjectId)).length
+  const marks = allMarks.filter((m) => academicIds.has(m.subjectId))
+
+  const subjectOptions = useMemo(
+    () => [...academicSubjects].sort((a, b) => a.name.localeCompare(b.name)),
+    [academicSubjects]
+  )
+
+  // Year filter options: years that have marks, the current year, and any
+  // year the user explicitly started. Newest first.
+  const years = useMemo(() => {
+    const set = new Set<number>(extraYears)
+    set.add(new Date().getFullYear())
+    for (const m of marks) {
+      const y = Number(m.date.slice(0, 4))
+      if (Number.isFinite(y)) set.add(y)
+    }
+    return [...set].sort((a, b) => b - a)
+  }, [marks, extraYears])
 
   const filteredMarks = useMemo(() => {
     let result = [...marks]
     if (filterSubjects.size > 0) {
       result = result.filter((m) => filterSubjects.has(m.subjectId))
+    }
+    if (filterYear !== 'all') {
+      result = result.filter((m) => Number(m.date.slice(0, 4)) === filterYear)
     }
     if (filterName) {
       const q = filterName.toLowerCase()
@@ -111,7 +147,29 @@ export default function MarksPage() {
       return sortOrder === 'asc' ? cmp : -cmp
     })
     return result
-  }, [marks, filterSubjects, filterName, sortKey, sortOrder, subjectName])
+  }, [marks, filterSubjects, filterYear, filterName, sortKey, sortOrder, subjectName])
+
+  // Per-subject overall result: the weighted percentage across that subject's
+  // (filtered) marks, i.e. sum(score/total*weight) / sum(weight), plus grade.
+  const subjectSummary = useMemo(() => {
+    const acc = new Map<string, { totalWeight: number; weightedScore: number; count: number }>()
+    for (const m of filteredMarks) {
+      const entry = acc.get(m.subjectId) ?? { totalWeight: 0, weightedScore: 0, count: 0 }
+      entry.totalWeight += m.weight
+      entry.weightedScore += weightedPct(m) * m.weight
+      entry.count += 1
+      acc.set(m.subjectId, entry)
+    }
+    return [...acc.entries()]
+      .map(([id, e]) => ({
+        id,
+        name: subjectName(id),
+        count: e.count,
+        overall: e.totalWeight > 0 ? e.weightedScore / e.totalWeight : 0,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [filteredMarks, subjectName])
+
   const visibleMarks = filteredMarks.slice(0, visibleCount)
   const allSubjectsSelected = filterSubjects.size === 0
   function toggleSubjectFilter(subjectId: string) {
@@ -124,6 +182,20 @@ export default function MarksPage() {
   }
   function clearSubjectFilter() {
     setFilterSubjects(new Set())
+  }
+  const yearHasMarks = (y: number) => marks.some((m) => Number(m.date.slice(0, 4)) === y)
+  function startNewYear() {
+    const next = (years[0] ?? new Date().getFullYear()) + 1
+    const updated = [...new Set([...extraYears, next])]
+    setExtraYears(updated)
+    try { localStorage.setItem('momentum-marks-years', JSON.stringify(updated)) } catch { /* ignore */ }
+    setFilterYear(next)
+  }
+  function removeExtraYear(y: number) {
+    const updated = extraYears.filter((x) => x !== y)
+    setExtraYears(updated)
+    try { localStorage.setItem('momentum-marks-years', JSON.stringify(updated)) } catch { /* ignore */ }
+    if (filterYear === y) setFilterYear('all')
   }
 
   // Early return AFTER all hooks
@@ -287,10 +359,101 @@ export default function MarksPage() {
               )
             })}
           </div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <button
+              type="button"
+              onClick={() => setFilterYear('all')}
+              className={cn(
+                'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                filterYear === 'all'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+              )}
+            >
+              All years
+            </button>
+            {years.map((y) => {
+              const active = filterYear === y
+              const removable = !yearHasMarks(y) && extraYears.includes(y)
+              return (
+                <span key={y} className="relative inline-flex">
+                  <button
+                    type="button"
+                    onClick={() => setFilterYear(y)}
+                    className={cn(
+                      'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                      active
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                    )}
+                  >
+                    {y}
+                  </button>
+                  {removable && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${y}`}
+                      onClick={() => removeExtraYear(y)}
+                      className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+                    >
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </span>
+              )
+            })}
+            <button
+              type="button"
+              onClick={startNewYear}
+              className="rounded-full border border-dashed border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500"
+            >
+              + New year
+            </button>
+          </div>
           <input className="input text-sm" placeholder="Filter by name..." value={filterName} onChange={(e) => setFilterName(e.target.value)} />
+          {hiddenNonAcademicCount > 0 && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {hiddenNonAcademicCount} mark{hiddenNonAcademicCount !== 1 ? 's' : ''} on non-academic focus areas hidden.
+            </p>
+          )}
         </div>
       )}
 
+      {/* Subject summary — overall weighted % per focus area */}
+      {subjectSummary.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Subject summary</CardTitle>
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-700 text-left text-slate-500 dark:text-slate-400">
+                  <th className="pb-2 pr-4 font-medium">Focus area</th>
+                  <th className="pb-2 pr-4 font-medium">Marks</th>
+                  <th className="pb-2 pr-4 font-medium">Overall (weighted)</th>
+                  <th className="pb-2 font-medium">Grade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subjectSummary.map((s) => {
+                  const grade = pctToGrade(Math.round(s.overall))
+                  return (
+                    <tr key={s.id} className="border-b border-slate-100 dark:border-slate-700/50">
+                      <td className="py-2.5 pr-4 font-medium text-slate-800 dark:text-slate-100">{s.name}</td>
+                      <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{s.count}</td>
+                      <td className="py-2.5 pr-4 font-medium text-slate-800 dark:text-slate-100">{s.overall.toFixed(1)}%</td>
+                      <td className={cn('py-2.5 font-medium', gradeColor(grade))}>{grade}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
       {/* Mark list */}
       {marks.length === 0 ? (
         <EmptyState
@@ -415,7 +578,7 @@ export default function MarksPage() {
             <label className="label" htmlFor="mark-subject">Subject</label>
             <select id="mark-subject" className="input" value={form.subjectId} onChange={(e) => updateField('subjectId', e.target.value)}>
               <option value="">Select subject</option>
-              {getSubjectPickerOptions(subjects).map((s) => (<option key={s.id} value={s.id}>{s.label}</option>))}
+              {getSubjectPickerOptions(academicSubjects).map((s) => (<option key={s.id} value={s.id}>{s.label}</option>))}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-2">

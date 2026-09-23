@@ -752,7 +752,9 @@ void selectedIndex // consumed by keyboard navigation event listeners for task s
             >
               <CardTitle>Completed ({completedTasks.length})</CardTitle>
               <span className={cn('text-slate-500 dark:text-slate-400 shrink-0 transition-transform', completedOpen && 'rotate-90')}>
-                ▶
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
               </span>
             </button>
           </CardHeader>

@@ -390,13 +390,16 @@ export default function HabitsPage() {
     await db.habits.update(id, { status: 'active', updatedAt: isoNow() })
     mutate(prev => ({ ...prev, habits: prev.habits.map(h => h.id === id ? { ...h, status: 'active', updatedAt: isoNow() } : h) }))
   }
-  async function archiveHabitFn(id: string) {
+  async function pauseHabitFn(id: string) {
     try {
-      await db.habits.update(id, { archivedAt: isoNow(), updatedAt: isoNow() })
+      // Pausing moves a habit to "Potential" (parked, not archived).
+      // Archived habits are for historically ended habits; potential
+      // means "I may come back to this".
+      await db.habits.update(id, { status: 'potential', updatedAt: isoNow() })
       if (selectedId === id) setSelectedId(null)
       setArchiveConfirm(null)
-      mutate(prev => ({ ...prev, habits: prev.habits.map(h => h.id === id ? { ...h, archivedAt: isoNow(), updatedAt: isoNow() } : h) }))
-    } catch (e) { console.error('Failed to archive habit', e) }
+      mutate(prev => ({ ...prev, habits: prev.habits.map(h => h.id === id ? { ...h, status: 'potential', updatedAt: isoNow() } : h) }))
+    } catch (e) { console.error('Failed to pause habit', e) }
   }
   async function unarchiveHabitFn(id: string) {
     try {
@@ -727,7 +730,7 @@ export default function HabitsPage() {
   useEffect(() => {
     function onArchive() {
       const habit = currentHabits[selectedIndex]
-      if (habit) archiveHabitFn(habit.id)
+      if (habit) pauseHabitFn(habit.id)
     }
     window.addEventListener('momentum:habits-archive', onArchive)
     return () => window.removeEventListener('momentum:habits-archive', onArchive)
@@ -1057,15 +1060,14 @@ export default function HabitsPage() {
           </div>
         </div>
       </Modal>
-
       <Modal open={archiveConfirm !== null} onClose={() => setArchiveConfirm(null)} title="Pause Habit?">
         <div className="space-y-3">
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Pause this habit? It stops appearing in your active list but keeps all data. You can resume it later from the archived list.
+            Pause this habit? It will move to Potential Habits, keep all data, and stay available to resume later.
           </p>
           <div className="flex gap-2">
             <Button variant="secondary" className="flex-1" onClick={() => setArchiveConfirm(null)}>Cancel</Button>
-            <Button variant="primary" className="flex-1" onClick={() => archiveConfirm && archiveHabitFn(archiveConfirm)}>Pause</Button>
+            <Button variant="primary" className="flex-1" onClick={() => archiveConfirm && pauseHabitFn(archiveConfirm)}>Move to Potential</Button>
           </div>
         </div>
       </Modal>

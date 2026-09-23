@@ -16,7 +16,13 @@ export function ActivityConfirmationCard({ onDismiss }: ActivityConfirmationCard
   const { data, loadData } = useData()
   const todayDow = new Date().getDay() as DayOfWeek
   const todayStr = format(new Date(), 'yyyy-MM-dd')
-
+  // Tick counter to force re-renders every 30s so that pending activities
+  // with a scheduledTime appear automatically when their time arrives.
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => setTick(n => n + 1), 30_000)
+    return () => clearInterval(id)
+  }, [])
   // Build the list of activities due today that are not yet handled.
   const pendingActivities = useMemo<Activity[]>(() => {
     const { activities, activityLogs, sessions } = data
@@ -51,7 +57,7 @@ export function ActivityConfirmationCard({ onDismiss }: ActivityConfirmationCard
       if (a.scheduledTime && a.scheduledTime > currentTimeStr) return false
       return true
     })
-  }, [data, todayDow, todayStr])
+  }, [data, todayDow, todayStr, tick])
 
   const [index, setIndex] = useState(0)
 

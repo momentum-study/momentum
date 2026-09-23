@@ -532,8 +532,13 @@ export default function Dashboard() {
     }
   }
 
-  const todayStr = format(new Date(), 'yyyy-MM-dd')
-  // Exclude soft-deleted sessions from streak / stats calculations.
+  // dayTick increments every 60s so todayStr updates automatically at midnight.
+  const [dayTick, setDayTick] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => setDayTick(n => n + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), [dayTick])
   const academicSessions = useMemo(
     () => data.sessions.filter((s) => !s.deletedAt && getSessionScope(s, data.subjects, data.categories) === 'academic'),
     [data.sessions, data.subjects, data.categories]

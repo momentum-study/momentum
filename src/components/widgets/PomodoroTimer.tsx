@@ -1,3 +1,5 @@
+import { useDay } from '../../lib/use-day'
+import type { Session } from '../../domain/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { useData } from '../../app/providers'
@@ -30,52 +32,28 @@ const SAFETY_LIMIT_HOURS = 12
 const SAFETY_LIMIT_SECONDS = SAFETY_LIMIT_HOURS * 3600
 type Phase = 'focus' | 'shortBreak' | 'longBreak'
 /** Notes textarea + focus tag selector. Used in both idle and active timer states.
- *  When `notes` is empty and `lastNoteHint` is set, the textarea shows the hint
- *  as gray text. Clicking/focusing activates it (sets it as the actual note); if
- *  the user instead starts typing, they overwrite the hint with their own value. */
+ * Notes are always persisted per-subject and survive app restart. */
 function TimerNotesAndTag({
   notes,
   onNotesChange,
   focusTag,
   onFocusTagChange,
-  lastNoteHint,
 }: {
   notes: string
   onNotesChange: (v: string) => void
   focusTag: FocusTag | null
   onFocusTagChange: (tag: FocusTag | null) => void
-  lastNoteHint?: string | null
 }) {
-  const showHint = notes.length === 0 && !!lastNoteHint
-  function activateHint() {
-    if (showHint && lastNoteHint) onNotesChange(lastNoteHint)
-  }
   return (
     <div>
       <label className="label">What are you working on?</label>
-      <div className="relative">
-        <textarea
-          placeholder={showHint ? undefined : 'Optional notes'}
-          value={notes}
-          onChange={(e) => onNotesChange(e.target.value)}
-          onFocus={activateHint}
-          onClick={activateHint}
-          className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
-          rows={2}
-        />
-        {showHint && lastNoteHint && (
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label="Use last note"
-            onMouseDown={(e) => e.preventDefault() /* keep focus on the textarea */}
-            onClick={activateHint}
-            className="pointer-events-none absolute inset-0 flex items-start px-2 py-1 text-left text-sm italic text-slate-400 dark:text-slate-500"
-          >
-            <span className="line-clamp-2">{lastNoteHint}</span>
-          </button>
-        )}
-      </div>
+      <textarea
+        placeholder="Optional notes"
+        value={notes}
+        onChange={(e) => onNotesChange(e.target.value)}
+        className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
+        rows={2}
+      />
       <FocusTagSelector value={focusTag} onChange={onFocusTagChange} />
     </div>
   )
@@ -355,9 +333,8 @@ export function PomodoroTimer() {
   const availableTasks = data.assignments.filter((a) => a.projectId === projectId && !a.completed && !a.deletedAt)
   // Routines scheduled for today. Shows both subject-specific routines AND
   // any-subject routines (wildcard). Any-subject routines are NOT auto-selected
-  // — the dropdown has "No routine" as the default and the user opts in.
-  const todayDow = new Date().getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6
-  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  // useDay() re-renders every 60s so today changes are picked up at midnight.
+  const { todayDow, todayStr } = useDay()
   const availableRoutines = data.routines.filter((r) => {
     if (r.deletedAt) return false
     if (!(r.dayMinutes[todayDow] ?? 0)) return false
@@ -393,15 +370,21 @@ export function PomodoroTimer() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // Restore notes + routineId + focusTag from persisted timer state on mount
+  // Load notes + routineId + focusTag from persisted timer state on mount,
+  // then re-load notes whenever the selected subject changes so they are
+  // always subject-specific and survive restart even without an active timer.
   useEffect(() => {
     const stored = loadTimerState()
     if (stored) {
-      setTimerNotes(stored.notes ?? '')
       if (stored.routineId) setTimerRoutineId(stored.routineId)
       if (stored.focusTag) setTimerFocusTag(stored.focusTag)
     }
   }, [])
+  useEffect(() => {
+    if (subjectId) {
+      setTimerNotes(getLastNote(subjectId) ?? '')
+    }
+  }, [subjectId])
 
 
   // Mode — try to restore from localStorage
@@ -478,7 +461,69 @@ export function PomodoroTimer() {
   // Refs so the interval callback always sees latest values
   const configRef = useRef(config)
   configRef.current = config
-
+  // Auto-save when paused for more than 5 minutes. After 5 minutes of
+  // inactivity, treat the session as complete: save it and reset the timer.
+  const pauseTimeoutFiredRef = useRef(false)
+  useEffect(() => {
+    const isPaused = (simpleStartedAt === null && (mode === 'simple' ? simplePausedOffset > 0 : pomStartedAt === null))
+    const hasSession = sessionGroup !== null && finalizedSeconds(sessionGroup) > 0
+    if (!isPaused || !hasSession) {
+      pauseTimeoutFiredRef.current = false
+      return
+    }
+    if (pauseTimeoutFiredRef.current) return
+    pauseTimeoutFiredRef.current = true
+    const timeoutId = window.setTimeout(async () => {
+      const g = sessionGroup
+      if (!g || g.active) return
+      const totalSeconds = finalizedSeconds(g)
+      if (totalSeconds <= 0) return
+      const lastSeg = g.segments[g.segments.length - 1]
+      const subjectIdToUse = lastSeg?.subjectId
+      if (!subjectIdToUse) return
+      const subject = data.subjects.find(s => s.id === subjectIdToUse && !s.deletedAt)
+      if (!subject) return
+      const now = new Date()
+      const durationMinutes = Math.max(1, Math.round(totalSeconds / 60))
+      const durationSeconds = Math.max(10, Math.round(totalSeconds))
+      const startAt = new Date(now.getTime() - totalSeconds * 1000).toISOString()
+      const session: Session = {
+        id: sessionIdFor(startAt, subjectIdToUse, durationMinutes),
+        subjectId: subjectIdToUse,
+        projectId: projectId || null,
+        assignmentId: taskId || null,
+        routineId: timerRoutineId || null,
+        startAt,
+        endAt: now.toISOString(),
+        durationMinutes,
+        durationSeconds,
+        note: timerNotes || undefined,
+        focusTag: timerFocusTag ?? undefined,
+        source: 'timer',
+        createdAt: isoNow(),
+        updatedAt: isoNow(),
+      }
+      mutate(prev => ({ ...prev, sessions: [...prev.sessions, session] }))
+      await db.sessions.put(session)
+      await updateRoutineLogsForSession(session)
+      await updateStreakDayForSession(session)
+      syncSession(session, subject.name)
+      // Reset timer to idle state.
+      setMode('simple')
+      setSimpleStartedAt(null)
+      setSimplePausedOffset(0)
+      setSimpleSeconds(0)
+      setPomStartedAt(null)
+      setPomSeconds(configRef.current.focusMinutes * 60)
+      setPomPhase('focus')
+      setPomCycles(0)
+      clearTimerState()
+      clearPendingSession()
+      updateSessionGroup(() => null)
+      sendNotification('Momentum', `Session saved: ${subject.name} (${durationMinutes}m)`, 'session-saved')
+    }, 5 * 60 * 1000)
+    return () => clearTimeout(timeoutId)
+  }, [simpleStartedAt, simplePausedOffset, pomStartedAt, mode, sessionGroup, subjectId, projectId, taskId, timerNotes, timerFocusTag, timerRoutineId, configRef])
   const stateRef = useRef({ pomPhase, subjectId, projectId, taskId, pomCycles })
   stateRef.current = { pomPhase, subjectId, projectId, taskId, pomCycles }
   const dataRef = useRef(data)
@@ -1829,12 +1874,13 @@ export function PomodoroTimer() {
               notes={timerNotes}
               onNotesChange={(v) => {
                 setTimerNotes(v)
+                // Always persist per-subject — works even without an active timer.
+                if (subjectId) setLastNote(subjectId, v)
                 const state = loadTimerState()
                 if (state) saveTimerState({ ...state, notes: v })
               }}
               focusTag={timerFocusTag}
               onFocusTagChange={setTimerFocusTag}
-              lastNoteHint={timerNotes ? null : getLastNote(subjectId)}
             />
             <div className="flex justify-center gap-2 mt-3">
               {isOwnedElsewhere ? (
@@ -1900,12 +1946,13 @@ export function PomodoroTimer() {
               notes={timerNotes}
               onNotesChange={(v) => {
                 setTimerNotes(v)
+                // Always persist per-subject — works even without an active timer.
+                if (subjectId) setLastNote(subjectId, v)
                 const state = loadTimerState()
                 if (state) saveTimerState({ ...state, notes: v })
               }}
               focusTag={timerFocusTag}
               onFocusTagChange={setTimerFocusTag}
-              lastNoteHint={timerNotes ? null : getLastNote(subjectId)}
             />
             {mode === 'simple' && (
               <div className="text-center text-xs text-slate-500 dark:text-slate-400">

@@ -1,8 +1,8 @@
+import { useDay } from '../../lib/use-day'
 // Compact "Today's Checklist" widget — shows today's routines and activities
 import { Checkbox } from '../../components/ui/Checkbox'
 // as a single list with checkmark/skip actions. Optimistic UI updates.
 import { useMemo, useState, useCallback } from 'react'
-import { format } from 'date-fns'
 import { v4 as uuid } from 'uuid'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
@@ -11,8 +11,7 @@ import { useUndo } from '../../lib/use-undo'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateStreakDayForSession, revertStreakDayForSession } from '../../lib/routine-tracker'
 import { sessionIdFor } from '../../lib/timer-persistence'
-import type { Routine, Activity, Assignment, RoutineLog, ActivityLog, DayOfWeek, Session } from '../../domain/types'
-
+import type { Routine, Activity, Assignment, RoutineLog, ActivityLog, Session } from '../../domain/types'
 type Row =
   | { kind: 'routine'; data: Routine; completed: boolean; skipped: boolean; log?: RoutineLog }
   | { kind: 'activity'; data: Activity; completed: boolean; skipped: boolean; log?: ActivityLog }
@@ -21,8 +20,8 @@ export function TodayChecklist() {
   const { data, mutate } = useData()
   const { push } = useUndo()
   const { syncSession } = useSessionSync()
-  const todayStr = format(new Date(), 'yyyy-MM-dd')
-  const todayDow = new Date().getDay() as DayOfWeek
+  // useDay() re-renders every 60s so today changes are picked up at midnight.
+  const { todayStr, todayDow } = useDay()
   // When true, checking off also creates a study session (default: false per
   // user request — study time is typically logged via the timer).
   const [logTime, setLogTime] = useState(false)

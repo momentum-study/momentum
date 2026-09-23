@@ -1,0 +1,1 @@
+import{ah as h,ae as o}from"./index-VTxbolNt.js";function c(e,a,n){const t=h(e,n==null?void 0:n.in);if(isNaN(a))return o(e,NaN);if(!a)return t;const s=t.getDate(),r=o(e,t.getTime());r.setMonth(t.getMonth()+a+1,0);const u=r.getDate();return s>=u?r:(t.setFullYear(r.getFullYear(),r.getMonth(),s),t)}function M(e,a,n){return c(e,-1,n)}export{c as a,M as s};

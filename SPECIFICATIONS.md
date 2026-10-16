@@ -17,7 +17,7 @@ If you are a new instance about to work on Momentum, do these in order:
 7. **Read `momentum/src/app/router.tsx`** — the real route table (the §Routes table below is derived from it).
 8. **Read `momentum/src/app/providers.tsx`** — the data provider contract (`useData()`).
 9. **Read `momentum/src/lib/shortcuts.ts`** — the shortcut registry. The registry is canonical; the keydown handler in `AppLayout.tsx` dispatches from it.
-10. **Read `momentum/src/lib/use-dashboard-widgets.ts`** — the dashboard widget layout system (grid mode only; freeform removed in 72e50ec, pending re-implementation).
+10. **Read `momentum/src/lib/use-dashboard-widgets.ts`** — the dashboard widget layout system (grid mode and freeform mode; freeform re-implemented fresh in v0.25.0, see §10.23).
 
 **Grounding rule:** the code is the source of truth. If this file and the code disagree, the code wins — and you MUST update this file to match (see §Maintenance Protocol). Never trust a stale spec over the actual implementation.
 
@@ -216,7 +216,7 @@ type Settings = {
 - Recent sessions (all non-deleted sessions) with subject + duration + optional `focusTag` badge. **Multi-select checkboxes hidden by default; only shown after clicking "Select Sessions".**
 - Achievements: dismissible celebratory card.
 - **Widget position persistence**: toggling a widget off/on MUST restore its original position, not append to the end.
-- **Widget layout system**: `use-dashboard-widgets.ts` is grid-mode only (freeform removed in `72e50ec`; pending fresh re-implementation). **Three-column grid** (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`); each widget occupies one column (no per-widget width/row controls — width button removed). Widgets fall upward into the shortest column. Cross-column drag via per-column `SortableContext` + `ColumnFloor` drop targets + `GhostWidget` placeholder. Storage key `momentum-dashboard-layout` may still hold stale freeform `Box` records in user browsers — these are ignored by the grid code and safe to clear via DevTools. Widgets registered via `widget-registry.ts` (`registerWidget`, `window.Momentum.registerWidget`).
+- **Widget layout system**: `use-dashboard-widgets.ts` supports TWO modes. **Grid mode** (default): three-column grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`); each widget occupies one column; widgets fall upward into the shortest column; cross-column drag via per-column `SortableContext` + `ColumnFloor` drop targets + `GhostWidget` placeholder. **Freeform mode** (v0.25.0, fresh implementation — see §10.23): widgets are absolutely positioned on a full-width canvas, dragged/resized with pointer events (`FreeformWidget.tsx`), clamped in bounds and overlap-resolved on commit by the pure `freeform-layout.ts` engine (`clampToBounds` / `resolvePlacement` / `compactFreeform` — all unit-tested in `freeform-layout.test.ts`); "Tidy layout" runs the pack-up-left cascade. Mode persisted in `momentum-dashboard-layout-mode`; toggle via Customise Dashboard. Storage keys: `momentum-dashboard-widgets` (visible ids), `momentum-dashboard-configs` (column/order + x/y/w/h). Widgets registered via metadata in `DASHBOARD_WIDGETS_METADATA` (8 widgets; ids 1-8 map to the toggle shortcuts). The `today` widget includes Today/This-Week stats, Today by Subject AND the merged Today's Schedule section; `today-schedule` and `auto-log` widgets no longer exist (persisted layouts referencing them are filtered out by the metadata check).
 
 ### 6.2 Subjects (CRUD) — `src/features/subjects/SubjectsPage.tsx` + `SubjectDetailPage.tsx`
 **List page** (`/subjects`): compact clickable cards (color dot, name, category, routine days, Today/Week/Total minutes, sub-count). Clicking a card navigates to `/subjects/:id`. Children render as compact dashed rows (not full cards). Add/Edit modal: name, category select (with "+ New" link to /categories), ColorPicker, routine checkboxes, weekly target. Warning banner if no categories. Delete with confirmation. Case-insensitive search. **Supports subject hierarchy** (parent/child).
@@ -405,13 +405,15 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 - **Symptom**: the auto-log widget lists sessions that were already dismissed.
 - **Fix**: filter to `pendingConfirmation === true` AND within 24h; add "Dismiss all". (M7.)
 
-### 10.23 Freeform dashboard layout (REMOVED, plan to re-implement)
-- **Status**: The freeform layout mode was removed in commit `72e50ec` because of persistent overlap/teleport bugs (horizontal packing that ignored width ordering, no cascade-up on widget removal). The codebase no longer references `layoutMode`, `setMode`, `setWidgetPx`, `runCascade`, or any of the cascade layout helpers.
-- **Symptom (historical)**: widgets jumped to wrong positions, or saved x/y got overwritten on first switch.
-- **Fix (historical)**: keep inline style until state commit lands (L9); don't overwrite saved x/y on first switch (L10). `resolveOverlaps` / `cascadeFreeformLayout` / `placeWithoutOverlap` in `use-dashboard-widgets.ts`.
-- **Open follow-up**: re-implement freeform mode with a fresh design that handles horizontal packing, top-of-column cascade, and out-of-bounds clipping correctly. Do NOT try to restore the old code; write it from scratch against the new grid-only `use-dashboard-widgets.ts`.
-- **Stall trap**: "the freeform code is gone, just restore it from git history" → don't; the algorithm had fundamental flaws. Start from `use-dashboard-widgets.ts`'s grid spine.
-
+### 10.23 Freeform dashboard layout — RE-IMPLEMENTED (v0.25.0)
+- **Status**: Re-implemented fresh in v0.25.0. The previous implementation (removed in `72e50ec`) was unstable because layout was a per-gesture global re-cascade (`runCascade` on every drag/resize) that STEALS other widgets' positions from the user's hand — the "teleporting" bug.
+- **Fix (current design)**: layout is maintained by construction in the pure engine `src/lib/freeform-layout.ts`:
+  - `clampToBounds(rect, containerWidth)` — size floors at 220×160, width capped to container, x clamped inside `[0, width - boxWidth]`, y ≥ 0. No out-of-bounds boxes, ever.
+  - `resolvePlacement(moved, blockers)` — commit-time overlap resolution: tries blocker-edge candidates nearest the drop point; falls back to below-everything. **Blockers never move during a drag.**
+  - `compactFreeform(boxes, containerWidth?)` — the pack-up-left cascade run ONLY on removal/add/tidy (never during a gesture). Candidates sorted top-then-left; respects container width so rows wrap instead of overflowing.
+  - `FreeformWidget.tsx` applies drag/resize straight to the DOM (zero React re-renders mid-gesture), freezes the container rect at grab time, and commits once on pointer-up.
+- **Stall trap**: "a drag moved other widgets" → no code path may call `compactFreeformLayout` during a gesture; only `commitFreeformRect` (moves the ONE widget) runs on drop. If you see global movement on drag, someone re-added the old `runCascade` pattern.
+- **Stall trap**: "restore the old code from git history" → don't; the old algorithm had fundamental flaws. The new engine is unit-tested (`freeform-layout.test.ts` — overlap-free, in-bounds, determinism).
 ### 10.24 Timer subject fallback
 - **Symptom**: QuickTimer silently falls back to `data.subjects[0]` when the configured subject was deleted.
 - **Fix**: surface an alert and do NOT save a session; offer reassign. (H3.)
@@ -663,13 +665,12 @@ All items from the original bugfix plan are now closed. No open bugs remain.
 
 
 Feature-level open items (from earlier spec, still valid):
-- Right-click context actions where appropriate (partially implemented: Dashboard sessions/routines, not Calendar/Marks/Subjects)
 - Notifications audit: existing service works correctly for safety/phase/save; no bugs found
-- Merge Today + This Week + Today's Schedule widgets into one "Today" widget
-- Remove autolog widget from dashboard; convert to popup/modal (autolog widget is already orphaned — not in `DASHBOARD_WIDGETS_METADATA`, so it only renders if a user has it in their persisted layout)
+- **Re-implement freeform dashboard layout** — DONE (v0.25.0, fresh design; §10.23).
+- **Right-click context actions where appropriate** (partially implemented: Dashboard sessions/routines; Calendar/Marks/Subjects now also covered as of v0.25.0).
+- Remove autolog widget from dashboard — DONE (v0.25.0; the widget case and its dead render path were removed; `autoLogEnabled` setting kept for the schedule auto-log description, no dashboard widget renders pending autoRoutine sessions).
 - Remove log-time widget (redundant) — already done; log-time is now a modal triggered by FAB / Cmd+L / N shortcut
-- Re-implement freeform dashboard layout (removed in commit 72e50ec; needs fresh design for horizontal packing + cascade-up on removal)
-**Closed feature items:** discard-session timer leak, focus tags in study timer, notes before start, activities count toward study time, activity confirmation banner — all already implemented (verified in code).
+- **Merge Today + This Week + Today's Schedule widgets** — DONE (v0.25.0; the `today` widget now renders the Today/This-Week stat pair, Today by Subject and Today's Schedule activities section).
 
 ---
 
@@ -835,3 +836,5 @@ Every instance MUST document significant logic pitfalls and durable user decisio
 - **Streak freezes**: replaced the backwards walk in `use-streak.ts` with a chronological forward simulation (`simulateStreak`) — freezes are earned before the gaps they cover, dead streaks no longer report their old count, and today never consumes a freeze (§10.64).
 - **Tasks collapse arrow**: replaced the `▶` glyph with an SVG chevron (§10.65).
 - **Marks**: restricted to academic subjects only (non-academic marks hidden with a note, never deleted); added a year filter (""All years"" + per-year chips + ""+ New year"" persisted in `momentum-marks-years`); added a per-subject weighted-% summary card above the table (§6.4).
+
+**SPEC_VERSION: 54** — 2026-10-16 Dashboard layout batch (app v0.25.0): (1) Freeform dashboard layout re-implemented fresh — pure layout engine `freeform-layout.ts` (clampToBounds/resolvePlacement/compactFreeform, unit-tested in `freeform-layout.test.ts`), pointer-driven `FreeformWidget`, mode toggle in Customise Dashboard, persisted in `momentum-dashboard-layout-mode`; drag container is the `data-freeform-canvas` element (not the widget wrapper) and both resolvePlacement candidates and compaction are container-width-bounded (§10.23, §6.1). (2) Today widget merged with Today's Schedule (activities confirm/skip/undo inside the Today card); `today-schedule` and `auto-log` widget cases deleted; widget remove/add/undo/redo all re-pack (compactFreeformLayout takes `{containerWidth, visibleIds}`). (3) Context menus completed: Marks rows, SubjectDetail sessions, Subjects child rows (ContextMenu + KebabMenu, §10.53). (4) Recovered the interrupted 2026-10-15 timer work into source: Ctrl+Enter save, per-subject note persistence across routine switches, notes override task titles, simple-mode session-group no longer double-counts saved seconds, routine-tracker activity guard (§10.63). 239 tests pass; freeform invariants (no overlap, in-bounds) verified in-browser.

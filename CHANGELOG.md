@@ -1,6 +1,19 @@
 # Changelog
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
+## [v0.25.0] — 2026-10-16
+
+### Dashboard
+- **Freeform layout mode returns** (fresh implementation): switch between Grid and Freeform via Customise Dashboard. In freeform mode widgets are freely draggable and resizable on the canvas, always stay in bounds, never overlap, and a "Tidy layout" button packs everything up and to the left. Removed widgets leave no holes — the rest cascade up.
+- **Today widget merges Today's Schedule**: today's activities (with Yes-logged / Skip confirmation flow and undo) now live inside the Today card, alongside Today/This-Week stats, the goal bar and Today by Subject.
+- Removed the orphaned auto-log widget (nothing produces pending autoRoutine sessions anymore) and the redundant today-schedule widget.
+- Includes the timer/sync fixes from the interrupted 2026-10-15 session, now committed: Ctrl+Enter saves the Pomodoro timer, per-subject notes persist through routine switching and save, notes override task titles, simple-mode current-session group no longer double-counts saved seconds, and `routine-tracker` never auto-matches routines for plain activity sessions (§10.63 guard restored to source).
+
+### Context menus
+- Marks table rows now support right-click / long-press (Edit, Delete) plus a kebab menu as the tap affordance (mobile-friendly), matching the other pages.
+- Focus Area detail page sessions gained right-click / long-press menus (View, Copy, Delete) alongside the kebab.
+- Sub-focus area rows on the Focus Areas list page gained context menus (View, Edit, Delete).
+
 ## [v0.24.0] — 2026-09-23
 
 ### Bug Fixes

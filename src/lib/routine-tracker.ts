@@ -41,11 +41,13 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
   // timer, quickLog, and activity sessions must never tick a routine toward
   // completion — attending an activity is not the same as completing the
   // study block it happens to share a subject with.
-  const toLog = session.routineId
-    ? allRoutines.filter((r) => r.id === session.routineId && !r.deletedAt)
-    : session.source === 'autoRoutine'
-      ? autoMatch
-      : []
+  const toLog = session.source === 'activity' && !session.routineId
+    ? []
+    : session.routineId
+      ? allRoutines.filter((r) => r.id === session.routineId && !r.deletedAt)
+      : session.source === 'autoRoutine'
+        ? autoMatch
+        : []
 
   const logs = await db.routineLogs.toArray()
   for (const routine of toLog) {
@@ -81,18 +83,19 @@ export async function revertRoutineLogsForSession(session: Session): Promise<voi
   if (getSessionScope(session, subjects, categories) !== 'academic') return
   const sessionDate = sessionLocalDate(session.startAt)
   const sessionDow = new Date(session.startAt).getDay() as DayOfWeek
-
   const allRoutines = await db.routines.toArray()
-  const matching = allRoutines.filter((r) => {
-    if (r.deletedAt) return false
-    if (!r.dayMinutes[sessionDow] || r.dayMinutes[sessionDow]! <= 0) return false
-    if (!matchesAnySubject(r.subjectId) && r.subjectId !== session.subjectId) return false
-    if (r.projectId && r.projectId !== session.projectId) return false
-    return true
-  })
-
+  const matching = session.source === 'activity' && !session.routineId
+    ? []
+    : session.routineId
+      ? allRoutines.filter((r) => r.id === session.routineId && !r.deletedAt)
+      : allRoutines.filter((r) => {
+          if (r.deletedAt) return false
+          if (!r.dayMinutes[sessionDow] || r.dayMinutes[sessionDow]! <= 0) return false
+          if (!matchesAnySubject(r.subjectId) && r.subjectId !== session.subjectId) return false
+          if (r.projectId && r.projectId !== session.projectId) return false
+          return true
+        })
   if (matching.length === 0) return
-
   const logs = await db.routineLogs.toArray()
   for (const routine of matching) {
     const existing = logs.find((l) => l.routineId === routine.id && l.date === sessionDate)

@@ -36,11 +36,13 @@ type Phase = 'focus' | 'shortBreak' | 'longBreak'
 function TimerNotesAndTag({
   notes,
   onNotesChange,
+  onSave,
   focusTag,
   onFocusTagChange,
 }: {
   notes: string
   onNotesChange: (v: string) => void
+  onSave?: () => void
   focusTag: FocusTag | null
   onFocusTagChange: (tag: FocusTag | null) => void
 }) {
@@ -51,6 +53,12 @@ function TimerNotesAndTag({
         placeholder="Optional notes"
         value={notes}
         onChange={(e) => onNotesChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && e.ctrlKey) {
+            e.preventDefault()
+            onSave?.()
+          }
+        }}
         className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
         rows={2}
       />
@@ -709,7 +717,7 @@ export function PomodoroTimer() {
           endAt: end.toISOString(),
           durationMinutes,
           durationSeconds: durationMinutes * 60,
-          note: task ? `Task: ${task.title}` : undefined,
+          note: timerNotes || (task ? `Task: ${task.title}` : undefined),
           focusTag: timerFocusTag ?? undefined,
           source: 'pomodoro',
           createdAt: isoNow(),
@@ -799,7 +807,7 @@ export function PomodoroTimer() {
             endAt: now.toISOString(),
             durationMinutes,
             durationSeconds,
-            note: task ? `Task: ${task.title}` : undefined,
+            note: timerNotes || (task ? `Task: ${task.title}` : undefined),
             source: 'timer',
           }
         }
@@ -827,7 +835,7 @@ export function PomodoroTimer() {
               endAt: new Date().toISOString(),
               durationMinutes,
               durationSeconds: Math.max(10, elapsedSeconds),
-              note: task ? `Task: ${task.title}` : undefined,
+              note: timerNotes || (task ? `Task: ${task.title}` : undefined),
               source: 'pomodoro',
             }
           }
@@ -1118,7 +1126,7 @@ export function PomodoroTimer() {
           endAt: block.endAt,
           durationMinutes: block.durationMinutes,
           durationSeconds: block.durationSeconds,
-          note: task ? `Task: ${task.title}` : undefined,
+          note: timerNotes || (task ? `Task: ${task.title}` : undefined),
           focusTag: timerFocusTag ?? undefined,
           source: 'pomodoro',
           createdAt: isoNow(),
@@ -1255,7 +1263,7 @@ export function PomodoroTimer() {
           endAt: now.toISOString(),
           durationMinutes,
           durationSeconds,
-          note: task ? `Task: ${task.title}` : undefined,
+          note: timerNotes || (task ? `Task: ${task.title}` : undefined),
           focusTag: timerFocusTag ?? undefined,
           source: 'timer',
           createdAt: isoNow(),
@@ -1298,7 +1306,7 @@ export function PomodoroTimer() {
             endAt: end.toISOString(),
             durationMinutes: partialMinutes,
             durationSeconds: partialSeconds,
-            note: task ? `Task: ${task.title}` : undefined,
+            note: timerNotes || (task ? `Task: ${task.title}` : undefined),
             focusTag: timerFocusTag ?? undefined,
             source: 'pomodoro',
             createdAt: isoNow(),
@@ -1568,11 +1576,17 @@ export function PomodoroTimer() {
     : false
   // In pomodoro mode `currentSeconds` is the phase *remaining* (counts down);
   // the group must count up, so convert to elapsed within the current phase.
-  const groupLiveSeconds = groupFinalized + (isTimerActive && sessionGroup?.active
-    ? (mode === 'pomodoro' && settings.pomodoroEnabled
-        ? Math.max(0, pomGoalSeconds - currentSeconds)
-        : currentSeconds)
-    : 0)
+  //
+  // In simple mode `simpleSeconds` is cumulative and already contains the time
+  // this group has finalized for the current subject: startSimple() seeds both
+  // simplePausedOffset and lastSavedCumulativeRef with that carry-over, and the
+  // same seconds are already folded into `groupFinalized`. Adding the whole
+  // cumulative value would double-count them, so subtract the portion already
+  // accounted for and add only the unsaved live delta.
+  const groupLiveDelta = mode === 'pomodoro' && settings.pomodoroEnabled
+    ? Math.max(0, pomGoalSeconds - currentSeconds)
+    : Math.max(0, currentSeconds - lastSavedCumulativeRef.current)
+  const groupLiveSeconds = groupFinalized + (isTimerActive && sessionGroup?.active ? groupLiveDelta : 0)
   const groupSubjectNames = sessionGroup?.segments
     .map((seg) => data.subjects.find((s) => s.id === seg.subjectId)?.name ?? 'Unknown')
     ?? []
@@ -1861,7 +1875,12 @@ export function PomodoroTimer() {
                 <select
                   className="input"
                   value={timerRoutineId}
-                  onChange={(e) => setTimerRoutineId(e.target.value)}
+                  onChange={(e) => {
+                    const routineId = e.target.value
+                    setTimerRoutineId(routineId)
+                    const state = loadTimerState()
+                    if (state) saveTimerState({ ...state, routineId: routineId || undefined })
+                  }}
                 >
                   <option value="">No routine</option>
                   {availableRoutines.map((r) => (
@@ -1874,11 +1893,14 @@ export function PomodoroTimer() {
               notes={timerNotes}
               onNotesChange={(v) => {
                 setTimerNotes(v)
-                // Always persist per-subject — works even without an active timer.
                 if (subjectId) setLastNote(subjectId, v)
                 const state = loadTimerState()
                 if (state) saveTimerState({ ...state, notes: v })
               }}
+              onSave={isTimerActive ? () => {
+                if (mode === 'simple') void stopSimple()
+                else void resetPomodoro()
+              } : undefined}
               focusTag={timerFocusTag}
               onFocusTagChange={setTimerFocusTag}
             />
@@ -1946,11 +1968,14 @@ export function PomodoroTimer() {
               notes={timerNotes}
               onNotesChange={(v) => {
                 setTimerNotes(v)
-                // Always persist per-subject — works even without an active timer.
                 if (subjectId) setLastNote(subjectId, v)
                 const state = loadTimerState()
                 if (state) saveTimerState({ ...state, notes: v })
               }}
+              onSave={isTimerActive ? () => {
+                if (mode === 'simple') void stopSimple()
+                else void resetPomodoro()
+              } : undefined}
               focusTag={timerFocusTag}
               onFocusTagChange={setTimerFocusTag}
             />

@@ -8,6 +8,8 @@ import { filterActive } from '../../lib/filterActive'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
+import { ContextMenu } from '../../components/ui/ContextMenu'
+import { KebabMenu } from '../../components/ui/KebabMenu'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { v4 as uuid } from 'uuid'
@@ -504,44 +506,54 @@ export default function MarksPage() {
                 const avgGrade = avgPct != null ? pctToGrade(avgPct) : null
                 const vsAvg = hasAvg ? pct - (avgPct as number) : null
                 return (
-                  <tr key={m.id} className="border-b border-slate-100 dark:border-slate-700/50">
-                    <td className="py-2.5 pr-2">
-                    <Checkbox
-                      checked={selectedMarkIds.has(m.id)}
-                      onChange={() => setSelectedMarkIds((prev) => {
-                        const next = new Set(prev)
-                        if (next.has(m.id)) next.delete(m.id)
-                        else next.add(m.id)
-                        return next
-                      })}
-                    />
-                    </td>
-                    <td className="py-2.5 pr-4 font-medium text-slate-800 dark:text-slate-100">{m.name}</td>
-                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{subjectName(m.subjectId)}</td>
-                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{m.score}/{m.total}</td>
-                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{m.weight}%</td>
-                    <td className={cn('py-2.5 pr-4 font-medium', pctColor)}>{pct.toFixed(1)}%</td>
-                    <td className={cn('py-2.5 pr-4 font-medium', gradeColor(grade))}>{grade}</td>
-                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{hasAvg ? m.averageMark!.toFixed(1) : '—'}</td>
-                    <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">
-                      {avgPct != null ? (
-                        <span>
-                          {avgPct.toFixed(1)}%
-                          {vsAvg != null && (
-                            <span className={cn('ml-1 text-xs font-medium', vsAvg >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
-                              {vsAvg >= 0 ? '+' : ''}{vsAvg.toFixed(1)}
-                            </span>
-                          )}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className={cn('py-2.5 pr-4 font-medium', avgGrade ? gradeColor(avgGrade) : '')}>{avgGrade ?? '—'}</td>
-                    <td className="py-2.5 pr-4 text-slate-500 dark:text-slate-400">{m.date}</td>
-                    <td className="py-2.5 whitespace-nowrap text-right">
-                      <Button variant="secondary" size="sm" className="mr-1" onClick={() => openEdit(m)}>Edit</Button>
-                      <Button variant="danger" size="sm" onClick={() => setDeleting(m.id)}>Delete</Button>
-                    </td>
-                  </tr>
+                  <ContextMenu key={m.id} items={[
+                    { label: 'Edit', action: () => openEdit(m) },
+                    { label: 'Delete', action: () => setDeleting(m.id), danger: true },
+                  ]}>
+                    <tr className="border-b border-slate-100 dark:border-slate-700/50">
+                      <td className="py-2.5 pr-2">
+                        <Checkbox
+                          checked={selectedMarkIds.has(m.id)}
+                          onChange={() => setSelectedMarkIds((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(m.id)) next.delete(m.id)
+                            else next.add(m.id)
+                            return next
+                          })}
+                        />
+                      </td>
+                      <td className="py-2.5 pr-4 font-medium text-slate-800 dark:text-slate-100">{m.name}</td>
+                      <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{subjectName(m.subjectId)}</td>
+                      <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{m.score}/{m.total}</td>
+                      <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{m.weight}%</td>
+                      <td className={cn('py-2.5 pr-4 font-medium', pctColor)}>{pct.toFixed(1)}%</td>
+                      <td className={cn('py-2.5 pr-4 font-medium', gradeColor(grade))}>{grade}</td>
+                      <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">{hasAvg ? m.averageMark!.toFixed(1) : '—'}</td>
+                      <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">
+                        {avgPct != null ? (
+                          <span>
+                            {avgPct.toFixed(1)}%
+                            {vsAvg != null && (
+                              <span className={cn('ml-1 text-xs font-medium', vsAvg >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+                                {vsAvg >= 0 ? '+' : ''}{vsAvg.toFixed(1)}
+                              </span>
+                            )}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td className={cn('py-2.5 pr-4 font-medium', avgGrade ? gradeColor(avgGrade) : '')}>{avgGrade ?? '—'}</td>
+                      <td className="py-2.5 pr-4 text-slate-500 dark:text-slate-400">{m.date}</td>
+                      <td className="py-2.5 whitespace-nowrap text-right">
+                        <KebabMenu
+                          ariaLabel={`Actions for ${m.name}`}
+                          items={[
+                            { label: 'Edit', action: () => openEdit(m) },
+                            { label: 'Delete', action: () => setDeleting(m.id), danger: true },
+                          ]}
+                        />
+                      </td>
+                    </tr>
+                  </ContextMenu>
                 )
               })}
             </tbody>

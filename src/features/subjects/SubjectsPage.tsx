@@ -496,22 +496,30 @@ export default function SubjectsPage() {
                 {children.length > 0 && (
                   <div className="ml-5 space-y-px">
                     {children.map((child) => (
-                      <button
+                      <ContextMenu
                         key={child.id}
-                        type="button"
-                        onClick={() => navigate(`/subjects/${child.id}`)}
-                        className="flex w-full items-center gap-1.5 rounded border border-dashed border-slate-200 px-2 py-1 text-xs text-left hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700"
+                        items={[
+                          { label: 'View', action: () => navigate(`/subjects/${child.id}`) },
+                          { label: 'Edit', action: () => handleOpenModal(child) },
+                          { label: 'Delete', action: () => setDeleteSubject(child), danger: true },
+                        ]}
                       >
-                        <div
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          title={colorName(child.color || DEFAULT_COLOR)}
-                          style={{ backgroundColor: child.color || DEFAULT_COLOR }}
-                        />
-                        <span className="truncate font-medium text-slate-700 dark:text-slate-200">{child.name}</span>
-                        <span className="ml-auto shrink-0 text-xs text-slate-400">
-                          {formatMinutes(subjectStats[child.id]?.total ?? 0)}
-                        </span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/subjects/${child.id}`)}
+                          className="flex w-full items-center gap-1.5 rounded border border-dashed border-slate-200 px-2 py-1 text-xs text-left hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700"
+                        >
+                          <div
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            title={colorName(child.color || DEFAULT_COLOR)}
+                            style={{ backgroundColor: child.color || DEFAULT_COLOR }}
+                          />
+                          <span className="truncate font-medium text-slate-700 dark:text-slate-200">{child.name}</span>
+                          <span className="ml-auto shrink-0 text-xs text-slate-400">
+                            {formatMinutes(subjectStats[child.id]?.total ?? 0)}
+                          </span>
+                        </button>
+                      </ContextMenu>
                     ))}
                   </div>
                 )}

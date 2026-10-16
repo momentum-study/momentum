@@ -14,6 +14,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { KebabMenu } from '../../components/ui/KebabMenu'
+import { ContextMenu } from '../../components/ui/ContextMenu'
 import { SessionDetailsModal } from '../../components/ui/SessionDetailsModal'
 import type { Session } from '../../domain/types'
 
@@ -524,30 +525,39 @@ export default function SubjectDetailPage() {
                   </div>
                   <div className="space-y-1">
                     {group.items.map((s) => (
-                      <div key={s.id} className="flex items-center justify-between rounded bg-slate-50 px-3 py-1.5 text-sm dark:bg-slate-800">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-slate-600 dark:text-slate-300 shrink-0">
-                            {format(new Date(s.startAt), 'h:mm a')}
-                          </span>
-                          {s.projectId && (
-                            <span className="shrink-0 rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-700 dark:bg-primary-900/50 dark:text-primary-300">
-                              {data.projects.find((p) => p.id === s.projectId)?.name ?? 'Project'}
+                      <ContextMenu
+                        key={s.id}
+                        items={[
+                          { label: 'View', action: () => { setViewSession(s); setViewModalOpen(true) } },
+                          { label: 'Copy', action: () => copySessionInfo(s) },
+                          { label: 'Delete', action: () => deleteSession(s.id), danger: true },
+                        ]}
+                      >
+                        <div className="flex items-center justify-between rounded bg-slate-50 px-3 py-1.5 text-sm dark:bg-slate-800">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-slate-600 dark:text-slate-300 shrink-0">
+                              {format(new Date(s.startAt), 'h:mm a')}
                             </span>
-                          )}
-                          {s.note && <span className="truncate text-slate-400 text-xs">. {s.note}</span>}
+                            {s.projectId && (
+                              <span className="shrink-0 rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-700 dark:bg-primary-900/50 dark:text-primary-300">
+                                {data.projects.find((p) => p.id === s.projectId)?.name ?? 'Project'}
+                              </span>
+                            )}
+                            {s.note && <span className="truncate text-slate-400 text-xs">. {s.note}</span>}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-[10px] text-slate-400">{sourceBadge[s.source] ?? s.source}</span>
+                            <span className="font-medium text-slate-800 dark:text-slate-100">{formatMinutes(s.durationMinutes)}</span>
+                            <KebabMenu
+                              items={[
+                                { label: 'View', action: () => { setViewSession(s); setViewModalOpen(true) } },
+                                { label: 'Copy', action: () => copySessionInfo(s) },
+                                { label: 'Delete', action: () => deleteSession(s.id), danger: true },
+                              ]}
+                            />
+                          </div>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span className="text-[10px] text-slate-400">{sourceBadge[s.source] ?? s.source}</span>
-                          <span className="font-medium text-slate-800 dark:text-slate-100">{formatMinutes(s.durationMinutes)}</span>
-                          <KebabMenu
-                            items={[
-                              { label: 'View', action: () => { setViewSession(s); setViewModalOpen(true) } },
-                              { label: 'Copy', action: () => copySessionInfo(s) },
-                              { label: 'Delete', action: () => deleteSession(s.id), danger: true },
-                            ]}
-                          />
-                        </div>
-                      </div>
+                      </ContextMenu>
                     ))}
                   </div>
                 </div>

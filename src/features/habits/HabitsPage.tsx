@@ -395,10 +395,10 @@ export default function HabitsPage() {
       // Pausing moves a habit to "Potential" (parked, not archived).
       // Archived habits are for historically ended habits; potential
       // means "I may come back to this".
-      await db.habits.update(id, { status: 'potential', updatedAt: isoNow() })
+      await db.habits.update(id, { status: 'potential', archivedAt: null, updatedAt: isoNow() })
       if (selectedId === id) setSelectedId(null)
       setArchiveConfirm(null)
-      mutate(prev => ({ ...prev, habits: prev.habits.map(h => h.id === id ? { ...h, status: 'potential', updatedAt: isoNow() } : h) }))
+      mutate(prev => ({ ...prev, habits: prev.habits.map(h => h.id === id ? { ...h, status: 'potential', archivedAt: null, updatedAt: isoNow() } : h) }))
     } catch (e) { console.error('Failed to pause habit', e) }
   }
   async function unarchiveHabitFn(id: string) {

@@ -6,11 +6,12 @@ const DAYS_PER_FREEZE = 5
 interface Stats {
   streak: number
   longestStreak: number
+  freezesAvailable: number
 }
 
 // Chronological forward simulation — mirrors simulateStreak in use-streak.ts.
 function simulate(daysInput: string[], today?: string): Stats {
-  if (daysInput.length === 0) return { streak: 0, longestStreak: 0 }
+  if (daysInput.length === 0) return { streak: 0, longestStreak: 0, freezesAvailable: 0 }
   const days = [...new Set(daysInput)].sort()
   const now = new Date((today ?? days[days.length - 1]) + 'T00:00:00')
   let count = 0
@@ -41,7 +42,7 @@ function simulate(daysInput: string[], today?: string): Stats {
     prev = day
   }
   if (lastLogged) consume(differenceInCalendarDays(now, lastLogged) - 1)
-  return { streak: count, longestStreak: longest }
+  return { streak: count, longestStreak: longest, freezesAvailable: freezes }
 }
 
 function computeStreak(studyDates: string[], today?: string): number {
@@ -71,6 +72,17 @@ describe('computeStreak', () => {
     // Chronologically the freeze is earned BEFORE the gap it covers.
     const days = ['2026-07-15', '2026-07-16', '2026-07-17', '2026-07-18', '2026-07-19', '2026-07-21']
     expect(computeStreak(days)).toBe(6)
+  })
+
+  it('reports a freeze remaining after a five-day run', () => {
+    const result = simulate(['2026-07-15', '2026-07-16', '2026-07-17', '2026-07-18', '2026-07-19'], '2026-07-19')
+    expect(result.freezesAvailable).toBe(1)
+  })
+
+  it('consumes a freeze when covering one missed day', () => {
+    const result = simulate(['2026-07-15', '2026-07-16', '2026-07-17', '2026-07-18', '2026-07-19', '2026-07-21'], '2026-07-21')
+    expect(result.streak).toBe(6)
+    expect(result.freezesAvailable).toBe(0)
   })
 
   it('does not retroactively cover a gap that precedes the run', () => {

@@ -1,4 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import {
+  type FreeformBox, type FreeformRect,
+  FREEFORM_GAP, compactFreeform, clampToBounds, resolvePlacement,
+} from './freeform-layout'
 
 export interface WidgetConfig {
   id: string
@@ -20,6 +24,20 @@ export const MAX_WIDGET_COLS = 3
 export const MIN_WIDGET_ROWS = 1
 export const MAX_WIDGET_ROWS = 3
 
+export type LayoutMode = 'grid' | 'freeform'
+export const LAYOUT_STORAGE_KEY = 'momentum-dashboard-layout-mode'
+
+/** Default freeform pixel sizes (w × h) per widget, used on first switch. */
+export const DEFAULT_FREEFORM_SIZE: Record<string, { width: number; height: number }> = {
+  today: { width: 480, height: 360 },
+  'today-checklist': { width: 340, height: 420 },
+  pomodoro: { width: 360, height: 340 },
+  'study-review': { width: 340, height: 240 },
+  calendar: { width: 480, height: 340 },
+  recent: { width: 480, height: 400 },
+  assignments: { width: 340, height: 320 },
+  'study-streak': { width: 560, height: 460 },
+}
 
 export const DASHBOARD_WIDGETS_METADATA: { id: string; label: string }[] = [
   { id: 'today', label: 'Today' },
@@ -43,6 +61,66 @@ export const DEFAULT_CONFIGS: Record<string, Omit<WidgetConfig, 'id' | 'label'>>
     return acc
   }, {} as Record<string, Omit<WidgetConfig, 'id' | 'label'>>)
 export const DEFAULT_WIDGET_IDS = DASHBOARD_WIDGETS_METADATA.map((w) => w.id)
+
+/**
+ * Seed a freeform layout for `ids` with no saved positions: wrap rows at
+ * `containerWidth` (falling back to 1000px), reading each widget's default
+ * size. Used on the very first switch to freeform mode.
+ */
+export function seedFreeformLayout(ids: string[], containerWidth: number): Record<string, FreeformRect> {
+  const maxRow = Math.max(360, Math.round(containerWidth || 1000))
+  const out: Record<string, FreeformRect> = {}
+  let cursorX = 0
+  let cursorY = 0
+  let rowHeight = 0
+  for (const id of ids) {
+    const size = DEFAULT_FREEFORM_SIZE[id] ?? { width: 360, height: 280 }
+    const width = Math.min(size.width, maxRow)
+    if (cursorX > 0 && cursorX + width > maxRow) {
+      cursorX = 0
+      cursorY += rowHeight + FREEFORM_GAP
+      rowHeight = 0
+    }
+    out[id] = { x: cursorX, y: cursorY, width, height: size.height }
+    cursorX += width + FREEFORM_GAP
+    rowHeight = Math.max(rowHeight, size.height)
+  }
+  return out
+}
+
+/** Convert configs to boxes for the layout engine, using default sizes when unset. */
+export function readFreeformBoxes(
+  configs: Record<string, Omit<WidgetConfig, 'id' | 'label'>>,
+  ids: string[],
+): FreeformBox[] {
+  return ids.map((id, i) => {
+    const cfg = configs[id] ?? DEFAULT_CONFIGS[id] ?? { cols: 1, rows: 1, column: 0, order: i }
+    const size = DEFAULT_FREEFORM_SIZE[id] ?? { width: 360, height: 280 }
+    return {
+      id,
+      order: cfg.order ?? i,
+      x: cfg.x ?? 0,
+      y: cfg.y ?? 0,
+      width: cfg.width ?? size.width,
+      height: cfg.height ?? size.height,
+    }
+  })
+}
+
+/** Write boxes back into configs (x/y/width/height only; grid fields untouched). */
+function writeFreeformBoxes(
+  configs: Record<string, Omit<WidgetConfig, 'id' | 'label'>>,
+  boxes: FreeformBox[],
+): Record<string, Omit<WidgetConfig, 'id' | 'label'>> {
+  const next = { ...configs }
+  for (const b of boxes) {
+    next[b.id] = {
+      ...(next[b.id] ?? DEFAULT_CONFIGS[b.id] ?? { cols: 1, rows: 1, column: 0, order: b.order }),
+      x: b.x, y: b.y, width: b.width, height: b.height,
+    }
+  }
+  return next
+}
 
 export function useDashboardWidgets() {
   const [visibleWidgets, setVisibleWidgets] = useState<string[]>(() => {
@@ -69,12 +147,22 @@ export function useDashboardWidgets() {
     }
   })
 
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
+    if (typeof localStorage === 'undefined') return 'grid'
+    try {
+      return localStorage.getItem(LAYOUT_STORAGE_KEY) === 'freeform' ? 'freeform' : 'grid'
+    } catch {
+      return 'grid'
+    }
+  })
+
   useEffect(() => {
     try {
       localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(visibleWidgets))
       localStorage.setItem('momentum-dashboard-configs', JSON.stringify(widgetConfigs))
+      localStorage.setItem(LAYOUT_STORAGE_KEY, layoutMode)
     } catch { /* ignore */ }
-  }, [visibleWidgets, widgetConfigs])
+  }, [visibleWidgets, widgetConfigs, layoutMode])
 
   const reorderWidgets = useCallback((fromId: string, toId: string) => {
     setVisibleWidgets((prev) => {
@@ -127,8 +215,6 @@ export function useDashboardWidgets() {
     })
   }, [])
 
-
-
   const setWidgetSize = useCallback((id: string, cols: number, rows: number) => {
     setWidgetConfigs((prev) => ({
       ...prev,
@@ -140,6 +226,88 @@ export function useDashboardWidgets() {
     }))
   }, [])
 
+  // ── Freeform mode ──
+
+  /** Switch layout modes. Switching to freeform seeds positions when none saved. */
+  const setLayoutModeWithSeed = useCallback((mode: LayoutMode, containerWidth?: number) => {
+    if (mode === 'freeform') {
+      setWidgetConfigs((prev) => {
+        if (typeof localStorage === 'undefined') return prev
+        let ids = visibleWidgets
+        try {
+          const saved = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? 'null')
+          if (Array.isArray(saved)) ids = saved.filter((id: string) => DEFAULT_CONFIGS[id])
+        } catch { /* ignore */ }
+        const hasAny = ids.some((id) => prev[id]?.x != null && prev[id]?.y != null)
+        if (hasAny) return prev
+        const seeded = seedFreeformLayout(ids, containerWidth ?? 1000)
+        return writeFreeformBoxes(prev, ids.map((id) => ({
+          id, order: prev[id]?.order ?? 0,
+          x: seeded[id].x, y: seeded[id].y, width: seeded[id].width, height: seeded[id].height,
+        })))
+      })
+    }
+    setLayoutMode(mode)
+  }, [visibleWidgets])
+
+  /**
+   * Commit a drag: clamp the final rect into bounds, then resolve overlaps
+   * against the fixed other widgets. Other widgets never move.
+   */
+  const commitFreeformRect = useCallback(
+    (id: string, rect: FreeformRect, containerWidth: number) => {
+      setWidgetConfigs((prev) => {
+        const ids = typeof localStorage === 'undefined'
+          ? visibleWidgets
+          : (() => {
+            try {
+              const saved = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? 'null')
+              return Array.isArray(saved) ? saved.filter((x: string) => DEFAULT_CONFIGS[x]) : visibleWidgets
+            } catch { return visibleWidgets }
+          })()
+        const clamped = clampToBounds(rect, containerWidth)
+        const blockers = readFreeformBoxes(prev, ids.filter((x) => x !== id))
+          .map((b) => ({ x: b.x, y: b.y, width: b.width, height: b.height }))
+        const settled = resolvePlacement(clamped, blockers, containerWidth)
+        return { ...prev, [id]: { ...(prev[id] ?? DEFAULT_CONFIGS[id] ?? { cols: 1, rows: 1, column: 0, order: 0 }), ...settled } }
+      })
+    },
+    [visibleWidgets],
+  )
+
+  /**
+   * Reflow (add / remove / tidy): clamp every box into bounds and pack ALL
+   * visible widgets upward and leftward. Run this on widget removal, re-add,
+   * undo/redo of a removal, and the explicit "Tidy layout" button — never
+   * during a drag gesture (drags commit via commitFreeformRect, which moves
+   * only the dragged widget).
+   *
+   * Pass `visibleIds` from the caller when you have JUST called
+   * setVisibleWidgets in the same tick: state and localStorage are stale
+   * until the persist effect runs, so the hook cannot read the new list
+   * itself. When omitted, the hook falls back to its own view.
+   */
+  const compactFreeformLayout = useCallback(
+    (opts?: { containerWidth?: number; visibleIds?: string[] }) => {
+      const { containerWidth = 1000, visibleIds } = opts ?? {}
+      setWidgetConfigs((prev) => {
+        if (typeof localStorage === 'undefined') return prev
+        let ids = visibleIds ?? visibleWidgets
+        if (visibleIds == null) {
+          try {
+            const saved = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? 'null')
+            if (Array.isArray(saved)) ids = saved.filter((id: string) => DEFAULT_CONFIGS[id])
+          } catch { /* ignore */ }
+        }
+        const boxes = readFreeformBoxes(prev, ids).map((b) =>
+          ({ ...b, ...clampToBounds(b, containerWidth) }))
+        if (boxes.length === 0) return prev
+        return writeFreeformBoxes(prev, compactFreeform(boxes, containerWidth))
+      })
+    },
+    [visibleWidgets],
+  )
+
   return {
     visibleWidgets,
     setVisibleWidgets,
@@ -148,5 +316,9 @@ export function useDashboardWidgets() {
     setWidgetSize,
     reorderWidgets,
     moveWidgetToColumn,
+    layoutMode,
+    setLayoutMode: setLayoutModeWithSeed,
+    commitFreeformRect,
+    compactFreeformLayout,
   }
 }

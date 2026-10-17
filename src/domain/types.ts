@@ -268,3 +268,21 @@ export interface PendingSyncOp {
   tableKey: string
   timestamp: string
 }
+
+// Music player — YouTube-playlist-backed study soundtracks
+
+export interface MusicPlaylist {
+  id: string
+  name: string
+  youtubePlaylistId: string   // bare playlist id extracted from a pasted URL
+  trackCount?: number | null  // cached at add time; refreshed on play if absent
+  createdAt: string           // ISO
+  updatedAt: string           // ISO
+  deletedAt?: string | null
+}
+
+/** Runtime (non-persisted) state of the in-app music player. */
+export interface MusicPlayerState {
+  playlistId: string | null   // currently selected MusicPlaylist.id
+  isPlaying: boolean
+}

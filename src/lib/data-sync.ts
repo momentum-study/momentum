@@ -53,6 +53,7 @@ export const SYNC_TABLES: TableKey[] = [
   'activityLogs',
   'studyAreas',
   'studyReviews',
+  'musicPlaylists',
 ]
 
 interface CloudTableDoc {

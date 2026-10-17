@@ -31,6 +31,7 @@ const TABLE_KEYS: (keyof AppData)[] = [
   'activityLogs',
   'studyAreas',
   'studyReviews',
+  'musicPlaylists',
 ]
 
 /** Read all data from the DB into a serialisable payload. */

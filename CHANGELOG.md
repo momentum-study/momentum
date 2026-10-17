@@ -1,6 +1,14 @@
 # Changelog
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
+## [v0.26.0] — 2026-10-17
+
+### Music player
+- **Built-in music player powered by the YouTube IFrame API**: paste any YouTube playlist link on the new Music page (`/#/music`) and it plays the videos in order, looping forever, inside the app — no tabs, no ads-heavy video page.
+- Playlists persist locally (Dexie v18 `musicPlaylists` table) and sync to cloud backups like other data; multiple playlists can be saved, named, and switched between.
+- Persistent dock (bottom-right) with play/pause, previous/next track, expandable volume slider (persisted as `musicVolume` in settings), and current track title + position. Playback continues while you navigate anywhere in the app, like the floating timer.
+- Unplayable videos (embedding disabled, deleted, private) are auto-skipped; playback only stops if every track in the playlist is unplayable.
+
 ## [v0.25.0] — 2026-10-16
 
 ### Dashboard

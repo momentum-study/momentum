@@ -7,6 +7,7 @@ import type {
   Habit,
   HabitLog,
   Mark,
+  MusicPlaylist,
   Project,
   ProgressLog,
   Routine,
@@ -47,6 +48,7 @@ export class AppDB extends Dexie {
   studyAreas!: Table<StudyArea, string>
   studyReviews!: Table<StudyReview, string>
   pendingSyncOps!: Table<PendingSyncOp, string>
+  musicPlaylists!: Table<MusicPlaylist, string>
 
   constructor() {
     super('study-app')
@@ -146,6 +148,10 @@ export class AppDB extends Dexie {
         if (habit.reminderTime === undefined) habit.reminderTime = null
         if (habit.reminderSentDate === undefined) habit.reminderSentDate = null
       })
+    })
+    // v18: music playlists (YouTube-backed study soundtracks)
+    this.version(18).stores({
+      musicPlaylists: 'id, name',
     })
   }
 }

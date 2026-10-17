@@ -12,6 +12,7 @@ import { Button } from '../ui/Button'
 import { SyncBanner } from '../ui/SyncBanner'
 import { FloatingTimerBanner } from '../ui/FloatingTimerBanner'
 import { OnboardingTour } from '../ui/OnboardingTour'
+import { MusicDock } from '../ui/MusicDock'
 import { DevBanner } from '../ui/DevBanner'
 import { CommandPalette, useCommandPalette } from '../ui/CommandPalette'
 import { useFocusMode } from '../../lib/use-focus-mode'
@@ -31,6 +32,7 @@ import { startNotificationScheduler } from '../../lib/notification-scheduler'
     { to: '/marks', label: 'Marks', icon: '📝' },
     { to: '/groups', label: 'Groups', icon: '👥' },
     { to: '/reviews', label: 'AI Review', icon: '🤖' },
+    { to: '/music', label: 'Music', icon: '🎵' },
     { to: '/settings', label: 'Settings', icon: '⚙️' },
   ]
   const PREFS_KEY = 'momentum-nav-prefs'
@@ -590,6 +592,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     </div>
       <UndoToast />
       <FloatingTimerBanner />
+      <MusicDock />
       <OnboardingTour />
       <Modal
         open={showHelp}

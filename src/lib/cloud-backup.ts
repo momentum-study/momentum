@@ -45,6 +45,7 @@ const SYNC_TABLES: TableKey[] = [
   'activityLogs',
   'studyAreas',
   'studyReviews',
+  'musicPlaylists',
 ]
 
 function todayKey(): string {

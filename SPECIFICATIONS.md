@@ -68,7 +68,7 @@ For small, self-contained tasks (a single fix, a quick feature), you can skip fo
 - **Dark mode**: On by default. Class `dark` on `<html>`, toggled by Settings. Applied in `App.tsx` via `applyDarkMode(loadSettings().darkMode)`.
 - **Provider hierarchy** (from `router.tsx`):
   ```
-  AuthProvider > UndoProvider > DataProvider > AppLayout > RouterContent
+  AuthProvider > UndoProvider > DataProvider > MusicProvider > AppLayout > RouterContent
   ```
 - **Data provider**: `useData()` returns `{ data, isLoading, scope, rangePreset, setScope, setRangePreset, loadData, mutate }`.
   - `data` is an `AppData` object (all tables as arrays).
@@ -108,10 +108,11 @@ For small, self-contained tasks (a single fix, a quick feature), you can skip fo
 | `/activities` | → redirect to `/schedule` | Legacy alias |
 | `/groups` | GroupsPage | Hidden from nav by default |
 | `/groups/:id` | GroupDetailPage | |
+| `/music` | MusicPage | Music player |
 | `/settings` | SettingsPage | |
 | `*` | 404 page | |
 
-**Nav items** (from `AppLayout.tsx` `NAV_ITEMS`): Dashboard, Focus Areas, Projects, Tasks, Study, Reports, Habits, Schedule, Marks, Groups, Categories, AI Review, Settings. Order/visibility persisted in `momentum-nav-prefs` (version key `momentum-nav-prefs-version`, `CURRENT_PREFS_VERSION = 4`). Default hidden: marks, groups, categories, reviews.
+**Nav items** (from `AppLayout.tsx` `NAV_ITEMS`): Dashboard, Focus Areas, Projects, Tasks, Study, Reports, Habits, Schedule, Marks, Groups, Categories, AI Review, Music, Settings. Order/visibility persisted in `momentum-nav-prefs` (version key `momentum-nav-prefs-version`, `CURRENT_PREFS_VERSION = 4`). Default hidden: marks, groups, categories, reviews.
 
 > **Stale-spec warning:** older specs listed `/routines` and `/hobbies` as separate pages. They are gone — routines and activities both live under `/schedule`, and there is no `/hobbies` route. Do not reintroduce them.
 
@@ -144,11 +145,11 @@ Canonical. Key entities:
 - **ActivityLog**: `id, activityId, date, status ('completed'|'skipped'|'pending'), actualMinutes?, createdAt, sessionId?`
   - `sessionId` is set when an attendance confirmation creates a Session; untick reads it (do NOT re-derive from `createdAt`).
 - **StudyArea / StudyReview**: FSRS spaced repetition. `ReviewRating = 1|2|3|4` (again, hard, good, easy). `fsrs-scheduler.ts`.
+- **MusicPlaylist** (v0.26.0): `id, name, youtubePlaylistId (bare YouTube list id extracted from a pasted URL), trackCount? (cached at add time), createdAt, updatedAt, deletedAt?`. Player runtime state is NOT persisted; see §6.15.
 - **PendingSyncOp**: offline sync queue.
 
 ### 4.2 Dexie schema (`src/db/app-db.ts`)
-
-DB name `study-app`. **16 versions** (v1→v16). Current tables: `categories, subjects, projects, sessions, progressLogs, marks, assignments, habits, habitLogs, streakDays, routines, routineLogs, activities, activityLogs, studyAreas, studyReviews, pendingSyncOps`. (Note: `tasks` and `hobbies`/`hobbySessions`/`scheduleEntries` tables were created in early versions but are orphaned/legacy — do not use them.)
+DB name `study-app`. **18 versions** (v1→v18). Current tables: `categories, subjects, projects, sessions, progressLogs, marks, assignments, habits, habitLogs, streakDays, routines, routineLogs, activities, activityLogs, studyAreas, studyReviews, pendingSyncOps, musicPlaylists`. (Note: `tasks` and `hobbies`/`hobbySessions`/`scheduleEntries` tables were created in early versions but are orphaned/legacy — do not use them.)
 
 **Rule:** any new table or index MUST bump the Dexie version and add an `.upgrade()` if existing rows need migration. Never reuse an old version number.
 
@@ -196,6 +197,7 @@ type Settings = {
   defaultArchiveDays: number           // default: 66
   weekStartsOn: 0 | 1                  // default: 1 (Mon); 0 = Sun
   dashboardWeekMode: 'rolling' | 'calendar' // default: 'rolling'; rolling = last 7 days, calendar = current week aligned to weekStartsOn
+  musicVolume: number                 // default: 70; music player volume (0-100)
   settingsUpdatedAt: string            // ISO, set on save
   devMode?: boolean                    // optional preview banner
 }
@@ -267,6 +269,14 @@ Overview stats + time-by-subject breakdown (with axis-labeled Daily Trend chart)
 
 ### 6.14 AI Review — `src/features/reviews/AIReviewPage.tsx`
 AI-powered study review and feedback. Includes "Last 7 Days" sliding window date preset.
+
+
+### 6.15 Music player (v0.26.0) — `src/features/music/MusicPage.tsx`, `src/lib/music-player.tsx`, `src/components/ui/MusicDock.tsx`
+- **Saved playlists**: the Music page lists saved playlists (name, track count, added date). "+ Add playlist" modal parses a pasted URL via `extractPlaylistIdLoose` (`src/lib/youtube.ts` — also accepts bare ids and tolerates surrounding text); Mix/radio (`RD`-prefixed) and auth-required pseudo-playlists are rejected. Delete = soft delete (undo NOT wired; the active playlist stops first).
+- **Engine** (`music-player.tsx`): `MusicProvider` (mounted inside `DataProvider` in `router.tsx`) creates ONE YouTube IFrame API player on mount in a 1×1 hidden `pointer-events-none` host. Play continues across routes. `loadPlaylist({ list, listType: 'playlist', index: 0 })` + `playVideo()`; `playerVars.loop = 1` wraps at the end and the `ENDED` handler also `seekTo(0) + playVideo()` as belt-and-braces — playback loops forever.
+- **Error skip**: `onError` codes 2, 5, 100, 101, 150 (invalid param, HTML5 error, removed/private, embedding disabled) auto-`nextVideo()`. Consecutive-error counter stops playback once it reaches the playlist length (prevents infinite skip loops).
+- **Dock** (`MusicDock`, mounted in `AppLayout` next to `FloatingTimerBanner`): bottom-right; collapsed 🎵 link button when nothing is cued; otherwise playlist name + track title + `n / total` position, prev/play-pause/next, and an expandable volume slider. Volume persists as `musicVolume` in settings.
+- **Track polling**: a 1s interval while playing refreshes index/track-count/title from the player (`getPlaylistIndex`, `getPlaylist`, `getVideoData`).
 
 ---
 
@@ -838,3 +848,4 @@ Every instance MUST document significant logic pitfalls and durable user decisio
 - **Marks**: restricted to academic subjects only (non-academic marks hidden with a note, never deleted); added a year filter (""All years"" + per-year chips + ""+ New year"" persisted in `momentum-marks-years`); added a per-subject weighted-% summary card above the table (§6.4).
 
 **SPEC_VERSION: 54** — 2026-10-16 Dashboard layout batch (app v0.25.0): (1) Freeform dashboard layout re-implemented fresh — pure layout engine `freeform-layout.ts` (clampToBounds/resolvePlacement/compactFreeform, unit-tested in `freeform-layout.test.ts`), pointer-driven `FreeformWidget`, mode toggle in Customise Dashboard, persisted in `momentum-dashboard-layout-mode`; drag container is the `data-freeform-canvas` element (not the widget wrapper) and both resolvePlacement candidates and compaction are container-width-bounded (§10.23, §6.1). (2) Today widget merged with Today's Schedule (activities confirm/skip/undo inside the Today card); `today-schedule` and `auto-log` widget cases deleted; widget remove/add/undo/redo all re-pack (compactFreeformLayout takes `{containerWidth, visibleIds}`). (3) Context menus completed: Marks rows, SubjectDetail sessions, Subjects child rows (ContextMenu + KebabMenu, §10.53). (4) Recovered the interrupted 2026-10-15 timer work into source: Ctrl+Enter save, per-subject note persistence across routine switches, notes override task titles, simple-mode session-group no longer double-counts saved seconds, routine-tracker activity guard (§10.63). 239 tests pass; freeform invariants (no overlap, in-bounds) verified in-browser.
+**SPEC_VERSION: 55** — 2026-10-17 Music player (app v0.26.0): built-in YouTube-playlist-backed music player. New `/music` route (`MusicPage.tsx`) with add/delete playlists (paste a URL; `src/lib/youtube.ts` parses list ids, 17 unit tests); Dexie v18 `musicPlaylists` table (id, name, youtubePlaylistId, trackCount?, soft delete) wired into AppData/loadAllData, backup TABLE_KEYS, data-sync SYNC_TABLES, and cloud-backup SYNC_TABLES; `MusicProvider` engine (`src/lib/music-player.tsx`) mounted inside DataProvider — single YouTube IFrame API player in a hidden DOM host so playback survives route changes; loop-forever via playerVars.loop=1 + ENDED-handler restart; onError codes 2/5/100/101/150 auto-skip with a consecutive-error stop guard; `MusicDock` bottom-right dock (prev/play/next, expandable volume slider persisted as `musicVolume` in settings, default 70) mounted in AppLayout; 1s polling while playing syncs track index/count/title into the dock. tsconfig lib bumped to ES2023 + ESNext.Promise for `Promise.withResolvers()`. 256 tests pass, tsc clean.

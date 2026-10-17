@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { AppLayout } from '../components/layout/AppLayout'
+import { MusicProvider } from '../lib/music-player'
 import { DataProvider } from './providers'
 import { AuthProvider } from './auth-provider'
 import { UndoProvider } from '../lib/use-undo'
@@ -24,6 +25,7 @@ const StudyPage = lazy(() => import('../features/study/StudyPage'))
 const ReviewSessionPage = lazy(() => import('../features/study/ReviewSessionPage'))
 const ReviewLogPage = lazy(() => import('../features/study/ReviewLogPage'))
 const ExamConfigPage = lazy(() => import('../features/study/ExamConfigPage'))
+const MusicPage = lazy(() => import('../features/music/MusicPage'))
 
 function RouterContent() {
   const location = useLocation()
@@ -45,6 +47,7 @@ function RouterContent() {
         <Route path="/study/review" element={<ReviewSessionPage />} />
         <Route path="/study/log" element={<ReviewLogPage />} />
         <Route path="/study/exam" element={<ExamConfigPage />} />
+        <Route path="/music" element={<MusicPage />} />
         <Route path="/routines" element={<Navigate to="/schedule" replace />} />
         <Route path="/activities" element={<Navigate to="/schedule" replace />} />
         <Route path="/schedule" element={<SchedulePage />} />
@@ -64,9 +67,11 @@ export function AppRouter() {
     <AuthProvider>
       <UndoProvider>
         <DataProvider>
-          <AppLayout>
-            <RouterContent />
-          </AppLayout>
+          <MusicProvider>
+            <AppLayout>
+              <RouterContent />
+            </AppLayout>
+          </MusicProvider>
         </DataProvider>
       </UndoProvider>
     </AuthProvider>

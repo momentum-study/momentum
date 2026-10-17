@@ -18,6 +18,7 @@ export type Settings = {
   defaultArchiveDays: number
   weekStartsOn: 0 | 1 // 0 = Sun, 1 = Mon
   dashboardWeekMode: 'rolling' | 'calendar' // rolling 7 days vs calendar week
+  musicVolume: number // 0-100, music player volume
   settingsUpdatedAt: string
   devMode?: boolean
 }
@@ -38,6 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultArchiveDays: 66,
   weekStartsOn: 1,
   dashboardWeekMode: 'rolling',
+  musicVolume: 70,
   settingsUpdatedAt: '',
 }
 

@@ -10,6 +10,7 @@ import type {
   Habit,
   HabitLog,
   Mark,
+  MusicPlaylist,
   Project,
   ProgressLog,
   Routine,
@@ -37,6 +38,7 @@ export type AppData = {
   activityLogs: ActivityLog[]
   studyAreas: StudyArea[]
   studyReviews: StudyReview[]
+  musicPlaylists: MusicPlaylist[]
 }
 
 type ScopeFilter = 'all' | 'academic' | 'nonAcademic'
@@ -72,6 +74,7 @@ const emptyData: AppData = {
   activityLogs: [],
   studyAreas: [],
   studyReviews: [],
+  musicPlaylists: [],
 }
 async function safeQuery<T>(table: any, order?: { key: string; reverse?: boolean }): Promise<T[]> {
   try {
@@ -110,6 +113,7 @@ async function loadAllData(): Promise<AppData> {
     activityLogs: await safeQuery(db.activityLogs, { key: 'createdAt', reverse: true }),
     studyAreas: await safeQuery(db.studyAreas, { key: 'name' }),
     studyReviews: await safeQuery(db.studyReviews, { key: 'reviewedAt', reverse: true }),
+    musicPlaylists: await safeQuery(db.musicPlaylists, { key: 'name' }),
   }
 
   return {

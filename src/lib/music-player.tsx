@@ -16,6 +16,9 @@ import { useData } from '../app/providers'
 import { loadSettings, saveSettings } from './settings-store'
 
 // ── Minimal YouTube IFrame API typings (only what we use) ──
+// NOTE: keep in sync with the runtime — the engine degrades gracefully when
+// the API script is blocked (ad-blockers, offline), surfacing `failedAt` via
+// loadYouTubeApi()'s rejection. See §10.66 in SPECIFICATIONS.md.
 
 export interface YTVideoData {
   video_id: string
@@ -79,6 +82,14 @@ declare global {
 const STATE_ENDED = 0
 const STATE_PLAYING = 1
 const STATE_PAUSED = 2
+const STATE_UNSTARTED = -1
+
+/** How long a play request may take to reach PLAYING before the UI shows
+ *  "Can't play" (covers autoplay-block and silent unplayable-track cases). */
+const STALL_TIMEOUT_MS = 8000
+
+/** How long the queued play request waits for the API before giving up. */
+const ENGINE_BOOT_TIMEOUT_MS = 15_000
 
 /** Errors that mean "this video cannot be embedded/played" — skip it.
  *  2 = invalid param, 5 = HTML5 player error, 100 = removed/private,
@@ -126,11 +137,17 @@ export interface MusicPlayerActions {
   setVolume: (volume: number) => void
   /** Stop playback and forget the current playlist. */
   stop: () => void
+  /** Re-attempt the active playlist after a stall or error stop. */
+  retry: () => void
 }
 
 export interface MusicPlayerContextValue extends MusicPlayerActions {
   ready: boolean
+  /** True when the YouTube IFrame API script failed to load (blocked). */
+  engineFailed: boolean
   isPlaying: boolean
+  /** True when a play request did not reach PLAYING (autoplay blocked etc.). */
+  stalled: boolean
   /** Active MusicPlaylist.id (null = nothing loaded). */
   activePlaylistId: string | null
   /** Index of the current track within the active playlist (0-based). */
@@ -161,6 +178,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const playerRef = useRef<YTPlayer | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [engineReady, setEngineReady] = useState(false)
+  const [engineFailed, setEngineFailed] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null)
   const [trackIndex, setTrackIndex] = useState(0)
@@ -168,15 +186,58 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const [trackTitle, setTrackTitle] = useState('')
   const [volume, setVolumeState] = useState<number>(() => loadSettings().musicVolume)
   const [skipping, setSkipping] = useState(false)
+  // Set when a play request was issued but the player never reached PLAYING
+  // (autoplay blocked, unplayable first track without an error event, etc.).
+  // The dock/play buttons show "Can't play" instead of a dead '▶'.
+  const [stalled, setStalled] = useState(false)
 
   const consecutiveErrors = useRef(0)
   const wantPlayRef = useRef(false)
   const pendingLoadRef = useRef<{ youtubePlaylistId: string; playlistId: string } | null>(null)
+  // Watchdog that clears `stalled` if PLAYING arrives late (buffering).
+  const stallTimerRef = useRef<number | null>(null)
+
+  const clearStallTimer = useCallback(() => {
+    if (stallTimerRef.current !== null) {
+      window.clearTimeout(stallTimerRef.current)
+      stallTimerRef.current = null
+    }
+  }, [])
+
+  const armStallTimer = useCallback((player: YTPlayer) => {
+    clearStallTimer()
+    stallTimerRef.current = window.setTimeout(() => {
+      stallTimerRef.current = null
+      // Only flag a stall if we still aren't playing (buffering resolves fast).
+      const state = player.getPlayerState()
+      if (state !== STATE_PLAYING) {
+        setStalled(true)
+        setIsPlaying(false)
+        // Unplayable first track sometimes errors without hitting the skip
+        // path (state stays UNSTARTED). Nudge to the next track, same as the
+        // onError handler.
+        consecutiveErrors.current += 1
+        const count = player.getPlaylist?.()?.length ?? null
+        if (consecutiveErrors.current >= (count ?? 100)) {
+          wantPlayRef.current = false
+          setSkipping(false)
+          return
+        }
+        setSkipping(true)
+        player.nextVideo()
+        // Keep watching: the next track gets its own window to start.
+        armStallTimer(player)
+      }
+    }, STALL_TIMEOUT_MS)
+  }, [clearStallTimer])
 
   // Load the stored volume into the player once it exists.
   useEffect(() => {
     if (engineReady && playerRef.current) playerRef.current.setVolume(volume)
   }, [engineReady, volume])
+
+  // Clear the stall watchdog on unmount.
+  useEffect(() => () => clearStallTimer(), [clearStallTimer])
 
   // Create the player once, on mount.
   useEffect(() => {
@@ -203,8 +264,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
               if (cancelled) return
               const state = event.data
               if (state === STATE_PLAYING) {
+                clearStallTimer()
                 consecutiveErrors.current = 0
                 setSkipping(false)
+                setStalled(false)
                 setIsPlaying(true)
                 const index = event.target.getPlaylistIndex?.() ?? 0
                 const count = event.target.getPlaylist?.()?.length ?? null
@@ -212,6 +275,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
                 if (count !== null) setTrackCount(count)
                 setTrackTitle(event.target.getVideoData?.()?.title ?? '')
               } else if (state === STATE_PAUSED) {
+                clearStallTimer()
+                setStalled(false)
                 setIsPlaying(false)
               } else if (state === STATE_ENDED) {
                 // Belt and braces: playerVars.loop covers playlists, but
@@ -224,6 +289,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
             onError: (event) => {
               if (cancelled) return
               if (!SKIP_ERROR_CODES.includes(event.data)) return
+              clearStallTimer()
+              setStalled(false)
               consecutiveErrors.current += 1
               const count = event.target.getPlaylist?.()?.length ?? null
               const max = count ?? 100
@@ -236,20 +303,24 @@ export function MusicProvider({ children }: { children: ReactNode }) {
               }
               setSkipping(true)
               event.target.nextVideo()
+              // The replacement track gets its own watchdog window.
+              armStallTimer(event.target)
             },
           },
         })
       })
       .catch(() => {
-        // Network blocked or script error — the dock shows nothing active and
-        // the /music page still manages playlists. Engine stays unready.
+        // Network blocked, shields, or script error — surface it instead of
+        // leaving playlists silently unplayable (the dead-dock bug).
+        if (!cancelled) setEngineFailed(true)
       })
     return () => {
       cancelled = true
+      clearStallTimer()
       playerRef.current?.destroy()
       playerRef.current = null
     }
-  }, [])
+  }, [clearStallTimer, armStallTimer])
 
   // Poll while playing so prev/next via the API (and track changes) update UI.
   useEffect(() => {
@@ -257,11 +328,19 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const id = window.setInterval(() => {
       const player = playerRef.current
       if (!player) return
-      const index = player.getPlaylistIndex?.() ?? 0
-      setTrackIndex(index < 0 ? 0 : index)
-      const count = player.getPlaylist?.()?.length ?? null
-      if (count !== null) setTrackCount(count)
-      setTrackTitle(player.getVideoData?.()?.title ?? '')
+      const state = player.getPlayerState()
+      if (state === STATE_PLAYING) {
+        // Track changes while playing (next/prev/loop wrap) surface here.
+        const count = player.getPlaylist?.()?.length ?? null
+        if (count !== null) setTrackCount(count)
+        setTrackTitle(player.getVideoData?.()?.title ?? '')
+        setTrackIndex(player.getPlaylistIndex?.() ?? 0)
+      } else if (state === STATE_PAUSED || state === STATE_UNSTARTED) {
+        // The engine reports paused/unstarted without a browser gesture having
+        // been delivered — the classic autoplay-block after pause+resume.
+        setStalled(true)
+        setIsPlaying(false)
+      }
     }, 1000)
     return () => window.clearInterval(id)
   }, [isPlaying])
@@ -276,15 +355,36 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setTrackTitle('')
     consecutiveErrors.current = 0
     setSkipping(false)
+    setStalled(false)
     const player = playerRef.current
     if (!player || !engineReady) {
-      // Engine still loading — remember the request; onReady continuation below.
+      if (engineFailed) {
+        // The API script never loaded (blocked/offline) — fail fast so the UI
+        // can say so instead of leaving a permanently dead Play button.
+        wantPlayRef.current = false
+        setActivePlaylistId(null)
+        return
+      }
+      // Engine still loading — remember the request; flushed on engineReady.
       pendingLoadRef.current = { youtubePlaylistId: row.youtubePlaylistId, playlistId }
+      // If the engine never readies, fail the pending request too.
+      window.setTimeout(() => {
+        if (pendingLoadRef.current || (!wantPlayRef.current && activePlaylistId === playlistId)) {
+          if (!playerRef.current) {
+            pendingLoadRef.current = null
+            wantPlayRef.current = false
+            setActivePlaylistId(null)
+            setStalled(true)
+          }
+        }
+      }, ENGINE_BOOT_TIMEOUT_MS)
       return
     }
+    clearStallTimer()
     player.loadPlaylist({ list: row.youtubePlaylistId, listType: 'playlist', index: 0 })
     player.playVideo()
-  }, [playlists, engineReady])
+    armStallTimer(player)
+  }, [playlists, engineReady, engineFailed, clearStallTimer, armStallTimer, activePlaylistId])
 
   // Flush a play request that arrived before the engine was ready.
   useEffect(() => {
@@ -292,40 +392,68 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     if (!pending || !engineReady || !playerRef.current) return
     pendingLoadRef.current = null
     setActivePlaylistId(pending.playlistId)
+    clearStallTimer()
     playerRef.current.loadPlaylist({ list: pending.youtubePlaylistId, listType: 'playlist', index: 0 })
     playerRef.current.playVideo()
-  }, [engineReady])
+    armStallTimer(playerRef.current)
+  }, [engineReady, clearStallTimer, armStallTimer])
 
   const toggle = useCallback(() => {
     const player = playerRef.current
     if (!player || !activePlaylistId) return
-    const state = player.getPlayerState()
-    if (state === STATE_PLAYING) {
+    setStalled(false)
+    if (wantPlayRef.current || player.getPlayerState() === STATE_PLAYING) {
+      // Pause a running (or still-loading-from-an-explicit-play) session.
+      wantPlayRef.current = false
+      clearStallTimer()
       player.pauseVideo()
-    } else {
-      player.playVideo()
+      return
     }
-  }, [activePlaylistId])
+    // Resume/first-play.
+    wantPlayRef.current = true
+    clearStallTimer()
+    player.playVideo()
+    armStallTimer(player)
+  }, [activePlaylistId, clearStallTimer, armStallTimer])
 
   const next = useCallback(() => {
     consecutiveErrors.current = 0
-    playerRef.current?.nextVideo()
-  }, [])
+    setStalled(false)
+    clearStallTimer()
+    const player = playerRef.current
+    if (!player) return
+    player.nextVideo()
+    armStallTimer(player)
+  }, [clearStallTimer, armStallTimer])
 
   const prev = useCallback(() => {
     consecutiveErrors.current = 0
-    playerRef.current?.previousVideo()
-  }, [])
+    setStalled(false)
+    clearStallTimer()
+    const player = playerRef.current
+    if (!player) return
+    player.previousVideo()
+    armStallTimer(player)
+  }, [clearStallTimer, armStallTimer])
 
   const stop = useCallback(() => {
     wantPlayRef.current = false
+    clearStallTimer()
+    setStalled(false)
+    setSkipping(false)
     playerRef.current?.stopVideo()
     setIsPlaying(false)
     setTrackTitle('')
     setActivePlaylistId(null)
     setTrackIndex(0)
     setTrackCount(null)
-  }, [])
+  }, [clearStallTimer])
+
+  /** Retry the active playlist from its first track after a stall/failure. */
+  const retry = useCallback(() => {
+    if (!activePlaylistId) return
+    playPlaylist(activePlaylistId)
+  }, [activePlaylistId, playPlaylist])
 
   const setVolume = useCallback((value: number) => {
     const clamped = Math.min(100, Math.max(0, Math.round(value)))
@@ -353,7 +481,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const value = useMemo<MusicPlayerContextValue>(
     () => ({
       ready: engineReady,
+      engineFailed,
       isPlaying,
+      stalled,
       activePlaylistId,
       trackIndex,
       trackCount,
@@ -364,10 +494,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       toggle,
       next,
       prev,
+      retry,
       setVolume,
       stop,
     }),
-    [engineReady, isPlaying, activePlaylistId, trackIndex, trackCount, trackTitle, volume, skipping, playPlaylist, toggle, next, prev, setVolume, stop],
+    [engineReady, engineFailed, isPlaying, stalled, activePlaylistId, trackIndex, trackCount, trackTitle, volume, skipping, playPlaylist, toggle, next, prev, retry, setVolume, stop],
   )
 
   return (

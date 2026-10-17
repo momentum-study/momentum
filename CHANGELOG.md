@@ -1,6 +1,14 @@
 # Changelog
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
+## [v0.26.1] — 2026-10-17
+
+### Music player fixes
+- **Fixed the "Paused and can't play" dead state**: when the YouTube engine fails to load (ad-blockers, offline) or playback is blocked by the browser, the dock and Music page now show a clear "can't play" banner with a Retry button — instead of a playlist stuck on "Paused" whose Play button did nothing. Failed plays no longer leave a phantom active playlist.
+- **Themed music UI**: replaced the emoji control glyphs (🎵 ⏮ ⏸ ▶ ⏭ 🔊 ☰) with proper inline SVG icons matching the rest of the app, plus an animated equaliser badge on the active playlist row.
+
+### Dashboard
+- Moved the Log Study Time (＋) button up so it no longer sits underneath the music dock — the two overlapped completely when a playlist was playing.
 ## [v0.26.0] — 2026-10-17
 
 ### Music player

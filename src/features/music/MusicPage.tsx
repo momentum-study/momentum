@@ -8,13 +8,45 @@ import { Modal } from '../../components/ui/Modal'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { useMusicPlayer } from '../../lib/music-player'
-import { extractPlaylistIdLoose } from '../../lib/youtube'
-import { isMixPlaylistId } from '../../lib/youtube'
+import { extractPlaylistIdLoose, isMixPlaylistId } from '../../lib/youtube'
 import { isoNow } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 import { filterActive } from '../../lib/filterActive'
 import { v4 as uuid } from 'uuid'
 import type { MusicPlaylist } from '../../domain/types'
+
+/** Themed inline icons (no emoji affordances — spec §10.65). */
+function PlayGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  )
+}
+
+function PauseGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+    </svg>
+  )
+}
+
+function MusicGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zM21 16a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  )
+}
+
+function EqualiserGlyph({ className, playing }: { className?: string; playing?: boolean }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
+      <path strokeLinecap="round" d={playing ? 'M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4' : 'M4 12h3M10 12h3M16 12h3'} />
+    </svg>
+  )
+}
 
 function formatAddedAt(iso: string): string {
   const d = new Date(iso)
@@ -74,6 +106,8 @@ export default function MusicPage() {
     await loadData()
   }
 
+  const blocked = player.stalled || player.engineFailed
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center justify-between">
@@ -86,10 +120,21 @@ export default function MusicPage() {
         <Button onClick={() => setAddOpen(true)}>+ Add playlist</Button>
       </div>
 
+      {blocked && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/30 dark:text-amber-200">
+          <span>
+            {player.engineFailed
+              ? 'The music engine could not load — check your connection or ad-blocker settings.'
+              : 'Playback was blocked by the browser. Retry the playlist.'}
+          </span>
+          <Button size="sm" onClick={player.retry}>Retry</Button>
+        </div>
+      )}
+
       {playlists.length === 0 ? (
         <Card>
           <EmptyState
-            icon="🎵"
+            icon={<MusicGlyph className="h-8 w-8 text-slate-400" />}
             title="No playlists yet"
             description="Paste a YouTube playlist link to build your study soundtrack. It plays in order, on loop, right inside Momentum."
           />
@@ -101,12 +146,23 @@ export default function MusicPage() {
             return (
               <Card key={p.id} className={cn(isActive && 'ring-2 ring-primary-500')}>
                 <div className="flex flex-wrap items-center gap-3">
+                  <span
+                    className={cn(
+                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+                      isActive
+                        ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
+                        : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300',
+                    )}
+                    aria-hidden="true"
+                  >
+                    <EqualiserGlyph className="h-4 w-4" playing={isActive && player.isPlaying} />
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
                       {p.name}
                       {isActive && (
                         <span className="ml-2 rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
-                          {player.isPlaying ? 'Playing' : 'Paused'}
+                          {blocked ? 'Blocked' : player.isPlaying ? 'Playing' : 'Paused'}
                         </span>
                       )}
                     </p>
@@ -116,11 +172,13 @@ export default function MusicPage() {
                   </div>
                   {isActive ? (
                     <Button variant="secondary" size="sm" onClick={player.toggle}>
+                      {player.isPlaying ? <PauseGlyph className="h-3.5 w-3.5" /> : <PlayGlyph className="h-3.5 w-3.5" />}
                       {player.isPlaying ? 'Pause' : 'Play'}
                     </Button>
                   ) : (
                     <Button size="sm" onClick={() => player.playPlaylist(p.id)}>
-                      ▶ Play
+                      <PlayGlyph className="h-3.5 w-3.5" />
+                      Play
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(p)}>

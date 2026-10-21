@@ -274,23 +274,18 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   // Clear the stall watchdog on unmount.
   useEffect(() => () => clearStallTimer(), [clearStallTimer])
 
-  // Create the player once, on mount.
+  // Create the player once, on mount. Let the IFrame API create the iframe
+  // from the container; passing a hand-created blank iframe prevents the API
+  // from reliably attaching its command and state channel.
   useEffect(() => {
     let cancelled = false
     void loadYouTubeApi()
       .then((YT) => {
         if (cancelled || !containerRef.current) return
         playerRef.current = new YT.Player(containerRef.current, {
-          // autoplay=1 makes YT create the iframe with allow="autoplay", which
-          // is REQUIRED to grant the embed permission to start playback from
-          // the page's user gesture in strict-autoplay browsers (Chrome,
-          // Safari). Without it, playVideo() after a UI click is silently
-          // discarded by the browser — the "blocked by your browser" stall.
-          // The player stays idle until we call loadPlaylist/playVideo, so
-          // autoplay=1 here does NOT auto-start on page load.
           playerVars: {
             autoplay: 1,
-            loop: 1, // honored for playlists: wraps to the first track at the end
+            loop: 1,
             controls: 0,
             disablekb: 1,
             playsinline: 1,
@@ -317,12 +312,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
                 if (count !== null) setTrackCount(count)
                 setTrackTitle(event.target.getVideoData?.()?.title ?? '')
               } else if (state === STATE_PAUSED) {
-                clearStallTimer()
-                setStalled(false)
+                // Do not cancel the watchdog while an explicit play request
+                // is still pending; YouTube reports PAUSED during playlist
+                // loading and the request may still transition to PLAYING.
+                if (!wantPlayRef.current) {
+                  clearStallTimer()
+                  setStalled(false)
+                }
                 setIsPlaying(false)
               } else if (state === STATE_ENDED) {
-                // Belt and braces: playerVars.loop covers playlists, but
-                // explicitly restart so playback never stops.
                 event.target.seekTo(0, true)
                 event.target.playVideo()
                 setIsPlaying(true)
@@ -337,7 +335,6 @@ export function MusicProvider({ children }: { children: ReactNode }) {
               const count = event.target.getPlaylist?.()?.length ?? null
               const max = count ?? 100
               if (consecutiveErrors.current >= max) {
-                // Every track is unplayable — stop instead of spinning forever.
                 wantPlayRef.current = false
                 setSkipping(false)
                 setIsPlaying(false)
@@ -345,15 +342,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
               }
               setSkipping(true)
               event.target.nextVideo()
-              // The replacement track gets its own watchdog window.
               armStallTimer(event.target)
             },
           },
         })
       })
       .catch(() => {
-        // Network blocked, shields, or script error — surface it instead of
-        // leaving playlists silently unplayable (the dead-dock bug).
         if (!cancelled) setEngineFailed(true)
       })
     return () => {
@@ -560,10 +554,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   return (
     <MusicPlayerContext.Provider value={value}>
       {children}
-      {/* Persistent player host. The key is playerVars.autoplay=1 which creates
-        * the iframe with allow="autoplay" so the gesture can cross the boundary.
-        * We hide it with opacity:0 and pointer-events:none; it's off-screen. */}
-      <div className="pointer-events-none fixed bottom-0 right-0 z-0 h-px w-px opacity-0" aria-hidden="true">
+      <div className="pointer-events-none fixed bottom-[-200px] right-0 z-0 h-[200px] w-[200px] overflow-hidden" aria-hidden="true">
         <div ref={containerRef} />
       </div>
     </MusicPlayerContext.Provider>

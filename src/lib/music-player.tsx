@@ -51,6 +51,8 @@ interface YTPlayerEvent {
 interface YTPlayerConfig {
   videoId?: string
   host?: string
+  width?: number
+  height?: number
   events?: {
     onReady?: (event: YTPlayerEvent) => void
     onStateChange?: (event: YTPlayerEvent) => void
@@ -283,8 +285,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       .then((YT) => {
         if (cancelled || !containerRef.current) return
         playerRef.current = new YT.Player(containerRef.current, {
+          width: 200,
+          height: 200,
           playerVars: {
-            autoplay: 1,
+            autoplay: 0,
             loop: 1,
             controls: 0,
             disablekb: 1,

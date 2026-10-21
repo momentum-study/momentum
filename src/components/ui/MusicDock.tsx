@@ -88,7 +88,7 @@ export function MusicDock() {
   // Nothing cued: show a compact link to the Music page only.
   if (!playlist) {
     return (
-      <div className="fixed bottom-4 right-4 z-40">
+      <div className="fixed bottom-24 right-4 z-40">
         <Link
           to="/music"
           aria-label="Music player"
@@ -106,7 +106,7 @@ export function MusicDock() {
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-40 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-800/95"
+      className="fixed bottom-24 right-4 z-40 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-800/95"
       aria-label="Music player controls"
     >
       <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-700">

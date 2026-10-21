@@ -194,6 +194,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const consecutiveErrors = useRef(0)
   const wantPlayRef = useRef(false)
   const pendingLoadRef = useRef<{ youtubePlaylistId: string; playlistId: string } | null>(null)
+  // Pause→resume nudge has been tried for the current play request. Reset on
+  // every fresh play/cue so each request gets one recovery attempt.
+  const nudgedRef = useRef(false)
   // Watchdog that clears `stalled` if PLAYING arrives late (buffering).
   const stallTimerRef = useRef<number | null>(null)
 
@@ -204,6 +207,26 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  /** Pause→resume recovery for a play request the browser silently refused
+   *  (autoplay policy discards the queued playVideo() without any error
+   *  event). Pausing and re-delivering playVideo() lets the policy grant
+   *  playback once user intent is unambiguous. Runs once per play request;
+   *  only when it also fails do we surface the "can't play" banner. */
+  const tryNudge = useCallback((player: YTPlayer) => {
+    if (nudgedRef.current || !wantPlayRef.current) return
+    nudgedRef.current = true
+    player.pauseVideo()
+    window.setTimeout(() => {
+      if (stallTimerRef.current === null && wantPlayRef.current) {
+        player.playVideo()
+        armStallTimerRef.current?.(player)
+      }
+    }, 400)
+  }, [])
+
+  // Late-bound so tryNudge can re-arm the watchdog without a dependency cycle.
+  const armStallTimerRef = useRef<(player: YTPlayer) => void>(null as unknown as (player: YTPlayer) => void)
+
   const armStallTimer = useCallback((player: YTPlayer) => {
     clearStallTimer()
     stallTimerRef.current = window.setTimeout(() => {
@@ -211,6 +234,13 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       // Only flag a stall if we still aren't playing (buffering resolves fast).
       const state = player.getPlayerState()
       if (state !== STATE_PLAYING) {
+        // First stall: try the pause→resume nudge before giving up.
+        if (!nudgedRef.current) {
+          tryNudge(player)
+          // Let the nudge's 400ms + re-armed watchdog judge success.
+          return
+        }
+        // Nudge already tried and still stalled — now it's really blocked.
         setStalled(true)
         setIsPlaying(false)
         // Unplayable first track sometimes errors without hitting the skip
@@ -229,7 +259,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         armStallTimer(player)
       }
     }, STALL_TIMEOUT_MS)
-  }, [clearStallTimer])
+  }, [clearStallTimer, tryNudge])
+
+  // Wire the late-bound reference once both callbacks exist.
+  useEffect(() => {
+    armStallTimerRef.current = armStallTimer
+  }, [armStallTimer])
 
   // Load the stored volume into the player once it exists.
   useEffect(() => {
@@ -246,8 +281,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       .then((YT) => {
         if (cancelled || !containerRef.current) return
         playerRef.current = new YT.Player(containerRef.current, {
+          // autoplay=1 makes YT create the iframe with allow="autoplay", which
+          // is REQUIRED to grant the embed permission to start playback from
+          // the page's user gesture in strict-autoplay browsers (Chrome,
+          // Safari). Without it, playVideo() after a UI click is silently
+          // discarded by the browser — the "blocked by your browser" stall.
+          // The player stays idle until we call loadPlaylist/playVideo, so
+          // autoplay=1 here does NOT auto-start on page load.
           playerVars: {
-            autoplay: 0,
+            autoplay: 1,
             loop: 1, // honored for playlists: wraps to the first track at the end
             controls: 0,
             disablekb: 1,
@@ -338,12 +380,23 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       } else if (state === STATE_PAUSED || state === STATE_UNSTARTED) {
         // The engine reports paused/unstarted without a browser gesture having
         // been delivered — the classic autoplay-block after pause+resume.
-        setStalled(true)
+        // First pause/unstarted since the last play: try nudge and let watchdog
+        // judge success before giving up. We skip this if a previous nudge is
+        // already in flight (nudgedRef) or if we've given up (wantPlayRef=false).
+        if (!nudgedRef.current && wantPlayRef.current) {
+          tryNudge(player)
+          // Let the next watchdog window evaluate after the nudge attempts recovery.
+          return
+        }
+        // Subsequent PAUSED/UNSTARTED after nudge fail: now it's really blocked.
+        // But if nudge is in flight (nudgedRef.current=true), let the watchdog
+        // own the final verdict — the poll is racing the nudge's 400ms window.
+        if (!nudgedRef.current) setStalled(true)
         setIsPlaying(false)
       }
     }, 1000)
     return () => window.clearInterval(id)
-  }, [isPlaying])
+  }, [isPlaying, tryNudge])
 
   const playPlaylist = useCallback((playlistId: string) => {
     const row = playlists.find((p) => p.id === playlistId && !p.deletedAt)
@@ -354,6 +407,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setTrackCount(row.trackCount ?? null)
     setTrackTitle('')
     consecutiveErrors.current = 0
+    nudgedRef.current = false
     setSkipping(false)
     setStalled(false)
     const player = playerRef.current
@@ -392,6 +446,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     if (!pending || !engineReady || !playerRef.current) return
     pendingLoadRef.current = null
     setActivePlaylistId(pending.playlistId)
+    nudgedRef.current = false
     clearStallTimer()
     playerRef.current.loadPlaylist({ list: pending.youtubePlaylistId, listType: 'playlist', index: 0 })
     playerRef.current.playVideo()
@@ -411,6 +466,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }
     // Resume/first-play.
     wantPlayRef.current = true
+    nudgedRef.current = false
     clearStallTimer()
     player.playVideo()
     armStallTimer(player)
@@ -504,10 +560,14 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   return (
     <MusicPlayerContext.Provider value={value}>
       {children}
-      {/* Persistent player host. Positioned as a small visible player pinned
-        * to the bottom-right so it stays embed-friendly and never intercepts
-        * clicks (pointer-events-none); audio keeps playing across routes. */}
-      <div className="pointer-events-none fixed bottom-0 right-0 z-0 h-px w-px overflow-hidden opacity-0" aria-hidden="true">
+      {/* Persistent player host A real-sized (180×100) element pinned to the
+        * bottom-right: zero/1px/2px-sized or opacity:0 embeds are treated as
+        * hidden by autoplay heuristics in strict browsers, which silently
+        * discards playVideo() even after a page-level user click. 180×100 is
+        * above the "small/hidden" threshold and mostly clips below the
+        * viewport edge so it stays effectively invisible. pointer-events-none
+        * keeps it click-through; audio spans routes. */}
+      <div className="pointer-events-none fixed bottom-[-72px] right-0 z-0 h-[100px] w-[180px] overflow-hidden" aria-hidden="true">
         <div ref={containerRef} />
       </div>
     </MusicPlayerContext.Provider>

@@ -2027,7 +2027,7 @@ export default function Dashboard() {
         </div>
       </Modal>
 
-      <div className="fab-container fixed bottom-44 right-6 z-40">
+      <div className="fab-container fixed bottom-4 right-6 z-40">
         <button
           onClick={() => setLogModalOpen(true)}
           className="h-14 w-14 rounded-full bg-primary-600 text-white shadow-lg transition-all duration-200 text-2xl flex items-center justify-center hover:bg-primary-700"

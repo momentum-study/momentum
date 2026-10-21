@@ -1,6 +1,21 @@
 # Changelog
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
+## [v0.26.3] — 2026-10-20
+
+### Music + Dashboard layout (round 2)
+- **FAB / music dock positions corrected**: the Log Study Time (＋) button is back in the bottom-right corner (`bottom-4`), and the music dock sits above it (`bottom-24`). v0.26.2 had them inverted — the ＋ was floated high (`bottom-40`) and the dock hugged the corner.
+- **Real autoplay-policy fix**: the YouTube embed now gets `autoplay: 1` so the iframe is created with `allow="autoplay"` — required for the page's click gesture to carry across the iframe boundary in strict browsers (Chrome, Safari). Also the player host is a real 180×100 element (clipped below the viewport edge) instead of a 2px sliver; zero/tiny-height embeds are treated as hidden media and silently refuse `playVideo()` regardless of the page gesture. Playback verified: audio advances, pause/resume works, no false blocked banner.
+
+## [v0.26.2] — 2026-10-20
+
+### Music player fixes
+- **Recovery for the "Playback was blocked by your browser" stall**: a play request the browser silently refuses (autoplay policy discards the queued `playVideo()` without an error event) is now retried once with a pause → resume nudge before the "can't play" banner appears, and a pause-then-resume by the user no longer produces a false blocked banner on resuming. The banner is now a true last resort.
+- The persistent player host is no longer a 1×1 zero-size hidden div — a 2px sliver keeps the embed's autoplay heuristics happy and makes any future playback debugging possible.
+
+### Dashboard
+- The Log Study Time (＋) button returned to the bottom-right corner (moved up to `bottom-40`, just clear of the music dock's worst-case banner footprint) — v0.26.1's temporary up-position (`bottom-44`) put it too far up the screen.
+
 ## [v0.26.1] — 2026-10-17
 
 ### Music player fixes

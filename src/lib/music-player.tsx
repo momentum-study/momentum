@@ -560,14 +560,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   return (
     <MusicPlayerContext.Provider value={value}>
       {children}
-      {/* Persistent player host A real-sized (180×100) element pinned to the
-        * bottom-right: zero/1px/2px-sized or opacity:0 embeds are treated as
-        * hidden by autoplay heuristics in strict browsers, which silently
-        * discards playVideo() even after a page-level user click. 180×100 is
-        * above the "small/hidden" threshold and mostly clips below the
-        * viewport edge so it stays effectively invisible. pointer-events-none
-        * keeps it click-through; audio spans routes. */}
-      <div className="pointer-events-none fixed bottom-[-72px] right-0 z-0 h-[100px] w-[180px] overflow-hidden" aria-hidden="true">
+      {/* Persistent player host. The key is playerVars.autoplay=1 which creates
+        * the iframe with allow="autoplay" so the gesture can cross the boundary.
+        * We hide it with opacity:0 and pointer-events:none; it's off-screen. */}
+      <div className="pointer-events-none fixed bottom-0 right-0 z-0 h-px w-px opacity-0" aria-hidden="true">
         <div ref={containerRef} />
       </div>
     </MusicPlayerContext.Provider>

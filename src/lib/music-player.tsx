@@ -33,6 +33,7 @@ export interface YTPlayer {
   nextVideo(): void
   previousVideo(): void
   loadPlaylist(options: { list: string; listType: 'playlist'; index?: number; startSeconds?: number }): void
+  setShuffle(shuffle: boolean): void
   setVolume(volume: number): void
   getVolume(): number
   seekTo(seconds: number, allowSeekAhead: boolean): void
@@ -100,6 +101,7 @@ const SKIP_ERROR_CODES = [2, 5, 100, 101, 150]
 
 // ── API loader (idempotent, one script tag for the app lifetime) ──
 
+const MUSIC_LAST_PLAYLIST_KEY = 'momentum-last-playlist'
 let ytApiPromise: Promise<YTNamespace> | null = null
 
 function loadYouTubeApi(): Promise<YTNamespace> {
@@ -137,6 +139,9 @@ export interface MusicPlayerActions {
   next: () => void
   prev: () => void
   setVolume: (volume: number) => void
+  setShuffle: (shuffle: boolean) => void
+  /** Play the most recently used playlist, or the newest saved playlist. */
+  playLastPlaylist: () => void
   /** Stop playback and forget the current playlist. */
   stop: () => void
   /** Re-attempt the active playlist after a stall or error stop. */
@@ -161,6 +166,7 @@ export interface MusicPlayerContextValue extends MusicPlayerActions {
   volume: number
   /** True while consecutive unplayable tracks are being skipped. */
   skipping: boolean
+  shuffle: boolean
 }
 
 const MusicPlayerContext = createContext<MusicPlayerContextValue | null>(null)
@@ -191,6 +197,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   // Set when a play request was issued but the player never reached PLAYING
   // (autoplay blocked, unplayable first track without an error event, etc.).
   // The dock/play buttons show "Can't play" instead of a dead '▶'.
+  const [shuffle, setShuffleState] = useState(false)
   const [stalled, setStalled] = useState(false)
 
   const consecutiveErrors = useRef(0)
@@ -414,32 +421,28 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const player = playerRef.current
     if (!player || !engineReady) {
       if (engineFailed) {
-        // The API script never loaded (blocked/offline) — fail fast so the UI
-        // can say so instead of leaving a permanently dead Play button.
         wantPlayRef.current = false
         setActivePlaylistId(null)
         return
       }
-      // Engine still loading — remember the request; flushed on engineReady.
       pendingLoadRef.current = { youtubePlaylistId: row.youtubePlaylistId, playlistId }
-      // If the engine never readies, fail the pending request too.
       window.setTimeout(() => {
-        if (pendingLoadRef.current || (!wantPlayRef.current && activePlaylistId === playlistId)) {
-          if (!playerRef.current) {
-            pendingLoadRef.current = null
-            wantPlayRef.current = false
-            setActivePlaylistId(null)
-            setStalled(true)
-          }
+        if (pendingLoadRef.current && !playerRef.current) {
+          pendingLoadRef.current = null
+          wantPlayRef.current = false
+          setActivePlaylistId(null)
+          setStalled(true)
         }
       }, ENGINE_BOOT_TIMEOUT_MS)
       return
     }
     clearStallTimer()
+    window.localStorage.setItem(MUSIC_LAST_PLAYLIST_KEY, playlistId)
     player.loadPlaylist({ list: row.youtubePlaylistId, listType: 'playlist', index: 0 })
+    player.setShuffle(shuffle)
     player.playVideo()
     armStallTimer(player)
-  }, [playlists, engineReady, engineFailed, clearStallTimer, armStallTimer, activePlaylistId])
+  }, [playlists, engineReady, engineFailed, clearStallTimer, armStallTimer, shuffle])
 
   // Flush a play request that arrived before the engine was ready.
   useEffect(() => {
@@ -449,29 +452,41 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setActivePlaylistId(pending.playlistId)
     nudgedRef.current = false
     clearStallTimer()
+    window.localStorage.setItem(MUSIC_LAST_PLAYLIST_KEY, pending.playlistId)
     playerRef.current.loadPlaylist({ list: pending.youtubePlaylistId, listType: 'playlist', index: 0 })
+    playerRef.current.setShuffle(shuffle)
     playerRef.current.playVideo()
     armStallTimer(playerRef.current)
-  }, [engineReady, clearStallTimer, armStallTimer])
-
+  }, [engineReady, clearStallTimer, armStallTimer, shuffle])
   const toggle = useCallback(() => {
     const player = playerRef.current
     if (!player || !activePlaylistId) return
     setStalled(false)
     if (wantPlayRef.current || player.getPlayerState() === STATE_PLAYING) {
-      // Pause a running (or still-loading-from-an-explicit-play) session.
       wantPlayRef.current = false
       clearStallTimer()
       player.pauseVideo()
       return
     }
-    // Resume/first-play.
     wantPlayRef.current = true
     nudgedRef.current = false
     clearStallTimer()
     player.playVideo()
     armStallTimer(player)
   }, [activePlaylistId, clearStallTimer, armStallTimer])
+
+  const playLastPlaylist = useCallback(() => {
+    const storedId = window.localStorage.getItem(MUSIC_LAST_PLAYLIST_KEY)
+    const stored = storedId ? playlists.find((p) => p.id === storedId && !p.deletedAt) : null
+    const newest = [...playlists].filter((p) => !p.deletedAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+    const target = stored ?? newest
+    if (target) playPlaylist(target.id)
+  }, [playlists, playPlaylist])
+
+  const setShuffle = useCallback((value: boolean) => {
+    setShuffleState(value)
+    playerRef.current?.setShuffle(value)
+  }, [])
 
   const next = useCallback(() => {
     consecutiveErrors.current = 0
@@ -547,21 +562,24 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       trackTitle,
       volume,
       skipping,
+      shuffle,
       playPlaylist,
+      playLastPlaylist,
       toggle,
       next,
       prev,
       retry,
       setVolume,
+      setShuffle,
       stop,
     }),
-    [engineReady, engineFailed, isPlaying, stalled, activePlaylistId, trackIndex, trackCount, trackTitle, volume, skipping, playPlaylist, toggle, next, prev, retry, setVolume, stop],
+    [engineReady, engineFailed, isPlaying, stalled, activePlaylistId, trackIndex, trackCount, trackTitle, volume, skipping, shuffle, playPlaylist, playLastPlaylist, toggle, next, prev, retry, setVolume, setShuffle, stop],
   )
 
   return (
     <MusicPlayerContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-[-72px] right-0 z-0 h-[100px] w-[180px] overflow-hidden" aria-hidden="true">
+      <div className="pointer-events-none fixed bottom-[-72px] right-0 z-0 h-[100px] w-[180px] overflow-hidden opacity-[0.01]" aria-hidden="true">
         <div ref={containerRef} />
       </div>
     </MusicPlayerContext.Provider>

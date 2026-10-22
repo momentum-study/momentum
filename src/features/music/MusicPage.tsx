@@ -1,3 +1,4 @@
+import { Checkbox } from '../../components/ui/Checkbox'
 // Music page — manage YouTube playlists for the in-app player.
 // Paste a playlist URL, name it, then play/stop/delete from the list.
 import { useState, type FormEvent } from 'react'
@@ -60,13 +61,15 @@ export default function MusicPage() {
   const playlists = filterActive(data.musicPlaylists)
 
   const [addOpen, setAddOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<MusicPlaylist | null>(null)
   const [urlInput, setUrlInput] = useState('')
   const [nameInput, setNameInput] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<MusicPlaylist | null>(null)
+  const [shuffle, setShuffle] = useState(false)
 
-  async function handleAdd(e: FormEvent) {
+  async function handleSave(e: FormEvent) {
     e.preventDefault()
     setError('')
     const id = extractPlaylistIdLoose(urlInput)
@@ -81,20 +84,32 @@ export default function MusicPage() {
     setSaving(true)
     try {
       const now = isoNow()
-      await db.musicPlaylists.put({
-        id: uuid(),
-        name: nameInput.trim() || 'My playlist',
-        youtubePlaylistId: id,
-        createdAt: now,
-        updatedAt: now,
-      })
+      await db.musicPlaylists.put(editTarget
+        ? { ...editTarget, name: nameInput.trim() || 'My playlist', youtubePlaylistId: id, updatedAt: now }
+        : { id: uuid(), name: nameInput.trim() || 'My playlist', youtubePlaylistId: id, createdAt: now, updatedAt: now })
       await loadData()
       setAddOpen(false)
+      setEditTarget(null)
       setUrlInput('')
       setNameInput('')
     } finally {
       setSaving(false)
     }
+  }
+
+  function openAdd() {
+    setError('')
+    setEditTarget(null)
+    setUrlInput('')
+    setNameInput('')
+    setAddOpen(true)
+  }
+  function openEdit(row: MusicPlaylist) {
+    setError('')
+    setEditTarget(row)
+    setUrlInput(`https://www.youtube.com/playlist?list=${row.youtubePlaylistId}`)
+    setNameInput(row.name)
+    setAddOpen(true)
   }
 
   async function handleDelete() {
@@ -117,8 +132,15 @@ export default function MusicPage() {
             Save YouTube playlists and play them on repeat while you study.
           </p>
         </div>
-        <Button onClick={() => setAddOpen(true)}>+ Add playlist</Button>
+        <Button onClick={openAdd}>+ Add playlist</Button>
       </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400">Cloud sync needs ad blockers disabled for Momentum. Keep ad blocking enabled on Momentum to reduce ads in the embedded YouTube player. You cannot reliably have both at once because both services load through this page.</p>
+      {playlists.length > 0 && (
+        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <Checkbox checked={shuffle} onChange={(e) => { setShuffle(e.target.checked); player.setShuffle(e.target.checked) }} aria-label="Shuffle playlist" />
+          Shuffle playlist
+        </label>
+      )}
 
       {blocked && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/30 dark:text-amber-200">
@@ -181,9 +203,8 @@ export default function MusicPage() {
                       Play
                     </Button>
                   )}
-                  <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(p)}>
-                    Delete
-                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>Edit</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(p)}>Delete</Button>
                 </div>
               </Card>
             )
@@ -191,8 +212,8 @@ export default function MusicPage() {
         </div>
       )}
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a YouTube playlist">
-        <form onSubmit={handleAdd} className="space-y-3">
+      <Modal open={addOpen} onClose={() => { setAddOpen(false); setEditTarget(null) }} title={editTarget ? 'Edit playlist' : 'Add a YouTube playlist'}>
+        <form onSubmit={handleSave} className="space-y-3">
           <div>
             <label htmlFor="music-url" className="label">Playlist link</label>
             <input
@@ -216,11 +237,11 @@ export default function MusicPage() {
           </div>
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
-            <Button type="button" variant="secondary" size="sm" onClick={() => setAddOpen(false)}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => { setAddOpen(false); setEditTarget(null) }}>
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={saving || !urlInput.trim()}>
-              {saving ? 'Saving…' : 'Save playlist'}
+              {saving ? 'Saving…' : editTarget ? 'Save changes' : 'Save playlist'}
             </Button>
           </div>
         </form>

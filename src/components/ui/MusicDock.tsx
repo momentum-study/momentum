@@ -85,18 +85,19 @@ export function MusicDock() {
     ? data.musicPlaylists.find((p) => p.id === player.activePlaylistId) ?? null
     : null
 
-  // Nothing cued: show a compact link to the Music page only.
+  // Nothing is active: the music button starts the last playlist directly.
   if (!playlist) {
     return (
       <div className="fixed bottom-24 right-4 z-40">
-        <Link
-          to="/music"
-          aria-label="Music player"
-          title="Music player"
+        <button
+          type="button"
+          onClick={player.playLastPlaylist}
+          aria-label="Play last playlist"
+          title="Play last playlist"
           className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
         >
-          <MusicIcon className="h-5 w-5" />
-        </Link>
+          <PlayIcon className="h-5 w-5" />
+        </button>
       </div>
     )
   }

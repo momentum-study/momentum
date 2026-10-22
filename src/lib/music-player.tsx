@@ -285,8 +285,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       .then((YT) => {
         if (cancelled || !containerRef.current) return
         playerRef.current = new YT.Player(containerRef.current, {
-          width: 200,
-          height: 200,
+          width: 180,
+          height: 100,
           playerVars: {
             // Keep autoplay enabled on the embed so the browser grants the
             // iframe permission to honour a later user-initiated playVideo().
@@ -561,7 +561,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   return (
     <MusicPlayerContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-[-200px] right-0 z-0 h-[200px] w-[200px] overflow-hidden" aria-hidden="true">
+      <div className="pointer-events-none fixed bottom-[-72px] right-0 z-0 h-[100px] w-[180px] overflow-hidden" aria-hidden="true">
         <div ref={containerRef} />
       </div>
     </MusicPlayerContext.Provider>

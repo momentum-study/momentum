@@ -288,7 +288,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
           width: 200,
           height: 200,
           playerVars: {
-            autoplay: 0,
+            // Keep autoplay enabled on the embed so the browser grants the
+            // iframe permission to honour a later user-initiated playVideo().
+            // No playlist is loaded here, so creation remains silent.
+            autoplay: 1,
             loop: 1,
             controls: 0,
             disablekb: 1,

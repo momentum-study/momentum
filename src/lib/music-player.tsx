@@ -203,6 +203,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const consecutiveErrors = useRef(0)
   const wantPlayRef = useRef(false)
   const pendingLoadRef = useRef<{ youtubePlaylistId: string; playlistId: string } | null>(null)
+  const playLastRequestedRef = useRef(false)
   // Pause→resume nudge has been tried for the current play request. Reset on
   // every fresh play/cue so each request gets one recovery attempt.
   const nudgedRef = useRef(false)
@@ -480,13 +481,25 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const stored = storedId ? playlists.find((p) => p.id === storedId && !p.deletedAt) : null
     const newest = [...playlists].filter((p) => !p.deletedAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
     const target = stored ?? newest
-    if (target) playPlaylist(target.id)
+    if (target) {
+      playPlaylist(target.id)
+    } else {
+      // DataProvider loads IndexedDB asynchronously. Keep the dashboard click
+      // alive until playlists are available instead of requiring MusicPage.
+      playLastRequestedRef.current = true
+    }
   }, [playlists, playPlaylist])
 
   const setShuffle = useCallback((value: boolean) => {
     setShuffleState(value)
     playerRef.current?.setShuffle(value)
   }, [])
+
+  useEffect(() => {
+    if (!playLastRequestedRef.current || playlists.length === 0) return
+    playLastRequestedRef.current = false
+    playLastPlaylist()
+  }, [playlists, playLastPlaylist])
 
   const next = useCallback(() => {
     consecutiveErrors.current = 0

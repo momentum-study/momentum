@@ -102,6 +102,17 @@ const SKIP_ERROR_CODES = [2, 5, 100, 101, 150]
 // ── API loader (idempotent, one script tag for the app lifetime) ──
 
 const MUSIC_LAST_PLAYLIST_KEY = 'momentum-last-playlist'
+const MUSIC_POSITION_KEY_PREFIX = 'momentum-music-position:'
+
+function savedTrackIndex(playlistId: string): number {
+  const raw = window.localStorage.getItem(`${MUSIC_POSITION_KEY_PREFIX}${playlistId}`)
+  const index = raw === null ? 0 : Number.parseInt(raw, 10)
+  return Number.isInteger(index) && index >= 0 ? index : 0
+}
+
+function saveTrackIndex(playlistId: string, index: number): void {
+  if (index >= 0) window.localStorage.setItem(`${MUSIC_POSITION_KEY_PREFIX}${playlistId}`, String(index))
+}
 let ytApiPromise: Promise<YTNamespace> | null = null
 
 function loadYouTubeApi(): Promise<YTNamespace> {
@@ -202,7 +213,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const consecutiveErrors = useRef(0)
   const wantPlayRef = useRef(false)
-  const pendingLoadRef = useRef<{ youtubePlaylistId: string; playlistId: string } | null>(null)
+  const pendingLoadRef = useRef<{ youtubePlaylistId: string; playlistId: string; index: number } | null>(null)
   const playLastRequestedRef = useRef(false)
   // Pause→resume nudge has been tried for the current play request. Reset on
   // every fresh play/cue so each request gets one recovery attempt.
@@ -323,7 +334,9 @@ export function MusicProvider({ children }: { children: ReactNode }) {
                 setIsPlaying(true)
                 const index = event.target.getPlaylistIndex?.() ?? 0
                 const count = event.target.getPlaylist?.()?.length ?? null
-                setTrackIndex(index < 0 ? 0 : index)
+                const safeIndex = index < 0 ? 0 : index
+                setTrackIndex(safeIndex)
+                if (activePlaylistId) saveTrackIndex(activePlaylistId, safeIndex)
                 if (count !== null) setTrackCount(count)
                 setTrackTitle(event.target.getVideoData?.()?.title ?? '')
               } else if (state === STATE_PAUSED) {
@@ -426,7 +439,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         setActivePlaylistId(null)
         return
       }
-      pendingLoadRef.current = { youtubePlaylistId: row.youtubePlaylistId, playlistId }
+      pendingLoadRef.current = { youtubePlaylistId: row.youtubePlaylistId, playlistId, index: savedTrackIndex(playlistId) }
       window.setTimeout(() => {
         if (pendingLoadRef.current && !playerRef.current) {
           pendingLoadRef.current = null
@@ -437,9 +450,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       }, ENGINE_BOOT_TIMEOUT_MS)
       return
     }
-    clearStallTimer()
+    const index = savedTrackIndex(playlistId)
     window.localStorage.setItem(MUSIC_LAST_PLAYLIST_KEY, playlistId)
-    player.loadPlaylist({ list: row.youtubePlaylistId, listType: 'playlist', index: 0 })
+    setTrackIndex(index)
+    player.loadPlaylist({ list: row.youtubePlaylistId, listType: 'playlist', index })
     player.setShuffle(shuffle)
     player.playVideo()
     armStallTimer(player)
@@ -454,7 +468,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     nudgedRef.current = false
     clearStallTimer()
     window.localStorage.setItem(MUSIC_LAST_PLAYLIST_KEY, pending.playlistId)
-    playerRef.current.loadPlaylist({ list: pending.youtubePlaylistId, listType: 'playlist', index: 0 })
+    setTrackIndex(pending.index)
+    playerRef.current.loadPlaylist({ list: pending.youtubePlaylistId, listType: 'playlist', index: pending.index })
     playerRef.current.setShuffle(shuffle)
     playerRef.current.playVideo()
     armStallTimer(playerRef.current)

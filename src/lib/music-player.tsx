@@ -579,7 +579,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   return (
     <MusicPlayerContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-[-72px] right-0 z-0 h-[100px] w-[180px] overflow-hidden opacity-[0.01]" aria-hidden="true">
+      <div className="pointer-events-none fixed bottom-[-72px] right-0 z-0 h-[100px] w-[180px] overflow-hidden opacity-0" aria-hidden="true">
         <div ref={containerRef} />
       </div>
     </MusicPlayerContext.Provider>

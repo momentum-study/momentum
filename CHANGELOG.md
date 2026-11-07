@@ -1,6 +1,15 @@
 # Changelog
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
+## [v0.26.11] — 2026-11-07
+
+### Study timer safety
+- **Study sessions finalize on page exit**: closing, refreshing, or navigating away now saves the current timer session as-is via a synchronous pending snapshot plus best-effort Dexie write. The timer state is cleared so reopening cannot continue and double-count the saved session.
+- **Laptop sleep/lid-close detection**: when the running timer resumes after a >90-second tick gap, Momentum treats the gap as machine suspend, saves the session only up to the last observed tick (never counts sleep as study), and stops the timer. Short tab switches retain the existing wall-clock behavior.
+
+### Music playback
+- **Playlist resume fixed**: the player now persists the active playlist's track index and within-track seconds every 10 seconds, on track changes, pause/stop, visibility changes, and page exit. It restores both values on the next play. The stale callback that prevented track-index writes is removed, and deleted playlists clear their position data.
+
 ## [v0.26.10] — 2026-11-07
 
 ### Study timer

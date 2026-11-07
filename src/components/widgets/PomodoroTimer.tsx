@@ -13,7 +13,7 @@ import { loadSettings, saveSettings } from '../../lib/settings-store'
 import type { Settings } from '../../lib/settings-store'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
-import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor, splitSessionAtMidnight, setLastNote, getLastNote } from '../../lib/timer-persistence'
+import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor, splitSessionAtMidnight, setLastNote, getLastNote, SLEEP_GAP_MS } from '../../lib/timer-persistence'
 import { loadGroup as loadCurrentSessionGroup, saveGroup as saveCurrentSessionGroup, isGroupFresh as isCurrentSessionFresh, finalizedSeconds, bumpLastSegment, pushSegment, GROUP_GAP_MS, type CurrentSessionGroup } from '../../lib/current-session'
 import { FocusTagSelector, type FocusTag } from '../ui/FocusTagSelector'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
@@ -429,6 +429,13 @@ export function PomodoroTimer() {
   const simpleSafetyFiredRef = useRef(false)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const pomSafetyFiredRef = useRef(false)
+  // Last time a timer tick fired while running. A large wall-clock jump over
+  // this value (checked on visibility-resume) detects machine suspend —
+  // laptop lid close / screen sleep (§10.72). Stored per-tick because timers
+  // are frozen during suspend, unlike throttled background tabs.
+  const lastTickAtRef = useRef(0)
+  const exitFinalizedRef = useRef(false)
+  const finalizeSleepRef = useRef<(asOfMs: number) => void>(() => {})
   const [pomPhase, setPomPhase] = useState<Phase>(() => {
     const saved = loadTimerState()
     return saved?.phase ?? 'focus'
@@ -571,11 +578,48 @@ export function PomodoroTimer() {
   // the pending session is just a crash safety snapshot of an in-progress timer,
   // NOT a completed session. Discard it to avoid duplicating the session when
   // the user stops the timer later.
+
+  // Exit/sleep auto-save: write a pending session payload synchronously, fire
+  // a best-effort Dexie write for it, and clear the persisted timer state so
+  // the run ends exactly where it stood (§10.72). Id uses sessionIdFor over
+  // the same fields the recovery path reads, so recovery is idempotent.
+  async function commitPendingSession(pending: PendingSession) {
+    const baseSession = {
+      id: pending.id,
+      subjectId: pending.subjectId,
+      projectId: pending.projectId,
+      assignmentId: pending.assignmentId,
+      routineId: pending.routineId ?? null,
+      startAt: pending.startAt,
+      endAt: pending.endAt,
+      durationMinutes: pending.durationMinutes,
+      durationSeconds: pending.durationSeconds ?? pending.durationMinutes * 60,
+      note: pending.note,
+      focusTag: pending.focusTag,
+      source: pending.source,
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
+    }
+    try {
+      const splits = splitSessionAtMidnight(baseSession)
+      for (const s of splits) {
+        const existing = await db.sessions.get(s.id)
+        if (existing && !existing.deletedAt) continue
+        await db.sessions.put(s)
+        const subjectName = dataRef.current.subjects.find((sub) => sub.id === s.subjectId)?.name ?? 'Unknown Subject'
+        syncSession(s, subjectName)
+        void updateRoutineLogsForSession(s).catch(() => {})
+        void updateStreakDayForSession(s).catch(() => {})
+      }
+    } catch { /* recovery path retries on next mount */ }
+  }
+
   useEffect(() => {
     async function recoverPendingSession() {
       const pending = loadPendingSession()
       if (!pending) return
-      clearPendingSession()
+      // Keep the pending snapshot until every Dexie write succeeds. A killed
+      // tab or transient IndexedDB failure must be recoverable on next mount.
       const timerState = loadTimerState()
       // Timer is still in progress if:
       // - running (startedAt set)
@@ -585,14 +629,13 @@ export function PomodoroTimer() {
         !timerState.startedAt &&
         timerState.phaseRemaining != null &&
         timerState.phaseRemaining > 0
-      if (
+      if (!pending.final && (
         timerState?.startedAt ||
         (timerState?.mode === 'simple' && (timerState.simplePausedOffset ?? 0) > 0) ||
         isPomodoroPaused
-      ) {
-        // Timer is still in progress (running or paused). The accumulated time
-        // will be included when the user resumes/stops later, so recovering the
-        // pending snapshot here would duplicate that study block.
+      )) {
+        // Non-final pending data is only a crash-safety snapshot: keep the
+        // live timer as the source of truth and avoid duplicating its time.
         return
       }
       const baseSession = {
@@ -606,6 +649,7 @@ export function PomodoroTimer() {
         durationMinutes: pending.durationMinutes,
         durationSeconds: pending.durationSeconds ?? pending.durationMinutes * 60,
         note: pending.note,
+        focusTag: pending.focusTag,
         source: pending.source,
         createdAt: isoNow(),
         updatedAt: isoNow(),
@@ -622,6 +666,7 @@ export function PomodoroTimer() {
         await updateStreakDayForSession(s)
       }
       await loadData()
+      clearPendingSession()
     }
     void recoverPendingSession()
   }, [])
@@ -634,7 +679,9 @@ export function PomodoroTimer() {
     }
     simpleSafetyFiredRef.current = false
     const tick = () => {
-      const elapsed = simplePausedOffset + Math.floor((Date.now() - simpleStartedAt) / 1000)
+      const now = Date.now()
+      lastTickAtRef.current = now
+      const elapsed = simplePausedOffset + Math.floor((now - simpleStartedAt) / 1000)
       setSimpleSeconds(elapsed)
       // 12-hour safety guard — warn and auto-pause if elapsed exceeds limit
       if (elapsed >= SAFETY_LIMIT_SECONDS && !simpleSafetyFiredRef.current) {
@@ -655,10 +702,12 @@ export function PomodoroTimer() {
     if (!pomStartedAt) return
     pomSafetyFiredRef.current = false
     const tick = () => {
+      const now = Date.now()
+      lastTickAtRef.current = now
       const saved = loadTimerState()
       const currentPhase = saved?.phase ?? pomPhase
       const duration = getPhaseDuration(currentPhase, saved?.config ?? configRef.current)
-      const elapsed = Math.floor((Date.now() - pomStartedAt) / 1000)
+      const elapsed = Math.floor((now - pomStartedAt) / 1000)
       const remaining = Math.max(0, duration - elapsed)
       setPomSeconds(remaining)
       // 12-hour safety guard — warn and auto-pause if elapsed exceeds limit
@@ -733,8 +782,8 @@ export function PomodoroTimer() {
       setPomStartedAt(now)
       const newState: PersistedTimerState = {
         mode: 'pomodoro',
-      subjectId: subjectId,
-      simplePausedOffset: 0,
+        subjectId: subjectId,
+        simplePausedOffset: 0,
         startedAt: now,
         phaseRemaining: getPhaseDuration(nextPhase, cfg),
         phase: nextPhase,
@@ -780,20 +829,22 @@ export function PomodoroTimer() {
   // FIRST so the data is never lost, then attempt the async Dexie write.
   // On next mount, the pending session is recovered and committed.
   useEffect(() => {
-    function buildPendingSession(): PendingSession | null {
+    function buildPendingSession(asOfMs = Date.now(), isFinal = false): PendingSession | null {
       // Only the owning tab may write a pending session — a peer tab would
       // otherwise create a duplicate on close.
       if (!isOwnerRef.current) return null
       if (mode === 'simple') {
-        const total = simpleSeconds
+        const total = simpleStartedAt
+          ? simplePausedOffset + Math.max(0, Math.floor((asOfMs - simpleStartedAt) / 1000))
+          : simpleSeconds
         const actualSubjId = projectId
           ? (dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt)?.subjectId ?? subjectId)
           : subjectId
         if (total >= 10 && actualSubjId) {
           const project = projectId ? dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
           const task = taskId ? dataRef.current.assignments.find((a) => a.id === taskId) : undefined
-          const now = new Date()
-          const start = new Date(now.getTime() - total * 1000)
+          const now = new Date(asOfMs)
+          const start = new Date(asOfMs - total * 1000)
           const startAt = start.toISOString()
           const durationSeconds = Math.max(10, Math.round(total))
           const durationMinutes = Math.max(1, Math.round(total / 60))
@@ -803,6 +854,8 @@ export function PomodoroTimer() {
             projectId: project?.id ?? null,
             assignmentId: task?.id ?? null,
             routineId: timerRoutineId || null,
+            focusTag: timerFocusTag ?? undefined,
+            final: isFinal,
             startAt,
             endAt: now.toISOString(),
             durationMinutes,
@@ -818,11 +871,11 @@ export function PomodoroTimer() {
         if (actualSubjId) {
           const project = projectId ? dataRef.current.projects.find((p) => p.id === projectId && !p.deletedAt) : undefined
           const task = taskId ? dataRef.current.assignments.find((a) => a.id === taskId) : undefined
-          const elapsedSeconds = pomStartedAt 
-            ? Math.floor((Date.now() - pomStartedAt) / 1000)
+          const elapsedSeconds = pomStartedAt
+            ? Math.max(0, Math.floor((asOfMs - pomStartedAt) / 1000))
             : Math.max(0, getPhaseDuration(pomPhase, configRef.current) - pomSeconds)
           if (elapsedSeconds >= 10) {
-            const start = new Date(Date.now() - elapsedSeconds * 1000)
+            const start = new Date(asOfMs - elapsedSeconds * 1000)
             const startAt = start.toISOString()
             const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60))
             return {
@@ -831,8 +884,10 @@ export function PomodoroTimer() {
               projectId: project?.id ?? null,
               assignmentId: task?.id ?? null,
               routineId: timerRoutineId || null,
+              focusTag: timerFocusTag ?? undefined,
+              final: isFinal,
               startAt,
-              endAt: new Date().toISOString(),
+              endAt: new Date(asOfMs).toISOString(),
               durationMinutes,
               durationSeconds: Math.max(10, elapsedSeconds),
               note: timerNotes || (task ? `Task: ${task.title}` : undefined),
@@ -843,25 +898,56 @@ export function PomodoroTimer() {
       }
       return null
     }
+    finalizeSleepRef.current = (asOfMs) => {
+      const pending = buildPendingSession(asOfMs, true)
+      if (!pending) return
+      savePendingSession(pending)
+      void commitPendingSession(pending)
+      clearTimerState()
+    }
+    exitFinalizedRef.current = false
     function handleVisibilityChange() {
+      // Hidden: keep the plain crash-safety snapshot (timer may still be
+      // resumed). The lid-close/sleep case is caught on wake below.
       if (document.hidden) {
-        // Save a pending session as crash safety net only.
-        // Do NOT stop or clear the timer — the user may return.
+        lastTickAtRef.current = Date.now()
         const pending = buildPendingSession()
         if (pending) savePendingSession(pending)
+      } else {
+        // Woke from either a tab switch or a suspend. A lastTick gap larger
+        // than SLEEP_GAP_MS means the machine slept — freeze elapsed at the
+        // last observed tick and commit the session as it stood then.
+        const gap = Date.now() - lastTickAtRef.current
+        if (!exitFinalizedRef.current && gap > SLEEP_GAP_MS && (simpleStartedAt !== null || pomStartedAt !== null)) {
+          finalizeSleepRef.current(lastTickAtRef.current + 1000)
+          exitFinalizedRef.current = true
+        }
+        lastTickAtRef.current = Date.now()
       }
     }
     function handleBeforeUnload() {
-      const pending = buildPendingSession()
-      if (pending) savePendingSession(pending)
+      // Definitive exit (tab/window close, refresh, navigation): commit the
+      // session as-is. savePendingSession is synchronous — the direct Dexie
+      // write typically won't complete, so next mount's recovery commits
+      // the same pending payload with the same id (idempotent).
+      if (exitFinalizedRef.current) return
+      exitFinalizedRef.current = true
+      const pending = buildPendingSession(Date.now(), true)
+      if (pending) {
+        savePendingSession(pending)
+        void commitPendingSession(pending)
+        clearTimerState()
+      }
     }
+    window.addEventListener('pagehide', handleBeforeUnload)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
+      window.removeEventListener('pagehide', handleBeforeUnload)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [simpleStartedAt, pomStartedAt, pomPhase, simpleSeconds, subjectId, projectId, taskId])
+  }, [simpleStartedAt, pomStartedAt, pomPhase, simpleSeconds, subjectId, projectId, taskId, timerFocusTag])
 
   // Update document.title when timer is running
   const isRunning = simpleStartedAt !== null || pomStartedAt !== null

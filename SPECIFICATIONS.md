@@ -890,3 +890,18 @@ Every instance MUST document significant logic pitfalls and durable user decisio
 - **Streak heatmap tooltip clipping** (§10.70): `DashboardWidget`/`FreeformWidget` gained an `allowOverflow` prop (default keeps `overflow-hidden`); the study-streak widget opts in so the per-day hover tooltip is no longer cut off at the widget edge.
 - `momentum:timer-state-changed` CustomEvent dispatched by `saveTimerState`/`clearTimerState` re-ticks the Dashboard live-timer effect immediately on every timer-state write (mode switches now update Today totals on the next render instead of up to 1s later).
 - Regression tests for `computeSimpleSwitchState` added to `timer-utils.test.ts`. 259 tests pass.
+
+**SPEC_VERSION: 65** — 2026-11-07 Session exit safety + exact playlist resume (app v0.26.11):
+- **Timer exit finalization** (§6.8, §10.72): `pagehide`/`beforeunload` finalize the current Simple or Pomodoro focus session as-is. The payload is written synchronously to `momentum-pending-session`, best-effort persisted to Dexie, and the persisted timer state is cleared so reopening cannot double-count it. Pending recovery is idempotent and retries after IndexedDB failure.
+- **Laptop suspend/lid close** (§6.8, §10.72): a running timer records its last 1-second tick. On visibility resume, a gap greater than 90 seconds is treated as machine suspend; the session is cut at the last observed tick (sleep time excluded), finalized, and the timer stopped. Short tab switches retain wall-clock persistence.
+- **Exact music resume** (§10.71): per-playlist local storage now stores both zero-based track index and elapsed seconds. The `MusicProvider` persists on track change, every 10 seconds during playback, pause/stop, visibility hidden, and `pagehide`; replay restores the index and `startSeconds`. Legacy index-only entries remain readable. Deleted playlists remove their position entry.
+- Regression coverage: `music-position.test.ts` covers round-trip, legacy, invalid, and isolated-clear behavior; full suite passes 263 tests.
+
+### 10.71 Playlist position resume
+- **Symptom**: replaying a saved playlist started at track 1 even after listening further into it.
+- **Root cause**: the YouTube player's one-time event callback closed over the initial `activePlaylistId` (`null`), so `saveTrackIndex` never wrote the position. The old format also stored only an index, not the within-track playhead.
+- **Fix**: use an `activePlaylistIdRef`, persist `{ trackIndex, trackSeconds }` on playback progress and lifecycle events, and restore with `loadPlaylist({ index, startSeconds })`.
+
+### 10.72 Session finalization on exit and machine suspend
+- **Symptom**: closing the site could leave an in-progress timer dangling; closing/sleeping the laptop could make wall-clock elapsed include time that was not studied.
+- **Fix**: finalize on `pagehide`/`beforeunload` through the synchronous pending-session path, clear timer state, and recover idempotently. Detect suspend on visibility resume when the last timer tick is more than 90 seconds old; finalize at the last observed tick so sleep time is excluded. A short tab hide remains non-final.

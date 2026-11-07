@@ -7,7 +7,6 @@ const STORAGE_KEY = 'momentum-timer-state'
  * saves it to Dexie asynchronously. */
 const PENDING_SESSION_KEY = 'momentum-pending-session'
 
-
 /** Generate a deterministic session ID from its content fields.
  *  Two sessions with the same startAt, subjectId, and durationMinutes
  *  will produce the same ID, making db.sessions.put() idempotent. */
@@ -30,6 +29,9 @@ export interface PendingSession {
   projectId: string | null
   assignmentId: string | null
   routineId?: string | null
+  focusTag?: 'focused' | 'distracted' | 'group' | 'revision'
+  /** True when closing/sleep finalized the timer; false means crash snapshot. */
+  final?: boolean
   startAt: string
   endAt: string
   durationMinutes: number
@@ -55,6 +57,12 @@ export function loadPendingSession(): PendingSession | null {
 export function clearPendingSession(): void {
   try { localStorage.removeItem(PENDING_SESSION_KEY) } catch { /* ignore */ }
 }
+
+/** A tick gap larger than this while a timer is running means the machine
+ *  slept (lid closed / screen off): timers are frozen during suspend, so on
+ *  wake the wall clock has jumped. Background-tab throttling fires timers at
+ *  most ~1/minute, so it can never reach this threshold. */
+export const SLEEP_GAP_MS = 90_000
 
 export type TimerMode = 'simple' | 'pomodoro'
 export type TimerPhase = 'focus' | 'shortBreak' | 'longBreak'

@@ -9,6 +9,7 @@ import { Modal } from '../../components/ui/Modal'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { useMusicPlayer } from '../../lib/music-player'
+import { clearPosition as clearMusicPosition } from '../../lib/music-position'
 import { extractPlaylistIdLoose, isMixPlaylistId } from '../../lib/youtube'
 import { isoNow } from '../../lib/utils'
 import { cn } from '../../lib/utils'
@@ -117,6 +118,7 @@ export default function MusicPage() {
     const row = deleteTarget
     setDeleteTarget(null)
     if (player.activePlaylistId === row.id) player.stop()
+    clearMusicPosition(row.id)
     await db.musicPlaylists.put({ ...row, deletedAt: isoNow(), updatedAt: isoNow() })
     await loadData()
   }

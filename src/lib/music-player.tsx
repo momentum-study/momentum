@@ -15,6 +15,8 @@ import {
 import { useData } from '../app/providers'
 import { loadSettings, saveSettings } from './settings-store'
 
+import { loadPosition, savePosition } from './music-position'
+
 // ── Minimal YouTube IFrame API typings (only what we use) ──
 // NOTE: keep in sync with the runtime — the engine degrades gracefully when
 // the API script is blocked (ad-blockers, offline), surfacing `failedAt` via
@@ -42,6 +44,10 @@ export interface YTPlayer {
   getPlaylistIndex?(): number
   getVideoData?(): YTVideoData | undefined
   destroy(): void
+  /** Current playback position in seconds (integer) for the loaded video. */
+  getCurrentTime?(): number
+  /** Total duration in seconds of the loaded video (0 until metadata loads). */
+  getDuration?(): number
 }
 
 interface YTPlayerEvent {
@@ -102,17 +108,11 @@ const SKIP_ERROR_CODES = [2, 5, 100, 101, 150]
 // ── API loader (idempotent, one script tag for the app lifetime) ──
 
 const MUSIC_LAST_PLAYLIST_KEY = 'momentum-last-playlist'
-const MUSIC_POSITION_KEY_PREFIX = 'momentum-music-position:'
 
-function savedTrackIndex(playlistId: string): number {
-  const raw = window.localStorage.getItem(`${MUSIC_POSITION_KEY_PREFIX}${playlistId}`)
-  const index = raw === null ? 0 : Number.parseInt(raw, 10)
-  return Number.isInteger(index) && index >= 0 ? index : 0
-}
+/** The while-playing poll ticks once per second; save a position every Nth
+ *  tick (one ~70-byte localStorage entry per write, ~2 writes/minute). */
+const POSITION_SAVE_INTERVAL_TICKS = 10
 
-function saveTrackIndex(playlistId: string, index: number): void {
-  if (index >= 0) window.localStorage.setItem(`${MUSIC_POSITION_KEY_PREFIX}${playlistId}`, String(index))
-}
 let ytApiPromise: Promise<YTNamespace> | null = null
 
 function loadYouTubeApi(): Promise<YTNamespace> {
@@ -200,6 +200,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const [engineFailed, setEngineFailed] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null)
+
+  // Mirror of activePlaylistId for callbacks that outlive a render (the
+  // player's event handlers are created once). Without this, position saves
+  // closed over the initial null value and never wrote a track index — the
+  // original cause of playlists always restarting from track 1 (§10.71).
+  const activePlaylistIdRef = useRef<string | null>(null)
   const [trackIndex, setTrackIndex] = useState(0)
   const [trackCount, setTrackCount] = useState<number | null>(null)
   const [trackTitle, setTrackTitle] = useState('')
@@ -213,7 +219,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const consecutiveErrors = useRef(0)
   const wantPlayRef = useRef(false)
-  const pendingLoadRef = useRef<{ youtubePlaylistId: string; playlistId: string; index: number } | null>(null)
+
+  // Position to restore when the queued loadPlaylist finally runs
+  // (play request arrived before the engine was ready).
+  const pendingLoadRef = useRef<{ youtubePlaylistId: string; playlistId: string; index: number; startSeconds: number } | null>(null)
   const playLastRequestedRef = useRef(false)
   // Pause→resume nudge has been tried for the current play request. Reset on
   // every fresh play/cue so each request gets one recovery attempt.
@@ -336,7 +345,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
                 const count = event.target.getPlaylist?.()?.length ?? null
                 const safeIndex = index < 0 ? 0 : index
                 setTrackIndex(safeIndex)
-                if (activePlaylistId) saveTrackIndex(activePlaylistId, safeIndex)
+                if (activePlaylistIdRef.current) persistPlaybackPosition(event.target, activePlaylistIdRef.current)
                 if (count !== null) setTrackCount(count)
                 setTrackTitle(event.target.getVideoData?.()?.title ?? '')
               } else if (state === STATE_PAUSED) {
@@ -386,6 +395,21 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }
   }, [clearStallTimer, armStallTimer])
 
+  // Persist the exact playback position while playing. YouTube keeps playing
+  // after a page unload in some browser/tab configurations, but restoring
+  // the last observed position is close enough for "continue listening".
+  const persistPlaybackPosition = useCallback((player: YTPlayer, playlistId: string) => {
+    const index = player.getPlaylistIndex?.() ?? 0
+    if (index < 0) return
+    const seconds = Math.floor(player.getCurrentTime?.() ?? 0)
+    if (!(seconds >= 0) || Number.isNaN(seconds)) return
+    savePosition(playlistId, { trackIndex: index, trackSeconds: seconds })
+  }, [])
+
+  // While-playing position save, throttled to once every 10 seconds so the
+  // localStorage write rate stays negligible (one ~60-byte entry).
+  const positionSaveAccRef = useRef(0)
+
   // Poll while playing so prev/next via the API (and track changes) update UI.
   useEffect(() => {
     if (!isPlaying) return
@@ -398,7 +422,13 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         const count = player.getPlaylist?.()?.length ?? null
         if (count !== null) setTrackCount(count)
         setTrackTitle(player.getVideoData?.()?.title ?? '')
-        setTrackIndex(player.getPlaylistIndex?.() ?? 0)
+        const index = player.getPlaylistIndex?.() ?? 0
+        setTrackIndex(index)
+        positionSaveAccRef.current += 1
+        if (positionSaveAccRef.current >= POSITION_SAVE_INTERVAL_TICKS && activePlaylistIdRef.current) {
+          positionSaveAccRef.current = 0
+          persistPlaybackPosition(player, activePlaylistIdRef.current)
+        }
       } else if (state === STATE_PAUSED || state === STATE_UNSTARTED) {
         // The engine reports paused/unstarted without a browser gesture having
         // been delivered — the classic autoplay-block after pause+resume.
@@ -418,14 +448,16 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       }
     }, 1000)
     return () => window.clearInterval(id)
-  }, [isPlaying, tryNudge])
+  }, [isPlaying, tryNudge, persistPlaybackPosition])
 
   const playPlaylist = useCallback((playlistId: string) => {
     const row = playlists.find((p) => p.id === playlistId && !p.deletedAt)
     if (!row) return
     wantPlayRef.current = true
+    activePlaylistIdRef.current = playlistId
     setActivePlaylistId(playlistId)
-    setTrackIndex(0)
+    const saved = loadPosition(playlistId)
+    setTrackIndex(saved.trackIndex)
     setTrackCount(row.trackCount ?? null)
     setTrackTitle('')
     consecutiveErrors.current = 0
@@ -439,7 +471,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         setActivePlaylistId(null)
         return
       }
-      pendingLoadRef.current = { youtubePlaylistId: row.youtubePlaylistId, playlistId, index: savedTrackIndex(playlistId) }
+      pendingLoadRef.current = { youtubePlaylistId: row.youtubePlaylistId, playlistId, index: saved.trackIndex, startSeconds: saved.trackSeconds }
       window.setTimeout(() => {
         if (pendingLoadRef.current && !playerRef.current) {
           pendingLoadRef.current = null
@@ -450,10 +482,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       }, ENGINE_BOOT_TIMEOUT_MS)
       return
     }
-    const index = savedTrackIndex(playlistId)
     window.localStorage.setItem(MUSIC_LAST_PLAYLIST_KEY, playlistId)
-    setTrackIndex(index)
-    player.loadPlaylist({ list: row.youtubePlaylistId, listType: 'playlist', index })
+    player.loadPlaylist({ list: row.youtubePlaylistId, listType: 'playlist', index: saved.trackIndex, startSeconds: saved.trackSeconds })
     player.setShuffle(shuffle)
     player.playVideo()
     armStallTimer(player)
@@ -464,12 +494,13 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const pending = pendingLoadRef.current
     if (!pending || !engineReady || !playerRef.current) return
     pendingLoadRef.current = null
+    activePlaylistIdRef.current = pending.playlistId
     setActivePlaylistId(pending.playlistId)
     nudgedRef.current = false
     clearStallTimer()
     window.localStorage.setItem(MUSIC_LAST_PLAYLIST_KEY, pending.playlistId)
     setTrackIndex(pending.index)
-    playerRef.current.loadPlaylist({ list: pending.youtubePlaylistId, listType: 'playlist', index: pending.index })
+    playerRef.current.loadPlaylist({ list: pending.youtubePlaylistId, listType: 'playlist', index: pending.index, startSeconds: pending.startSeconds })
     playerRef.current.setShuffle(shuffle)
     playerRef.current.playVideo()
     armStallTimer(playerRef.current)
@@ -490,6 +521,25 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     player.playVideo()
     armStallTimer(player)
   }, [activePlaylistId, clearStallTimer, armStallTimer])
+
+  // Save the position when the page is being closed/hidden so the next
+  // session resumes where the engine left off (§10.71). pagehide also fires
+  // for bfcache navigation, which is fine: the position is still current.
+  useEffect(() => {
+    function saveOnExit() {
+      const playlistId = activePlaylistIdRef.current
+      const player = playerRef.current
+      if (!playlistId || !player) return
+      const state = player.getPlayerState()
+      if (state !== STATE_PLAYING && state !== STATE_PAUSED) return
+      persistPlaybackPosition(player, playlistId)
+    }
+    window.addEventListener('pagehide', saveOnExit)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveOnExit()
+    })
+    return () => window.removeEventListener('pagehide', saveOnExit)
+  }, [persistPlaybackPosition])
 
   const playLastPlaylist = useCallback(() => {
     const storedId = window.localStorage.getItem(MUSIC_LAST_PLAYLIST_KEY)
@@ -541,13 +591,18 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     clearStallTimer()
     setStalled(false)
     setSkipping(false)
-    playerRef.current?.stopVideo()
+    const player = playerRef.current
+    // Remember the position before stopping so the next Play resumes there
+    // (stop() keeps the position; only deleting a playlist forgets it).
+    if (activePlaylistIdRef.current && player) persistPlaybackPosition(player, activePlaylistIdRef.current)
+    player?.stopVideo()
     setIsPlaying(false)
     setTrackTitle('')
     setActivePlaylistId(null)
+    activePlaylistIdRef.current = null
     setTrackIndex(0)
     setTrackCount(null)
-  }, [clearStallTimer])
+  }, [clearStallTimer, persistPlaybackPosition])
 
   /** Retry the active playlist from its first track after a stall/failure. */
   const retry = useCallback(() => {

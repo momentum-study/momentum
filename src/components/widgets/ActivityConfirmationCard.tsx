@@ -15,7 +15,9 @@ interface ActivityConfirmationCardProps {
 export function ActivityConfirmationCard({ onDismiss }: ActivityConfirmationCardProps) {
   const { data, loadData } = useData()
   const todayDow = new Date().getDay() as DayOfWeek
-  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  // Logical study day (§10.73) — the auto-complete check matches sessions
+  // grouped by the same day key used everywhere else.
+  const todayStr = toLocalDateString(new Date().toISOString())
   // Tick counter to force re-renders every 30s so that pending activities
   // with a scheduledTime appear automatically when their time arrives.
   const [tick, setTick] = useState(0)

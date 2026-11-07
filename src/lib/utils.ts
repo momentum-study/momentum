@@ -1,6 +1,6 @@
-import { format } from 'date-fns'
 import { loadSettings } from './settings-store'
 import { isAnySubject } from './subject-mode'
+import { toLogicalDateString } from './date-utils'
 import type { Session, Subject, Category, Scope } from '../domain/types'
 import type { Table } from 'dexie'
 
@@ -96,24 +96,31 @@ export function isAcademicSubject(subjectId: string, subjects: Subject[], catego
   return category?.scope === 'academic'
 }
 
-/** Normalize an ISO timestamp to a local date string YYYY-MM-DD.
- *  Uses the browser's local timezone. Returns '' for invalid inputs. */
+/** Normalize an ISO timestamp to the user's local "study day" string
+ *  YYYY-MM-DD. Honours the dayStartHour setting (§10.73): timestamps in the
+ *  window [00:00, dayStart) roll back to the previous calendar day, so
+ *  late-night study counts toward the day it began. Returns '' for invalid
+ *  inputs. */
 export function toLocalDateString(isoDate: string | null | undefined): string {
   if (!isoDate) return ''
-  try {
-    const d = new Date(isoDate)
-    if (isNaN(d.getTime())) return ''
-    return format(d, 'yyyy-MM-dd')
-  } catch {
-    return ''
-  }
+  return toLogicalDateString(isoDate, loadSettings().dayStartHour)
+}
+
+/**
+ * The logical study day one full day before `now` (§10.73). Subtracting
+ * 24 hours lands in the same [00:00, dayStart) relationship to the previous
+ * boundary, so this stays correct for every dayStartHour, including at
+ * boundary-adjacent instants (e.g. just after a 4 am day start, "yesterday"
+ * is the day before the day that just began).
+ */
+export function toYesterdayDateString(now: Date, dayStartHour: number | null | undefined): string {
+  return toLogicalDateString(new Date(now.getTime() - 24 * 3_600_000), dayStartHour)
 }
 
 /** Returns the local date string (YYYY-MM-DD) for a given ISO timestamp. */
 export function sessionLocalDate(isoDate: string | null | undefined): string {
   return toLocalDateString(isoDate)
 }
-
 export function isTopLevelSubject(subject: Subject): boolean {
   return subject.parentSubjectId == null
 }

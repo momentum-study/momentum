@@ -284,7 +284,9 @@ export default function ReportsPage() {
 
   if (isLoading) return <PageSpinner />
 
-  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  // Logical study-day anchor (§10.73) so the "Today" heatmap ring matches
+  // the day buckets the sessions are grouped into below.
+  const todayStr = toLocalDateString(new Date().toISOString())
   const settings = loadSettings()
 
   return (

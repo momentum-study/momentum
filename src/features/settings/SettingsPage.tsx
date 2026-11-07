@@ -625,6 +625,21 @@ export default function SettingsPage() {
             <SettingsField label="Daily study goal (minutes)">
               <NumberInput value={settings.dailyTargetMinutes} onChange={(v) => update({ dailyTargetMinutes: v })} />
             </SettingsField>
+            <SettingsField label="Day starts at">
+              <select
+                className="input py-1"
+                value={settings.dayStartHour}
+                onChange={(e) => update({ dayStartHour: Number(e.target.value) })}
+                aria-label="Hour a new study day starts"
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+                ))}
+              </select>
+            </SettingsField>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Study logged between midnight and this hour counts toward the previous day — useful if you often work past 12 am. Midnight (default) uses the plain calendar day.
+            </p>
           </Card>
 
           <Card>

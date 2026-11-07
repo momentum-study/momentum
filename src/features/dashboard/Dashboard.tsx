@@ -18,7 +18,7 @@ import { HoverCard } from '../../components/ui/HoverCard'
 import { ContextMenu } from '../../components/ui/ContextMenu'
 import { sendNotification, requestNotificationPermission } from '../../lib/notification-service'
 import { useSwipe } from '../../lib/use-swipe'
-import { cn, formatMinutes, getSessionScope, getSubjectPathLabel, getWeekStartsOn, isoNow, toLocalDateString, STREAK_MILESTONES, softDelete } from '../../lib/utils'
+import { cn, formatMinutes, getSessionScope, getSubjectPathLabel, getWeekStartsOn, isoNow, toLocalDateString, toYesterdayDateString, STREAK_MILESTONES, softDelete } from '../../lib/utils'
 import { loadSettings } from '../../lib/settings-store'
 import { useStreak } from '../../lib/use-streak'
 import { useStreakPreviewDates } from '../../lib/streak-preview'
@@ -304,8 +304,11 @@ function AllSessionsModal({
   if (!open) return null;
 
   const groups: { label: string; items: (Session & { subjectName: string; subjectColor: string })[] }[] = [];
-  const todayKey = format(new Date(), 'yyyy-MM-dd');
-  const yesterdayKey = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+  // Logical study-day anchors (§10.73) — a dayStartHour past midnight shifts
+  // both Today and the Yesterday cutoff. ALL days, not just sessions.
+  const now = new Date();
+  const todayKey = toLocalDateString(now.toISOString());
+  const yesterdayKey = toYesterdayDateString(now, loadSettings().dayStartHour);
 
   for (const s of allRecent) {
     const ds = toLocalDateString(s.startAt);
@@ -625,7 +628,9 @@ export default function Dashboard() {
     const id = window.setInterval(() => setDayTick(n => n + 1), 60_000)
     return () => clearInterval(id)
   }, [])
-  const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), [dayTick])
+  // Logical study day (§10.73): the "today" anchor honours dayStartHour so
+  // pre-dawn sessions stay attached to the prior day across the dashboard.
+  const todayStr = useMemo(() => toLocalDateString(new Date().toISOString()), [dayTick])
   const academicSessions = useMemo(
     () => data.sessions.filter((s) => !s.deletedAt && getSessionScope(s, data.subjects, data.categories) === 'academic'),
     [data.sessions, data.subjects, data.categories]
@@ -1776,8 +1781,9 @@ export default function Dashboard() {
                 )}
                 {(() => {
                   const groups: { label: string; items: typeof recentSessions }[] = []
-                  const todayKey = format(new Date(), 'yyyy-MM-dd')
-                  const yesterdayKey = format(subDays(new Date(), 1), 'yyyy-MM-dd')
+                  const nowForGroups = new Date()
+                  const todayKey = toLocalDateString(nowForGroups.toISOString())
+                  const yesterdayKey = toYesterdayDateString(nowForGroups, loadSettings().dayStartHour)
                   for (const s of recentSessions) {
                     const ds = toLocalDateString(s.startAt)
                     let label: string

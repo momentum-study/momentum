@@ -8,6 +8,19 @@ import { getSessionScope, isoNow, sessionLocalDate } from './utils'
 import { loadSettings } from './settings-store'
 
 /**
+ * ISO-string bounds that cover every local timestamp that maps to the given
+ * logical study day (§10.73). With dayStartHour H, the day includes
+ * [00:00, H) of the *following* calendar day, so the end bound extends H
+ * hours past midnight. Stored sessions with pre-dawn startAt fall inside.
+ */
+function dayQueryBounds(dateKey: string, dayStartHour: number): { start: string; end: string } {
+  const start = new Date(`${dateKey}T00:00:00`)
+  // The pre-dawn tail of the NEXT calendar day logically belongs to dateKey.
+  const end = new Date(start.getTime() + (24 + dayStartHour) * 3_600_000 - 1)
+  return { start: start.toISOString(), end: end.toISOString() }
+}
+
+/**
  * For the given session, find all matching routines (today's day + same subject
  * + same project-or-any) and update today's RoutineLog for each by adding the
  * session's minutes. Creates the log if it doesn't exist yet.
@@ -125,10 +138,9 @@ export async function updateStreakDayForSession(session: Session): Promise<void>
   const settings = loadSettings()
   const target = settings.dailyTargetMinutes
 
-  // Use the startAt index to bound the query to just this calendar day, instead
-  // of pulling the entire sessions table. Avoids O(n) scans on large datasets.
-  const dayStart = new Date(`${dateKey}T00:00:00`).toISOString()
-  const dayEnd = new Date(`${dateKey}T23:59:59.999`).toISOString()
+  // Use the startAt index to bound the query to just this logical day (§10.73)
+  // instead of pulling the entire sessions table. Avoids O(n) scans.
+  const { start: dayStart, end: dayEnd } = dayQueryBounds(dateKey, settings.dayStartHour)
   const todaysSessions = await db.sessions
     .where('startAt')
     .between(dayStart, dayEnd, true, true)
@@ -170,8 +182,7 @@ export async function revertStreakDayForSession(session: Session): Promise<void>
   const settings = loadSettings()
   const target = settings.dailyTargetMinutes
 
-  const dayStart = new Date(`${dateKey}T00:00:00`).toISOString()
-  const dayEnd = new Date(`${dateKey}T23:59:59.999`).toISOString()
+  const { start: dayStart, end: dayEnd } = dayQueryBounds(dateKey, settings.dayStartHour)
   const todaysSessions = await db.sessions
     .where('startAt')
     .between(dayStart, dayEnd, true, true)
@@ -206,8 +217,7 @@ export async function recomputeStreakDaysForDates(dateKeys: string[]): Promise<v
   const target = settings.dailyTargetMinutes
 
   for (const dateKey of dateKeys) {
-    const dayStart = new Date(`${dateKey}T00:00:00`).toISOString()
-    const dayEnd = new Date(`${dateKey}T23:59:59.999`).toISOString()
+    const { start: dayStart, end: dayEnd } = dayQueryBounds(dateKey, settings.dayStartHour)
     const todaysSessions = await db.sessions
       .where('startAt')
       .between(dayStart, dayEnd, true, true)

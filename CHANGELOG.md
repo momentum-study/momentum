@@ -1,6 +1,14 @@
 # Changelog
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
+## [v0.26.12] — 2026-11-07
+
+### Day boundary
+- **Configurable day start**: a new "Day starts at" setting (General → Daily Target, default 00:00) lets study logged between midnight and the chosen hour count toward the **previous** day — for working past 12 am without losing the streak day.
+- The split-at-midnight behaviour follows the setting: a session crossing the configured boundary is split at that hour (e.g. 04:00), with both halves keeping subject, project, note, routine, and focus tag; IDs stay deterministic.
+- Streak day records, streak simulation, Today totals, dashboards, reports, subject pages, project goals, activity auto-complete, and the recent-sessions "Today/Yesterday" grouping all use the logical day. Weekly views, calendar markers, and habit dates keep the plain calendar day.
+- Existing data needs no migration: day buckets are recomputed from `startAt` at read time, so historical sessions re-bucket automatically when the setting changes.
+
 ## [v0.26.11] — 2026-11-07
 
 ### Study timer safety

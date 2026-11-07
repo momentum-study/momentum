@@ -905,3 +905,16 @@ Every instance MUST document significant logic pitfalls and durable user decisio
 ### 10.72 Session finalization on exit and machine suspend
 - **Symptom**: closing the site could leave an in-progress timer dangling; closing/sleeping the laptop could make wall-clock elapsed include time that was not studied.
 - **Fix**: finalize on `pagehide`/`beforeunload` through the synchronous pending-session path, clear timer state, and recover idempotently. Detect suspend on visibility resume when the last timer tick is more than 90 seconds old; finalize at the last observed tick so sleep time is excluded. A short tab hide remains non-final.
+
+**SPEC_VERSION: 66** — 2026-11-07 Configurable day boundary (app v0.26.12):
+- **dayStartHour setting** (§10.73): new `dayStartHour` (0–23, default 0, Settings → General → Daily Target → "Day starts at"). Timestamps in the local window [00:00, dayStartHour) count toward the **previous** calendar/study day, so working past midnight is credited to the day it began. `0` behaves exactly as before (true midnight), making this a no-op by default.
+- **Core helpers** (§10.73): `toLogicalDateString(date, hour)` in `date-utils.ts` (single source of truth); `utils.ts` `toLocalDateString` now delegates to it with `loadSettings().dayStartHour`, so ~30 existing call sites re-bucket automatically; `toYesterdayDateString(now, hour)` for "Yesterday" grouping; `normalizeDayStartHour` clamps bad stored values.
+- **Split boundary**: `splitSessionAtMidnight` splits at the configured H:00 boundary (via `getDayBoundaryMs`) instead of always 00:00; both halves keep subjectId, projectId, assignmentId, routineId, note, focusTag, and source; ids remain deterministic via `sessionIdFor`. Previously the split dropped `focusTag` — fixed in passing.
+- **Streak**: `routine-tracker.ts` streak-day recompute/revert queries now use widened `dayQueryBounds` bounded at the following day's H:00; `streak-preview.ts` and Dashboard "Today/Yesterday" grouping use logical days.
+- **Anchors rerouted**: Today totals (timer-utils, Dashboard), ReportsPage, SubjectDetail/Subjects "today", ProjectsPage daily goals, ActivityConfirmationCard auto-complete. Calendar day markers, habits, weekly views keep the plain calendar day.
+- **No migration**: day buckets derive from `startAt` at read time; changing the setting re-buckets historical sessions automatically.
+- Regression coverage: `logical-day.test.ts` (8 tests) and `split-session.test.ts` (5 tests); suite now 276 tests.
+
+### 10.73 Logical study day
+- **Symptom**: studying 00:00–04:00 while working late counted toward the new calendar day, breaking a streak that mentally belonged to the previous day.
+- **Fix**: user-configured `dayStartHour` shifts the day boundary; all study-day consumers (totals, streaks, splits, grouping) read the logical day. Default 0 preserves the old behavior exactly.

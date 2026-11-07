@@ -3,10 +3,10 @@
 // and off when they discard it, so the streak widget shows the correct
 // count in real time without waiting for the session to be persisted.
 import { useSyncExternalStore } from 'react'
-import { format } from 'date-fns'
-
-const today = () => format(new Date(), 'yyyy-MM-dd')
-
+import { toLocalDateString } from './utils'
+// Logical study day (§10.73): the preview date must match the day bucket
+// sessions land in (toLocalDateString), not the raw calendar date.
+const today = () => toLocalDateString(new Date().toISOString())
 // Set of dates currently being counted toward the streak as a preview.
 // Usually empty; the timer toggles [{today}] when running and clears it
 // on stop (real session takes over) or discard (revert).

@@ -17,6 +17,11 @@ export type Settings = {
   maxActiveHabits: number
   defaultArchiveDays: number
   weekStartsOn: 0 | 1 // 0 = Sun, 1 = Mon
+  /** Hour (0-23) a new "study day" starts. Sessions logged in the window
+   *  [00:00, dayStart) belong to the previous day — lets late-night study
+   *  past midnight count toward the day it was started (default 0 = true
+   *  midnight). */
+  dayStartHour: number
   dashboardWeekMode: 'rolling' | 'calendar' // rolling 7 days vs calendar week
   musicVolume: number // 0-100, music player volume
   settingsUpdatedAt: string
@@ -40,6 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   weekStartsOn: 1,
   dashboardWeekMode: 'rolling',
   musicVolume: 70,
+  dayStartHour: 0,
   settingsUpdatedAt: '',
 }
 

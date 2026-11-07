@@ -1,3 +1,6 @@
+import { loadSettings } from './settings-store'
+import { normalizeDayStartHour } from './date-utils'
+
 // Timer persistence — keeps the study timer running across navigation and page refreshes.
 // We store a start timestamp in localStorage and compute elapsed time from the wall clock,
 // so the timer is accurate regardless of when the component mounts/unmounts.
@@ -160,19 +163,38 @@ export function setLastNote(subjectId: string, note: string): void {
   }
 }
 
-/** Get the start of the next day (midnight) in local time, as ms since epoch. */
-function getLocalMidnightMs(date: Date): number {
+/** Get the next logical study-day boundary (§10.73) at or after `date`, in
+ *  local time, as ms since epoch. With dayStartHour = 0 this is the next
+ *  local midnight. With dayStartHour = H, timestamps in [00:00, H) already
+ *  belong to the previous logical day, so for those the boundary is the
+ *  upcoming H:00 (today), not tomorrow's midnight. */
+function getDayBoundaryMs(date: Date, dayStartHour: number): number {
+  const h = Math.max(0, Math.min(23, Math.floor(dayStartHour)))
+  if (h === 0) {
+    const d = new Date(date)
+    d.setHours(24, 0, 0, 0)
+    return d.getTime()
+  }
   const d = new Date(date)
-  d.setHours(24, 0, 0, 0)
-  return d.getTime()
+  if (d.getHours() < h) {
+    // Pre-dawn: next boundary is today at H:00.
+    d.setHours(h, 0, 0, 0)
+    return d.getTime()
+  }
+  // Otherwise: tomorrow at H:00.
+  const b = new Date(d)
+  b.setHours(24, 0, 0, 0)
+  b.setHours(h, 0, 0, 0)
+  return b.getTime()
 }
 
 /**
- * Check if a session crosses local midnight. If so, split it into two sessions:
- * one ending at midnight, one starting at midnight.
- * Returns an array of one or two session-like objects.
+ * Check if a session crosses the user's logical study-day boundary (§10.73).
+ * If so, split it into two sessions: one ending at the boundary, one starting
+ * at it. Returns an array of one or two session-like objects.
  *
- * Both sessions get the same subjectId, projectId, source, note, assignmentId.
+ * Both sessions get the same subjectId, projectId, source, note,
+ * assignmentId, routineId, and focusTag.
  */
 export function splitSessionAtMidnight(
   session: {
@@ -205,12 +227,13 @@ export function splitSessionAtMidnight(
   createdAt: string
   updatedAt: string
 }> {
-  const start = new Date(session.startAt)
   const end = new Date(session.endAt)
-  const startDay = formatLocalDate(start)
-  const endDay = formatLocalDate(end)
+  const start = new Date(session.startAt)
+  const dayStartHour = normalizeDayStartHour(loadSettings().dayStartHour)
+  const startDay = formatLocalDate(start, dayStartHour)
+  const endDay = formatLocalDate(end, dayStartHour)
 
-  // Same day — no split needed
+  // Same logical study day — no split needed
   if (startDay === endDay) {
     return [{
       ...session,
@@ -218,22 +241,22 @@ export function splitSessionAtMidnight(
     }]
   }
 
-  const midnightMs = getLocalMidnightMs(start)
-  const midnightDate = new Date(midnightMs)
+  const boundaryMs = getDayBoundaryMs(start, dayStartHour)
+  const boundaryDate = new Date(boundaryMs)
   const totalMs = end.getTime() - start.getTime()
-  const beforeMidnightMs = midnightMs - start.getTime()
-  const afterMidnightMs = totalMs - beforeMidnightMs
+  const beforeBoundaryMs = boundaryMs - start.getTime()
+  const afterBoundaryMs = totalMs - beforeBoundaryMs
   // Use the actual elapsed ms for `durationSeconds` so the stored duration
   // agrees with the `startAt`/`endAt` timestamps. `beforeMinutes`/`afterMinutes`
   // is floored to whole minutes for the session ID (which is hashed by minute)
   // but the actual elapsed seconds still travel with the row.
-  const beforeSeconds = Math.max(1, Math.round(beforeMidnightMs / 1000))
-  const afterSeconds = Math.max(1, Math.round(afterMidnightMs / 1000))
-  const beforeMinutes = Math.max(1, Math.round(beforeMidnightMs / 60000))
-  const afterMinutes = Math.max(1, Math.round(afterMidnightMs / 60000))
+  const beforeSeconds = Math.max(1, Math.round(beforeBoundaryMs / 1000))
+  const afterSeconds = Math.max(1, Math.round(afterBoundaryMs / 1000))
+  const beforeMinutes = Math.max(1, Math.round(beforeBoundaryMs / 60000))
+  const afterMinutes = Math.max(1, Math.round(afterBoundaryMs / 60000))
 
   const beforeId = sessionIdFor(session.startAt, session.subjectId, beforeMinutes)
-  const afterId = sessionIdFor(midnightDate.toISOString(), session.subjectId, afterMinutes)
+  const afterId = sessionIdFor(boundaryDate.toISOString(), session.subjectId, afterMinutes)
   return [
     {
       id: beforeId,
@@ -241,10 +264,11 @@ export function splitSessionAtMidnight(
       projectId: session.projectId,
       assignmentId: session.assignmentId,
       startAt: session.startAt,
-      endAt: midnightDate.toISOString(),
+      endAt: boundaryDate.toISOString(),
       durationMinutes: beforeMinutes,
       durationSeconds: beforeSeconds,
       note: session.note,
+      focusTag: session.focusTag,
       source: session.source,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
@@ -254,11 +278,12 @@ export function splitSessionAtMidnight(
       subjectId: session.subjectId,
       projectId: session.projectId,
       assignmentId: session.assignmentId,
-      startAt: midnightDate.toISOString(),
+      startAt: boundaryDate.toISOString(),
       endAt: session.endAt,
       durationMinutes: afterMinutes,
       durationSeconds: afterSeconds,
       note: session.note,
+      focusTag: session.focusTag,
       source: session.source,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
@@ -266,8 +291,23 @@ export function splitSessionAtMidnight(
   ]
 }
 
-/** Format a date as yyyy-MM-dd in local timezone. */
-function formatLocalDate(d: Date): string {
+/** Format a Date as the user's logical study day (§10.73), given an
+ *  already-normalized dayStartHour. Mirrors toLogicalDateString for Date
+ *  inputs without re-reading settings per call. */
+function formatLocalDate(d: Date, dayStartHour: number): string {
+  if (dayStartHour === 0) {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+  if (d.getHours() < dayStartHour) {
+    const shifted = new Date(d.getTime() - dayStartHour * 3_600_000)
+    const y = shifted.getFullYear()
+    const mm = String(shifted.getMonth() + 1).padStart(2, '0')
+    const day = String(shifted.getDate()).padStart(2, '0')
+    return `${y}-${mm}-${day}`
+  }
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')

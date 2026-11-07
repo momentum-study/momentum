@@ -1,4 +1,3 @@
-import { format } from 'date-fns'
 import { toLocalDateString } from './utils'
 // Shared timer utilities — used by Dashboard and PomodoroTimer for live "today total".
 // Reads timer state from localStorage so any component can compute the live running total
@@ -142,7 +141,7 @@ export function formatTotalToday(minutes: number, includeSeconds = false): strin
 /**
  * Compute total study minutes for today (local timezone).
  * - Filters to academic scope only
- * - Uses local date boundary (yyyy-MM-dd via format())
+ * - Uses the logical study-day boundary (§10.73)
  * - Adds live timer seconds from localStorage (academic-scoped only)
  */
 export function getTotalTodayMinutes(
@@ -150,7 +149,9 @@ export function getTotalTodayMinutes(
   subjects: { id: string; categoryId: string | null }[],
   categories: { id: string; scope: 'academic' | 'nonAcademic' }[]
 ): number {
-  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  // Logical study day (§10.73): both sides of the comparison honour
+  // dayStartHour, so pre-dawn sessions stay counted on the prior day.
+  const todayStr = toLocalDateString(new Date().toISOString())
   // Filter to academic scope + today's local date
   let total = 0
   for (const s of sessions) {

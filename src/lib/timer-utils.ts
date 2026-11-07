@@ -188,6 +188,42 @@ export interface PomodoroSwitchResult {
     durationSeconds: number
   }>
 }
+/**
+ * Result of converting an active Pomodoro phase to Simple mode.
+ *
+ * @param elapsedSeconds - seconds already studied in the current focus phase
+ * @param startedAt - start timestamp to hand to the simple count-up timer so
+ *                    its wall-clock delta keeps matching that elapsed time
+ */
+export interface SimpleSwitchResult {
+  elapsedSeconds: number
+  startedAt: number
+}
+
+/**
+ * Convert a Pomodoro focus phase to Simple mode without changing its elapsed
+ * study time. Paused timers carry their accumulated seconds; breaks have no
+ * study time, so Simple mode starts fresh at zero.
+ */
+export function computeSimpleSwitchState(
+  phase: TimerPhase,
+  startedAt: number | null,
+  phaseRemaining: number | null,
+  config: { focusMinutes: number },
+  now: number,
+): SimpleSwitchResult {
+  const focusSeconds = Math.max(1, config.focusMinutes * 60)
+  if (phase !== 'focus') {
+    return { elapsedSeconds: 0, startedAt: now }
+  }
+  const elapsedSeconds = startedAt !== null
+    ? Math.min(focusSeconds, Math.max(0, Math.floor((now - startedAt) / 1000)))
+    : Math.min(focusSeconds, Math.max(0, focusSeconds - (phaseRemaining ?? focusSeconds)))
+  return {
+    elapsedSeconds,
+    startedAt: now - elapsedSeconds * 1000,
+  }
+}
 
 /** Compute the pomodoro phase state when switching from Simple to Pomodoro mode.
  *  Walks the pomodoro cycle from the beginning, saves completed focus blocks,

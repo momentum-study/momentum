@@ -1,6 +1,17 @@
 # Changelog
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
+## [v0.26.10] — 2026-11-07
+
+### Study timer
+- **Switch to Simple added**: while the timer runs in Pomodoro mode, a "Switch → Simple" button now mirrors "Switch → 🍅". Current focus-phase study time carries over unchanged (running or paused), so you can swap to the count-up timer without losing time; break phases start Simple at 0.
+- **Simple → Pomodoro no longer double-counts**: switching to Pomodoro now flips the live timer source before saving the completed focus blocks, so the Today widget no longer shows duplicated time until Save.
+
+### Dashboard
+- **Streak heatmap tooltips no longer clipped**: the per-day hover box can escape the widget boundary instead of getting cut off at the edge.
+- Live timer totals on the Today widget now refresh immediately on timer mode changes.
+
+
 ## [v0.26.3] — 2026-10-20
 
 ### Music + Dashboard layout (round 2)

@@ -15,6 +15,7 @@ interface FreeformWidgetProps {
   onRemove?: () => void
   children: ReactNode
   className?: string
+  allowOverflow?: boolean
 }
 
 /**
@@ -36,6 +37,7 @@ export function FreeformWidget({
   onRemove,
   children,
   className,
+  allowOverflow,
 }: FreeformWidgetProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
 
@@ -140,7 +142,8 @@ export function FreeformWidget({
     <div
       ref={rootRef}
       className={cn(
-        'group/widget relative h-full w-full overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-slate-800',
+        'group/widget relative h-full w-full rounded-lg border bg-white shadow-sm dark:bg-slate-800',
+        allowOverflow ? 'overflow-visible' : 'overflow-hidden',
         'border-slate-200 dark:border-slate-700',
         className
       )}
@@ -165,7 +168,7 @@ export function FreeformWidget({
           )}
         </div>
       </div>
-      <div className="h-[calc(100%-2.5rem)] overflow-hidden p-3">{children}</div>
+      <div className={cn('h-[calc(100%-2.5rem)] p-3', allowOverflow ? 'overflow-visible' : 'overflow-hidden')}>{children}</div>
       {onResize && (
         <div onPointerDown={onResizePointerDown} data-resize-handle
           className="absolute bottom-1 right-1 z-10 h-5 w-5 cursor-nwse-resize rounded-sm bg-slate-300 opacity-0 transition-opacity group-hover/widget:opacity-100 dark:bg-slate-600"

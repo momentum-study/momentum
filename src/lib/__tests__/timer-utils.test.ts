@@ -3,6 +3,7 @@ import {
   formatTotalToday,
   isTimerActive,
   getLiveTimerSeconds,
+  computeSimpleSwitchState,
 } from '../timer-utils'
 
 const STORAGE_KEY = 'momentum-timer-state'
@@ -449,5 +450,30 @@ describe('computePomodoroSwitchState', () => {
     const result = computePomodoroSwitchState(600 * 60, defaultConfig, sessionStart)
     expect(result.completedFocusBlocks.length).toBeGreaterThan(10)
     expect(result.cyclesCompleted).toBeGreaterThan(10)
+  })
+})
+
+describe('computeSimpleSwitchState', () => {
+  const config = { focusMinutes: 25 }
+
+  it('carries running focus time into Simple mode', () => {
+    const now = new Date('2025-06-24T10:20:00Z').getTime()
+    const result = computeSimpleSwitchState('focus', now - 10 * 60_000, null, config, now)
+    expect(result.elapsedSeconds).toBe(10 * 60)
+    expect(result.startedAt).toBe(now - 10 * 60_000)
+  })
+
+  it('carries paused focus time without adding wall-clock pause time', () => {
+    const now = new Date('2025-06-24T10:20:00Z').getTime()
+    const result = computeSimpleSwitchState('focus', null, 15 * 60, config, now)
+    expect(result.elapsedSeconds).toBe(10 * 60)
+    expect(result.startedAt).toBe(now - 10 * 60_000)
+  })
+
+  it('starts Simple mode at zero during a Pomodoro break', () => {
+    const now = new Date('2025-06-24T10:20:00Z').getTime()
+    const result = computeSimpleSwitchState('shortBreak', now - 60_000, 240, config, now)
+    expect(result.elapsedSeconds).toBe(0)
+    expect(result.startedAt).toBe(now)
   })
 })

@@ -96,6 +96,7 @@ export interface PersistedTimerState {
 export function saveTimerState(state: PersistedTimerState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    window.dispatchEvent(new CustomEvent('momentum:timer-state-changed'))
   } catch {
     // localStorage may be unavailable
   }
@@ -116,6 +117,7 @@ export function loadTimerState(): PersistedTimerState | null {
 export function clearTimerState(): void {
   try {
     localStorage.removeItem(STORAGE_KEY)
+    window.dispatchEvent(new CustomEvent('momentum:timer-state-changed'))
   } catch {
     // ignore
   }

@@ -8,7 +8,7 @@ import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle } from '../ui/Card'
 import { Modal } from '../ui/Modal'
 import { cn, isoNow, isTopLevelSubject, getChildSubjects, getSubjectPathLabel } from '../../lib/utils'
-import { formatTotalToday, getTotalTodayMinutes, computePomodoroSwitchState } from '../../lib/timer-utils'
+import { formatTotalToday, getTotalTodayMinutes, computePomodoroSwitchState, computeSimpleSwitchState } from '../../lib/timer-utils'
 import { loadSettings, saveSettings } from '../../lib/settings-store'
 import type { Settings } from '../../lib/settings-store'
 import { useSessionSync } from '../../lib/use-session-sync'
@@ -1107,6 +1107,25 @@ export function PomodoroTimer() {
     const sessionStartMs = simpleStartedAt ?? (Date.now() - elapsed * 1000)
     const result = computePomodoroSwitchState(elapsed, config, sessionStartMs)
     const now = Date.now()
+    const phaseStartMs = now - result.phaseElapsedSeconds * 1000
+    const nextState: PersistedTimerState = {
+      mode: 'pomodoro',
+      subjectId,
+      parentSubjectId: selectedParentId || null,
+      simplePausedOffset: 0,
+      startedAt: phaseStartMs,
+      phaseRemaining: result.remainingSeconds,
+      phase: result.phase,
+      cyclesCompleted: result.cyclesCompleted,
+      config: configRef.current,
+      notes: timerNotes,
+      routineId: timerRoutineId || undefined,
+      focusTag: timerFocusTag ?? undefined,
+    }
+    // Change the live source before adding the completed focus blocks. This
+    // prevents the dashboard from briefly counting those blocks plus the old
+    // Simple timer during the synchronous optimistic mutate below.
+    saveTimerState(nextState)
 
     // Save completed focus blocks (if any)
     const actualSubjId = projectId
@@ -1144,11 +1163,8 @@ export function PomodoroTimer() {
         return { ...bumpLastSegment(g, Math.max(0, elapsed - result.phaseElapsedSeconds)), active: true, lastEndAt: now }
       })
     }
-
-    // Enter pomodoro: set pomStartedAt so wall-clock elapsed = phaseElapsedSeconds,
-    // so the display shows the correct position in the phase as if pomodoro had
-    // been running from the start. Continue running (not paused).
-    const phaseStartMs = now - result.phaseElapsedSeconds * 1000
+    // Enter pomodoro state. The persisted state above is already authoritative;
+    // these setters keep React state in sync with it.
     setPomPhase(result.phase)
     setPomCycles(result.cyclesCompleted)
     setPomStartedAt(phaseStartMs) // running, at the computed position
@@ -1159,22 +1175,27 @@ export function PomodoroTimer() {
     setSimpleSeconds(0)
     setMode('pomodoro')
     setTodayPreview(true)
-
-    const state: PersistedTimerState = {
-      mode: 'pomodoro',
-      subjectId: subjectId,
-      parentSubjectId: selectedParentId || null,
-      simplePausedOffset: 0,
-      startedAt: phaseStartMs,
-      phaseRemaining: result.remainingSeconds,
-      phase: result.phase,
-      cyclesCompleted: result.cyclesCompleted,
-      config: configRef.current,
-      notes: timerNotes,
-      routineId: timerRoutineId || undefined,
-      focusTag: timerFocusTag ?? undefined,
-    }
-    saveTimerState(state)
+  }
+  function switchToSimple() {
+    const saved = loadTimerState()
+    const now = Date.now()
+    const result = computeSimpleSwitchState(pomPhase, pomStartedAt, saved?.phaseRemaining ?? pomSeconds, configRef.current, now)
+    setMode('simple')
+    setSimplePausedOffset(result.elapsedSeconds)
+    setSimpleSeconds(result.elapsedSeconds)
+    setSimpleStartedAt(result.startedAt)
+    setPomStartedAt(null)
+    setPomSeconds(configRef.current.focusMinutes * 60)
+    setPomPhase('focus')
+    setPomCycles(0)
+    setTodayPreview(true)
+    saveTimerState({
+      mode: 'simple', subjectId, parentSubjectId: selectedParentId || null,
+      startedAt: result.startedAt, phaseRemaining: null, phase: 'focus',
+      cyclesCompleted: 0, config: configRef.current,
+      simplePausedOffset: result.elapsedSeconds, notes: timerNotes,
+      routineId: timerRoutineId || undefined, focusTag: timerFocusTag ?? undefined,
+    })
   }
 
   async function stopSimple() {
@@ -2000,6 +2021,11 @@ export function PomodoroTimer() {
                   {mode === 'simple' && settings.pomodoroEnabled && (
                     <Button variant="secondary" size="sm" onClick={switchToPomodoro} title="Switch to Pomodoro mode">
                       Switch → 🍅
+                    </Button>
+                  )}
+                  {mode === 'pomodoro' && settings.pomodoroEnabled && (
+                    <Button variant="secondary" size="sm" onClick={switchToSimple} title="Switch to Simple mode">
+                      Switch → Simple
                     </Button>
                   )}
                   <DiscardButton

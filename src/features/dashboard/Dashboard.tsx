@@ -397,6 +397,7 @@ function FreeformCanvasInner({
             onCommit={(pos) => onCommit(b.id, pos)}
             onResize={(size) => onResize(b.id, size)}
             onRemove={() => onRemove(b.id)}
+            allowOverflow={b.id === 'study-streak'}
           >
             {renderWidget(b.id)}
           </FreeformWidget>
@@ -865,6 +866,8 @@ export default function Dashboard() {
     }
     tick()
     interval = window.setInterval(tick, active ? 1000 : 5000)
+    const onTimerStateChanged = () => tick()
+    window.addEventListener('momentum:timer-state-changed', onTimerStateChanged)
     // MUST clear the interval on cleanup. Without this, every change to
     // data.subjects/data.categories (e.g. creating a new subject) re-runs this
     // effect and spawns ANOTHER interval on top of the old one. The stale
@@ -875,6 +878,7 @@ export default function Dashboard() {
     // new subject. Clearing on cleanup leaves exactly one live interval.
     return () => {
       if (interval) clearInterval(interval)
+      window.removeEventListener('momentum:timer-state-changed', onTimerStateChanged)
     }
   }, [data.subjects, data.categories])
   const [editSubjectId, setEditSubjectId] = useState('')
@@ -1959,7 +1963,7 @@ export default function Dashboard() {
                             id={id}
                             label={DASHBOARD_WIDGETS_METADATA.find(w => w.id === id)?.label || id}
                             onRemove={() => removeWidgetWithUndo(id)}
-                          >
+                            allowOverflow={id === 'study-streak'}>
                             {renderWidget(id)}
                           </DashboardWidget>
                         )}

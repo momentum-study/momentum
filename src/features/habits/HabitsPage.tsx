@@ -571,7 +571,7 @@ export default function HabitsPage() {
             {!isTickMode && !isWeekly && todayCount > 0 && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{todayCount} today</span>
             )}
-            {restDay && !completeToday && (
+            {restDay && (
               <span className="rounded-full bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 dark:bg-slate-800 dark:text-slate-500" title="Not scheduled today — no streak penalty for skipping.">Rest day</span>
             )}
             {/* Kebab menu */}

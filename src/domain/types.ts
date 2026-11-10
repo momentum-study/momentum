@@ -136,6 +136,12 @@ export interface Habit {
   archivedAfterDays?: number | null
   status?: 'active' | 'potential'
   targetPerDay?: number
+  /** 'day' (default) | 'week' — which period the target counts against. */
+  targetPeriod?: 'day' | 'week'
+  /** Weekly target: number of unique logged days required in a rolling 7-day window ending today (§10.74 — deliberately NOT calendar-week-aligned). */
+  targetPerWeek?: number
+  /** Scheduled weekdays (0=Sun..6=Sat). Empty/absent = every day. Unscheduled days render as a muted "Rest day" (no streak penalty, no reminder, no call to action). */
+  scheduledDays?: DayOfWeek[] | null
   /** Reminder time for this habit (HH:MM). When set and today is not yet logged, a notification fires. */
   reminderTime?: string | null
   /** When true, the reminder was already sent today — used to prevent duplicate notifications. */

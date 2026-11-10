@@ -153,6 +153,18 @@ export class AppDB extends Dexie {
     this.version(18).stores({
       musicPlaylists: 'id, name',
     })
+    // v19: habit scheduling fields (targetPeriod/targetPerWeek/scheduledDays).
+    // Non-indexed optional fields — no index changes, but migrate existing rows
+    // so they carry explicit defaults instead of relying on `undefined` checks.
+    this.version(19).stores({
+      habits: 'id, kind',
+    }).upgrade(async (tx) => {
+      await tx.table('habits').toCollection().modify((habit: any) => {
+        if (habit.targetPeriod === undefined) habit.targetPeriod = 'day'
+        if (habit.targetPerWeek === undefined) habit.targetPerWeek = null
+        if (habit.scheduledDays === undefined) habit.scheduledDays = null
+      })
+    })
   }
 }
 

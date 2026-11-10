@@ -6,6 +6,7 @@
 import { db } from '../db/app-db'
 import { sendNotification } from './notification-service'
 import { format, parseISO, addDays, subDays } from 'date-fns'
+import { habitIsCompleteToday, habitScheduledOn } from './habit-goals'
 
 
 const SCHEDULER_KEY = 'momentum-notif-scheduler-state'
@@ -88,11 +89,16 @@ async function checkHabitReminders(state: SchedulerState, now: Date): Promise<Sc
     const lastSent = state.habitReminders[habit.id]
     if (lastSent === today) continue
 
-    // Only remind if today is not yet logged
-    const alreadyLogged = habitLogs.some(
-      (log) => log.habitId === habit.id && log.date === today && !log.deletedAt
-    )
-    if (alreadyLogged) {
+    // Only remind on scheduled days when the habit is not yet complete.
+    // habitIsCompleteToday owns ALL target logic (spec §6.5): for weekly
+    // habits the rolling window already meeting targetPerWeek suppresses
+    // the reminder, and unscheduled weekdays never fire.
+    const weekday = now.getDay()
+    if (!habitScheduledOn(habit, weekday)) {
+      state.habitReminders[habit.id] = today
+      continue
+    }
+    if (habitIsCompleteToday(habit, habitLogs, today, weekday)) {
       // Mark as sent so we don't keep checking this habit today
       state.habitReminders[habit.id] = today
       continue

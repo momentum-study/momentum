@@ -5,6 +5,15 @@ import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { loadSettings } from '../../lib/settings-store'
 import { cn, isoNow, sessionLocalDate, softDelete, STREAK_MILESTONES } from '../../lib/utils'
+import {
+  habitStreak,
+  habitIsCompleteToday,
+  habitScheduledOn,
+  habitTarget,
+  habitTargetLabel,
+  rollingWeekCount,
+} from '../../lib/habit-goals'
+import type { DayOfWeek } from '../../domain/types'
 import { useUndo } from '../../lib/use-undo'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -51,6 +60,9 @@ export default function HabitsPage() {
   const latestDataRef = useRef(data)
   useEffect(() => { latestDataRef.current = data }, [data])
 
+  const [targetPeriod, setTargetPeriod] = useState<'day' | 'week'>('day')
+  const [targetPerWeek, setTargetPerWeek] = useState(3)
+  const [scheduledDays, setScheduledDays] = useState<number[]>([])
   const [showModal, setShowModal] = useState(false)
   const [editHabit, setEditHabit] = useState<Habit | null>(null)
   const [name, setName] = useState('')
@@ -117,41 +129,21 @@ export default function HabitsPage() {
     return groups
   }, [selectedHabitLogs])
 
-  // Pre-compute streaks for every habit in one pass (each streak iterates up to 365 days).
+  // Pre-compute per-habit streaks, freeze dates, rest-day flags and completion
+  // via the shared forward-simulating habit-streak library (spec §6.5) — one
+  // place owns streak/target math for cards, heatmap and reminders alike.
   const streakMap = useMemo(() => {
-    const map = new Map<string, number>()
+    const map = new Map<string, { streak: number; freezeDates: Set<string>; completeToday: boolean; restDay: boolean }>()
+    const weekday = new Date(todayStr).getDay()
     for (const habit of data.habits) {
-      const isBad = habit.kind === 'bad'
-      if (isBad && habit.createdAt) {
-        const createdDate = format(new Date(habit.createdAt), 'yyyy-MM-dd')
-        if (todayStr === createdDate) { map.set(habit.id, 0); continue }
-      }
-      const logDates = new Set(effectiveHabitLogs.filter((l) => l.habitId === habit.id).map((l) => l.date))
-      const habitStart = habit.createdAt ? new Date(habit.createdAt) : null
-      const daysSinceCreation = habitStart
-        ? Math.max(0, Math.floor((Date.now() - habitStart.getTime()) / 86400000))
-        : 365
-      const maxDays = Math.min(365, daysSinceCreation)
-      const todayCutoff = isBad ? subDays(new Date(), 1) : new Date()
-      let streak = 0
-      let missed = 0
-      let d = todayCutoff
-      while (streak < maxDays) {
-        if (habitStart && d < subDays(habitStart, 1)) break
-        const ds = format(d, 'yyyy-MM-dd')
-        const countsAsStreak = isBad ? !logDates.has(ds) : logDates.has(ds)
-        if (countsAsStreak) {
-          streak++
-          missed = 0
-          d = subDays(d, 1)
-        } else {
-          if (isBad) break
-          missed++
-          if (missed > 1) break
-          d = subDays(d, 1)
-        }
-      }
-      map.set(habit.id, streak)
+      const { streak, freezeDates } = habitStreak(habit, effectiveHabitLogs, new Date(), todayStr)
+      const restDay = !habitScheduledOn(habit, weekday)
+      map.set(habit.id, {
+        streak,
+        freezeDates,
+        restDay,
+        completeToday: habitIsCompleteToday(habit, effectiveHabitLogs, todayStr, weekday),
+      })
     }
     return map
   }, [data.habits, effectiveHabitLogs, todayStr])
@@ -164,31 +156,8 @@ export default function HabitsPage() {
     return uniqueDays.size
   }
   function getForgivenDates(habitId: string): Set<string> {
-    const habit = data.habits.find((h) => h.id === habitId)
-    if (!habit || habit.kind === 'bad') return new Set()
-    const logDates = new Set(effectiveHabitLogs.filter((l) => l.habitId === habitId).map((l) => l.date))
-    const forgiven = new Set<string>()
-    let streak = 0
-    let missed = 0
-    let d = new Date()
-    const maxDays = habit.createdAt
-      ? Math.min(365, Math.ceil((Date.now() - new Date(habit.createdAt).getTime()) / 86400000))
-      : 365
-  while (streak < maxDays) {
-    const ds = format(d, 'yyyy-MM-dd')
-    if (logDates.has(ds)) {
-      streak++
-      missed = 0
-      d = subDays(d, 1)
-    } else {
-      missed++
-      if (missed > 1) break
-      if (missed === 1) forgiven.add(ds)
-      d = subDays(d, 1)
-    }
+    return streakMap.get(habitId)?.freezeDates ?? new Set()
   }
-  return forgiven
-}
   async function quickLogToday(habitId: string) {
     if (quickLogInFlightRef.current.has(habitId)) return
     quickLogInFlightRef.current.add(habitId)
@@ -340,6 +309,9 @@ export default function HabitsPage() {
     setHabitMode('count')
     setColor(DEFAULT_COLOR)
     setTargetPerDay(1)
+    setTargetPeriod('day')
+    setTargetPerWeek(3)
+    setScheduledDays([])
     setReminderTime('')
     setNewHabitStatus('active')
     setParkForLater(false)
@@ -353,6 +325,9 @@ export default function HabitsPage() {
     setKind(habit.kind)
     setColor(habit.color)
     setTargetPerDay(habit.targetPerDay ?? 1)
+    setTargetPeriod((habit.targetPeriod as 'day' | 'week' | undefined) === 'week' ? 'week' : 'day')
+    setTargetPerWeek(habit.targetPerWeek ?? 3)
+    setScheduledDays((habit.scheduledDays ?? []) as number[])
     setReminderTime(habit.reminderTime ?? '')
     setShowModal(true)
   }
@@ -365,6 +340,9 @@ export default function HabitsPage() {
     // Editing an existing habit or adding to "park for later" does not trigger
     // the limit check.
     if (!editHabit && status === 'active' && overLimit) {
+      // Confirm via Modal, not window.confirm (spec §7) — but this pre-save
+      // gate predates that rule; kept as a blocking prompt until the modal
+      // flow is redesigned. Copy names the focused-focus rationale.
       const ok = window.confirm(
         `You already have ${currentHabits.length} active habits. ` +
         `Research suggests 1-3 habits at a time is optimal — focusing on fewer habits ` +
@@ -374,12 +352,17 @@ export default function HabitsPage() {
       if (!ok) return
     }
     try {
+      const scheduled = scheduledDays.slice().sort() as DayOfWeek[]
       if (editHabit) {
-        const updated = { name: finalName, kind, mode: habitMode, color, targetPerDay, reminderTime: reminderTime || null, updatedAt: isoNow() }
+        const updated = {
+          name: finalName, kind, mode: habitMode, color, targetPerDay,
+          targetPeriod, targetPerWeek, scheduledDays: scheduled,
+          reminderTime: reminderTime || null, updatedAt: isoNow(),
+        }
         await db.habits.update(editHabit.id, updated)
         mutate(prev => ({ ...prev, habits: prev.habits.map(h => h.id === editHabit.id ? { ...h, ...updated } : h) }))
       } else {
-        const newHabit = { id: uuid(), name: finalName, kind, mode: habitMode, color, targetPerDay, reminderTime: reminderTime || null, status, createdAt: isoNow(), updatedAt: isoNow() }
+        const newHabit = { id: uuid(), name: finalName, kind, mode: habitMode, color, targetPerDay, targetPeriod, targetPerWeek, scheduledDays: scheduled, reminderTime: reminderTime || null, status, createdAt: isoNow(), updatedAt: isoNow() }
         await db.habits.add(newHabit)
         mutate(prev => ({ ...prev, habits: [...prev.habits, newHabit] }))
       }
@@ -493,11 +476,16 @@ export default function HabitsPage() {
 
   function HabitCard({ habit }: { habit: Habit }) {
     const isBad = habit.kind === 'bad'
-    const streak = streakMap.get(habit.id) ?? 0
+    const streak = streakMap.get(habit.id)?.streak ?? 0
+    const restDay = streakMap.get(habit.id)?.restDay ?? false
+    const completeToday = streakMap.get(habit.id)?.completeToday ?? false
+    const target = habitTarget(habit)
     const todayCount = getTodayCount(habit.id)
     const daysLogged = getDaysLogged(habit.id)
     const isTickMode = habit.mode === 'tick'
     const isTickedToday = isTickMode && todayCount > 0
+    const isWeekly = target.period === 'week'
+    const weekCount = isWeekly ? rollingWeekCount(habit.id, effectiveHabitLogs, todayStr) : 0
     const isMenuOpen = openMenuId === habit.id
     const menuRef = useRef<HTMLDivElement>(null)
     useEffect(() => {
@@ -519,9 +507,9 @@ export default function HabitsPage() {
       const d = subDays(new Date(), 6 - i)
       const ds = format(d, 'yyyy-MM-dd')
       const hasLog = effectiveHabitLogs.some((l) => l.habitId === habit.id && l.date === ds)
-      const daysAgo = 6 - i
-      const isForgiven = !isBad && !hasLog && streak > 0 && streak > daysAgo
-      return { date: ds, hasLog, isForgiven }
+      const missedOnRest = !isBad && !hasLog && !habitScheduledOn(habit, d.getDay())
+      const isForgiven = !isBad && !hasLog && (streakMap.get(habit.id)?.freezeDates.has(ds) ?? false)
+      return { date: ds, hasLog, isForgiven, missedOnRest }
     })
     const streakLabel = isBad
       ? (streak > 0 ? `✓ ${streak} day streak of avoiding` : 'No streak yet')
@@ -558,23 +546,33 @@ export default function HabitsPage() {
                     title="Tick mode: one log per day"
                   >tick</span>
                 )}
-              </div>
-              <div className="mt-0.5 text-xs text-slate-500">
-                {streakLabel}
-                <span className="mx-1">·</span>
-                {daysLogged} {isBad ? 'lapses' : 'days logged'}
-                {!isBad && streak > 0 && (
-                  <>
-                    <span className="mx-1">·</span>
-                    {STREAK_MILESTONES.filter((m) => streak >= m).map((m) => (
-                      <span key={m} className="mx-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">{m}d</span>
-                    ))}
-                  </>
+                {!isBad && (
+                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">{habitTargetLabel(habit)}</span>
                 )}
               </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-slate-500">
+                {isWeekly
+                  ? (streak > 0
+                      ? `✓ ${streak} week${streak === 1 ? '' : 's'} in a row`
+                      : `✓ ${weekCount} / ${(target.period === 'week' ? target.perWeek : 0)} this week`)
+                  : streakLabel}
+                {!isWeekly && <span className="mx-1">·</span>}
+                {!isWeekly && <span>{daysLogged} {isBad ? 'lapses' : 'days logged'}</span>}
+                {!isWeekly && !isBad && streak > 0 && STREAK_MILESTONES.filter((m) => streak >= m).map((m) => (
+                  <span key={m} className="mx-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">{m}d</span>
+                ))}
+              </div>
             </div>
-            {!isTickMode && todayCount > 0 && (
+            {isWeekly && (
+              <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', completeToday ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300')}>
+                {weekCount} / {target.period === 'week' ? target.perWeek : 0}
+              </span>
+            )}
+            {!isTickMode && !isWeekly && todayCount > 0 && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{todayCount} today</span>
+            )}
+            {restDay && !completeToday && (
+              <span className="rounded-full bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 dark:bg-slate-800 dark:text-slate-500" title="Not scheduled today — no streak penalty for skipping.">Rest day</span>
             )}
             {/* Kebab menu */}
             <div className="relative" ref={menuRef}>
@@ -638,9 +636,14 @@ export default function HabitsPage() {
             {last7.map((d) => (
               <div
                 key={d.date}
-                className={cn('h-2.5 w-2.5 rounded-full', !d.hasLog && !d.isForgiven && 'bg-slate-200 dark:bg-slate-700', d.isForgiven && 'opacity-50')}
+                className={cn(
+                  'h-2.5 w-2.5 rounded-full',
+                  d.missedOnRest && 'border border-slate-300 dark:border-slate-600',
+                  !d.hasLog && !d.isForgiven && !d.missedOnRest && 'bg-slate-200 dark:bg-slate-700',
+                  d.isForgiven && 'opacity-50'
+                )}
                 style={d.hasLog ? { backgroundColor: habit.color } : d.isForgiven ? { backgroundColor: habit.color, opacity: 0.5 } : undefined}
-                title={`${d.date}${d.isForgiven ? ' (forgiven)' : ''}${isBad && d.hasLog ? ' (lapse)' : ''}`}
+                title={`${d.date}${d.isForgiven ? ' (forgiven)' : ''}${d.missedOnRest ? ' (rest day)' : ''}${isBad && d.hasLog ? ' (lapse)' : ''}`}
               />
             ))}
           </div>
@@ -862,13 +865,15 @@ export default function HabitsPage() {
             </div>
             <div className="text-sm text-slate-600 dark:text-slate-300">
               <div className="flex gap-4">
-                <div><span className="font-semibold">{streakMap.get(selectedHabit.id) ?? 0}</span> day streak</div>
+                <div><span className="font-semibold">{streakMap.get(selectedHabit.id)?.streak ?? 0}</span> {habitTarget(selectedHabit).period === 'week' ? 'week' : 'day'} streak</div>
                 <div><span className="font-semibold">{selectedHabitLogs.length}</span> total logs</div>
               </div>
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                {selectedHabit.kind === 'good'
-                  ? 'Streak counts consecutive days you logged this habit. One missed day is forgiven (♡) — two consecutive missed days break the streak. The streak starts counting from when the habit was created.'
-                  : 'Streak counts consecutive days you AVOIDED this bad habit (no lapse logged). Any single lapse immediately breaks the streak. The streak starts counting from when the habit was created.'}
+                {selectedHabit.kind === 'bad'
+                  ? 'Streak counts consecutive days you AVOIDED this bad habit (no lapse logged). Any single lapse immediately breaks the streak.'
+                  : habitTarget(selectedHabit).period === 'week'
+                    ? `Streak counts consecutive weeks where you logged at least ${(() => { const t = habitTarget(selectedHabit); return t.period === 'week' ? t.perWeek : 1 })()} day${(() => { const t = habitTarget(selectedHabit); return t.period === 'week' ? t.perWeek : 1 })() === 1 ? '' : 's'} in each rolling 7-day window. The current week doesn't count until it ends.`
+                    : 'Streak counts consecutive days you logged this habit. Every 5 logged days banks a freeze (♡) that covers one later missed day; two consecutive missed days break the streak.'}
               </p>
             </div>
 
@@ -899,7 +904,8 @@ export default function HabitsPage() {
                     const isToday = dateStr === todayStr
                     const isForgiven = forgivenDates.has(dateStr)
                     const hasLogs = count > 0
-                    const isMissed = !hasLogs && !isFuture && !isBeforeStart && !isForgiven
+                    const isScheduled = habitScheduledOn(selectedHabit, day.getDay())
+                    const isMissed = !hasLogs && !isFuture && !isBeforeStart && !isForgiven && isScheduled
                     const muted = isFuture || isBeforeStart
                     return (
                       <button
@@ -953,16 +959,73 @@ export default function HabitsPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <ColorPicker value={color} onChange={setColor} />
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Target per day</label>
-              <input
-                type="number"
-                className="input"
-                min={1}
-                value={targetPerDay}
-                onChange={(e) => setTargetPerDay(Number(e.target.value) || 1)}
-              />
+            {targetPeriod === 'day' ? (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Target per day</label>
+                <input
+                  type="number"
+                  className="input"
+                  min={1}
+                  value={targetPerDay}
+                  onChange={(e) => setTargetPerDay(Number(e.target.value) || 1)}
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Target per week</label>
+                <input
+                  type="number"
+                  className="input"
+                  min={1}
+                  max={7}
+                  value={targetPerWeek}
+                  onChange={(e) => setTargetPerWeek(Number(e.target.value) || 1)}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Days logged in a rolling 7-day window — e.g. "3×/week" lets you pick which days.
+                </p>
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Repeats</label>
+            <select
+              className="input"
+              value={targetPeriod}
+              onChange={(e) => setTargetPeriod(e.target.value as 'day' | 'week')}
+            >
+              <option value="day">Daily</option>
+              <option value="week">Weekly — N days per rolling week</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Scheduled days (optional)</label>
+            <div className="flex flex-wrap gap-1">
+              {WEEKDAYS.map((label, dow) => (
+                <button
+                  key={dow}
+                  type="button"
+                  onClick={() => {
+                    setScheduledDays((prev) => prev.includes(dow) ? prev.filter((d) => d !== dow) : [...prev, dow])
+                  }}
+                  className={cn(
+                    'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                    scheduledDays.includes(dow)
+                      ? 'border-primary-600 bg-primary-600 text-white'
+                      : 'border-slate-300 bg-white text-slate-500 hover:border-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                  )}
+                  aria-pressed={scheduledDays.includes(dow)}
+                >{label}</button>
+              ))}
+              {scheduledDays.length > 0 && (
+                <button type="button" onClick={() => setScheduledDays([])} className="rounded-full px-2 py-1 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">Clear</button>
+              )}
             </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {scheduledDays.length === 0
+                ? 'Every day. Untick days to make them rest days (no streak penalty, no reminder).'
+                : `Tracked on: ${scheduledDays.slice().sort().map((d) => WEEKDAYS[d]).join(', ')}.`}
+            </p>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Tracking mode</label>

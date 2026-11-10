@@ -134,7 +134,7 @@ Canonical. Key entities:
 - **Mark**: `id, subjectId, name, score, total, weight, date, letterGrade?`
 - **Assignment** (the "task"): `id, subjectId, projectId?, title, dueDate, type (TaskCategory), completed, category?`
   - `TaskCategory = 'homework' | 'assignments' | 'miscellaneous'`; `TASK_CATEGORIES` array in types.ts.
-- **Habit**: `id, name, kind ('good'|'bad'), mode ('count'|'tick'), color, status? ('active'|'potential'), targetPerDay?, archivedAt?, finishedAt?, archivedAfterDays?, createdAt, updatedAt, deletedAt?`
+- **Habit**: `id, name, kind ('good'|'bad'), mode ('count'|'tick'), color, status? ('active'|'potential'), targetPerDay?, targetPeriod? ('day'|'week', default 'day'), targetPerWeek?, scheduledDays? (DayOfWeek[]), archivedAt?, finishedAt?, archivedAfterDays?, createdAt, updatedAt, deletedAt?` (Dexie v19 migration normalizes the new fields; all target logic lives in `src/lib/habit-goals.ts` — §6.5).
   - **States**: active, potential (`status`), finished (`finishedAt` — graduated, distinct from archive), archived (`archivedAt`).
 - **HabitLog**: `id, habitId, date (YYYY-MM-DD), time?, note?, value?, focusTag?, createdAt, updatedAt, deletedAt?`
 - **StreakDay**: `id (YYYY-MM-DD), totalMinutes, goalMet`
@@ -149,7 +149,7 @@ Canonical. Key entities:
 - **PendingSyncOp**: offline sync queue.
 
 ### 4.2 Dexie schema (`src/db/app-db.ts`)
-DB name `study-app`. **18 versions** (v1→v18). Current tables: `categories, subjects, projects, sessions, progressLogs, marks, assignments, habits, habitLogs, streakDays, routines, routineLogs, activities, activityLogs, studyAreas, studyReviews, pendingSyncOps, musicPlaylists`. (Note: `tasks` and `hobbies`/`hobbySessions`/`scheduleEntries` tables were created in early versions but are orphaned/legacy — do not use them.)
+DB name `study-app`. **19 versions** (v1→v19). Current tables: `categories, subjects, projects, sessions, progressLogs, marks, assignments, habits, habitLogs, streakDays, routines, routineLogs, activities, activityLogs, studyAreas, studyReviews, pendingSyncOps, musicPlaylists`. (Note: `tasks` and `hobbies`/`hobbySessions`/`scheduleEntries` tables were created in early versions but are orphaned/legacy — do not use them.)
 
 **Rule:** any new table or index MUST bump the Dexie version and add an `.upgrade()` if existing rows need migration. Never reuse an old version number.
 
@@ -234,7 +234,55 @@ Grid with name, subject, description, goal minutes. Add/Edit modal. Delete with 
 Table: Name, Subject, Score/Total, Weight, Weighted %, Date. Weighted average = `sum(score/total * weight) / sum(weight)`. Score color: green ≥80%, yellow ≥50%, red <50%. **Academic subjects only** — marks on non-academic focus areas are hidden (not deleted) and the page surfaces a note counting them. The subject picker and subject filter chips list academic subjects only. Year filter: "All years" + a chip per year with marks + the current year + any years the user explicitly started. A "+ New year" chip registers the next year (persisted in `momentum-marks-years`) and selects it so the user can immediately add marks for that year. Year chips with no marks and no automatic derivation can be removed via an inline × button. **Subject summary card** above the table shows the weight-averaged overall percentage per subject across the *filtered* mark set (count, sum(pct*weight)/sum(weight), grade), satisfying "view overall for one subject using weighted percentages" — selecting a single subject in the chips focuses the summary on that subject. Case-insensitive search by name.
 
 ### 6.5 Habit Tracker — `src/features/habits/HabitsPage.tsx`
-Good/Bad sections. Cards: color dot, name, streak, last-7-day dots, today toggle. **Count mode** has a quick "Mark done" button; **tick mode** has a ✓ toggle. Select a habit for 90-day heatmap. Add/Edit modal with ColorPicker. **States**: Active, Potential, Finished (🎓, graduated — distinct from archive), Archived. **"Pause" moves a habit to Potential** (`status: 'potential'`), NOT to the archive — archived means historically ended; potential means parked/resumable. Resume via "Promote" (back to `status: 'active'`). `maxActiveHabits` from settings.
+
+The habit system treats each habit as a **goal-driven target with a flexible schedule**, not a fixed once-per-day checkbox. Everything is local; habits never sync (see §1).
+
+> **✅ Implemented (2026-11-10).** The flexible-habit redesign below is live in code: `Habit.targetPeriod/targetPerWeek/scheduledDays` (§4.1, Dexie v19 migration), the shared logic in `src/lib/habit-goals.ts` (`habitTarget`, `habitScheduledOn`, `habitIsCompleteToday`, `habitStreak`, `rollingWeekCount`, `habitTargetLabel` — unit-tested in `habit-goals.test.ts`, 23 cases), wired into HabitsPage cards/modal/heatmap and the notification scheduler's reminder gate. Naming note: the library is `habit-goals.ts` (not `habit-streaks.ts`). This section matches the code (§14.3).
+
+**Habit shape:** `id, name, kind ('good'|'bad'), mode ('count'|'tick'), color, status? ('active'|'potential'), targetPerDay?, targetPeriod? ('day'|'week', default 'day'), targetPerWeek?, scheduledDays? (DayOfWeek[]), reminderTime?, reminderSentDate?, archivedAt?, finishedAt?, archivedAfterDays?, createdAt, updatedAt, deletedAt?`.
+
+#### Scheduling & targets
+- **`targetPeriod`**: `'day'` (default) | `'week'`. The habit's target counts occurrences against whichever period is configured.
+  - **Daily** (default): `targetPerDay` times per day. `tick` mode collapses this to once-per-day regardless (1 = done).
+  - **Weekly**: `targetPerWeek` times per rolling 7-day window (the window includes today). Examples: "Call parents 3×/week", "Clean the desk 2×/week". The window tracks unique logged days inside it; there is no calendar-week alignment, so the window slides and no "week starting" choice is needed. A habit is **complete for today** when the rolling-window count ≥ `targetPerWeek`.
+- **`scheduledDays`**: optional subset of weekdays (`DayOfWeek[]`, 0=Sun…6=Sat). On unscheduled days the habit renders as muted "Rest day" (no streak penalty, no reminder, no call to action). Empty/absent = every day. Works with both target periods; with a weekly target the rolling window still counts occurrences on any scheduled day.
+- **Completion predicate** (`habitIsCompleteToday(habit, logs)` in `src/lib/utils.ts`): daily → today's log count ≥ targetPerDay (or ≥1 for tick); weekly → rolling-7-day unique-day log count ≥ targetPerWeek; plus the scheduledDays gate above. **This predicate is the ONLY place target logic lives** — card streaks, cards, 90-day heatmap intensity, Reports streaks, and the AI Review prompt all read it. Do not re-derive weekly math inline.
+
+#### Modes
+
+- **`count` mode**: each occurrence is its own HabitLog row (multiple rows per day are valid). Quick "Log" button plus a count stepper on the card adjusts today's count without opening the log modal.
+- **`tick` mode** (explicitly created via "Tick once per day"): one log per day, ✓ toggle semantics. Good/bad labels: green ✓ "Done" / red ✕ "Lapsed" for bad habits.
+
+#### Streaks (per-habit `habitStreakDays` in `src/lib/habit-streaks.ts`)
+
+Streaks must simulate forward, like the study streak (`use-streak.ts`) — never backwards, so freezes are only applied to gaps that occur *after* the streak was earned.
+
+- **Daily good habit**: streak of consecutive completed days (per the completion predicate). **Freeze rule** mirrors study streaks — every 5 consecutive completed days banks 1 missed-day freeze, consumed automatically on the first miss; today not yet logged never breaks the chain or consumes a freeze (§10.45 rule).
+- **Weekly habit**: streak of consecutive weeks meeting the target; the current week is exempt until it ends (so a 3×/week habit doesn't drop to 0 mid-week). Missed weeks can't be frozen retroactively.
+- **Bad habit**: streak counts consecutive days **without** a lapse log; any lapse resets to 0 the moment it's logged (no freeze). "Log a lapse" is still available on the card.
+- Streak display: `🔥 N day streak` or `✓ N week streak`, with a ⓘ tooltip explaining the freeze rule for good habits.
+
+#### Habits views
+
+- **Good / Bad sections** (Collapsible), each card: colour dot, name, target label (`3×/day`, `2×/week`, `Every day`), streak, last-14-day dot row (rolling — not aligned to `weekStartsOn`; target-met days use the habit colour, undershoot days half-opacity, missed days muted, rest-days grey-ringed), today progress, and the mode's primary action button.
+- **Selected habit modal**: month calendar heatmap (visual language of the dashboard streak heatmap) with per-day counts; clicking a day opens its log list (add/edit/delete). `♡` markers on frozen days. 90-day mini heatmap for long-horizon consistency.
+- **Cards expose**: mark done/log, undo last log, edit, pause→potential, reset data, delete. All destructive flows confirm via Modal (never `window.confirm`).
+
+#### Lifecycle & limit
+
+States: **active**, **potential** (parked on the wishlist via "Pause"), **finished** (`finishedAt` — graduated, shown in a "Finished" section, excluded from the limit), **archived** (`archivedAt`, historically ended). Promote/Discard/Pause/Resume flows unchanged from the previous behaviour.
+
+- **`maxActiveHabits`** (setting, default 3) still guides the number of **active** habits. When adding a new active habit beyond the limit, the confirm copy now names the oldest active habit and suggests pausing/finishing it ("You have 3 active habits — Consider pausing X"). Weekly habits count toward the limit just like daily habits — the limit is about focus, not difficulty.
+
+#### Reminders
+
+`reminderTime` (HH:MM) fires "Have you logged X today?" via the notification scheduler (§10.54) **only on scheduled days** and only when the completion predicate is false at reminder time. `reminderSentDate` dedupes per habit per day (Dexie v17 fields; see §4.2).
+
+#### Non-goals
+
+- **No per-habit "grace" or arbitrary multi-week targets** — daily and weekly cover the use cases; anything more granular belongs to the study-session domain.
+- **No habit→session linking.** Habits are lifestyle goals; study time lives in Sessions.
+- **No retroactive "week start" alignment for weekly habits** — the rolling window is deliberate (see pitfall §10.74).
 
 ### 6.6 Assignment Calendar — `src/features/calendar/CalendarPage.tsx`
 Monthly grid with colored dots per type (homework=blue, assignment=purple, exam=red, other=slate). Upcoming list (next 30 days) with type badge + completed toggle. CRUD with type select + description. **Due badge**: nav item "Tasks" shows a red badge with count of assignments due within 24h.
@@ -659,6 +707,11 @@ Dedupe: all notification firings are tracked in localStorage by date key. The st
 
 ---
 
+### 10.74 Weekly habit targets — rolling window, never calendar-week-aligned (§6.5)
+- **Rule (implemented)**: a weekly habit target counts unique logged days inside a **rolling 7-day window ending today** (`rollingWeekCount`). A habit is due today until the window already contains `targetPerWeek` logged days.
+- **Stall trap**: "align it to the calendar week using `weekStartsOn`, like Dashboard's calendar week mode" → no. Calendar alignment creates the Monday-spam problem: a 3×/week habit ticked off on Monday counts the week "done" by Monday night and punishes a Sunday catch-up; a rolling window keeps a sliding due/until-done state. Also never require "exactly" the target — over-completing inside the window must not make the following days appear un-done.
+- Related: §10.45's "today not yet logged never breaks the chain" rule MUST carry over to weekly habits — "not yet complete this week" is not a broken week until the window fully ends without meeting the target.
+
 ## 11. Regression Checklist — MUST pass before deployment
 
 1. **Timer background persistence** — start timer, switch tabs/windows, wait ≥10s, return. Elapsed MUST reflect real wall-clock time, not paused.
@@ -764,6 +817,7 @@ Update this file when you:
 - If you change a default or a type, update the inline code blocks in §4/§5 to match exactly.
 
 **SPEC_VERSION: 27** — 2026-08-21 Fixed activity "Attended" sessions using wall-clock instead of `scheduledTime`: `attendActivity` in SchedulePage.tsx now anchors `startAt` to the activity's scheduled time (parsed against today) and computes `endAt = startAt + mins`, so a 50-min 4:30pm activity logged at 6pm records a 4:30pm–5:20pm session that counts toward study time. Falls back to now-minus-duration when no `scheduledTime` (§10.47).
+
 ### 14.3 Grounding rule (repeated)
 The code is the source of truth. If this file and the code disagree, the code wins — and you MUST update this file to match. Never trust a stale spec over the actual implementation. When you read the code and find this file wrong, fix the file, don't work around the code.
 
@@ -848,6 +902,8 @@ Every instance MUST document significant logic pitfalls and durable user decisio
   - **Categories**: Merged into "Focus Areas" (subjects).
   - **Subject Mode**: "Any subject" (sentinel `__any__`) treats projects/routines as wildcards to accumulate time from all subjects.
   - **Default Data**: On first launch, `seedDefaults()` seeds default categories (Academic, Hobbies, Miscellaneous) AND a default "Misc" subject under the Miscellaneous category (`subj-seed-0`), so the Focus Areas list is never empty for new users. Existing installs are unaffected (the seed only runs when the categories table is empty).
+  - **Habits are flexible, not daily-checked** (2026-11-10): habits gained `targetPeriod ('day'|'week')` + `targetPerWeek` + `scheduledDays: DayOfWeek[]` (Dexie v19); weekly targets use a **rolling 7-day window** (deliberately NOT calendar-week-aligned — see §10.74); a single completion predicate (`habitIsCompleteToday` in `src/lib/habit-goals.ts`) owns all target logic; per-habit streaks forward-simulate with the study-streak freeze rule. Implemented same day with 23 unit tests.
+
 **SPEC_VERSION: 37** — 2026-08-23 Fixed routine ticking bugs: (1) markDone no longer inflates routine log `actualMinutes` by overwriting timer progress with the full routine target (now preserves existing actualMinutes, creates gap-only session if needed); (2) untick now correctly distinguishes between auto-generated markDone sessions (soft-deleted) and real study sessions (preserved) by matching `source: 'autoRoutine'`.
 
 **SPEC_VERSION: 38** — 2026-08-26 Three changes: (1) Current Session group now shows a "Expiring in Xm" countdown when idle within the 5-minute merge window; when the countdown reaches 0 the group is cleared. (2) Routines configured with "Any subject" (`ANY_SUBJECT_ID`) are now visible in the timer's routine dropdown alongside subject-specific routines, and auto-selected when the selected subject has no matching routines of its own. This makes any-subject routines visible and optional — the user can pick "No routine" to skip. (3) Fixed routine double-counting: when a session has an explicit `routineId`, `updateRoutineLogsForSession` logs only toward that routine instead of also auto-matching any-subject routines. (4) Streak heatmap legend shows concrete time thresholds (`nearThreshold = 75% of daily goal`) and `formatted` labels instead of percentage-based ranges.
@@ -918,3 +974,7 @@ Every instance MUST document significant logic pitfalls and durable user decisio
 ### 10.73 Logical study day
 - **Symptom**: studying 00:00–04:00 while working late counted toward the new calendar day, breaking a streak that mentally belonged to the previous day.
 - **Fix**: user-configured `dayStartHour` shifts the day boundary; all study-day consumers (totals, streaks, splits, grouping) read the logical day. Default 0 preserves the old behavior exactly.
+
+**SPEC_VERSION: 67** — 2026-11-10 Habits redesign approved (§6.5 rewritten as the target design for flexible habits). Superseded the same day by SPEC_VERSION 68 (implementation).
+
+**SPEC_VERSION: 68** — 2026-11-10 Flexible habits IMPLEMENTED: added `Habit.targetPeriod ('day'|'week')`, `targetPerWeek`, `scheduledDays` (Dexie v19 migration normalizes existing rows); new shared library `src/lib/habit-goals.ts` owning `habitTarget` / `habitScheduledOn` / `habitIsCompleteToday` (daily count, tick, weekly rolling-window) and `habitStreak` (forward-simulated: freeze rule for daily good habits, contiguous accept-except-current-week week-streaks, lapse-by-lapse bad habits) + `rollingWeekCount` + `habitTargetLabel`; HabitsPage rebuilt on it (target label chips, rest-day cards, weekly `n / m` progress, scheduled-day picker in the add/edit modal, rest-day-aware card dots and heatmap cells, per-shape streak copy); notification-scheduler habit reminders now gate on `habitScheduledOn` + `habitIsCompleteToday`; 23 unit tests in `habit-goals.test.ts` (299 total pass, tsc + build clean). §6.5/§4.1/§10.74/§15 updated to match code.

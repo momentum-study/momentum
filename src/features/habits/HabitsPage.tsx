@@ -503,17 +503,15 @@ export default function HabitsPage() {
         document.removeEventListener('keydown', onKey)
       }
     }, [isMenuOpen])
-    const last7 = Array.from({ length: 7 }, (_, i) => {
-      const d = subDays(new Date(), 6 - i)
+    const last14 = Array.from({ length: 14 }, (_, i) => {
+      const d = subDays(new Date(), 13 - i)
       const ds = format(d, 'yyyy-MM-dd')
       const hasLog = effectiveHabitLogs.some((l) => l.habitId === habit.id && l.date === ds)
       const missedOnRest = !isBad && !hasLog && !habitScheduledOn(habit, d.getDay())
       const isForgiven = !isBad && !hasLog && (streakMap.get(habit.id)?.freezeDates.has(ds) ?? false)
       return { date: ds, hasLog, isForgiven, missedOnRest }
     })
-    const streakLabel = isBad
-      ? (streak > 0 ? `✓ ${streak} day streak of avoiding` : 'No streak yet')
-      : (streak > 0 ? `🔥 ${streak} day streak` : 'No streak yet')
+    const milestone = STREAK_MILESTONES.filter((m) => streak >= m).pop()
     return (
       <ContextMenu
         items={[
@@ -525,129 +523,153 @@ export default function HabitsPage() {
         ]}
       >
         <Card
-          className={cn('cursor-pointer transition-shadow hover:shadow-md', selectedId === habit.id && 'ring-2 ring-primary-500')}
+          className={cn('cursor-pointer p-5 transition-shadow hover:shadow-md', selectedId === habit.id && 'ring-2 ring-primary-500')}
           onClick={() => setSelectedId(habit.id === selectedId ? null : habit.id)}
         >
-          <div className="flex items-center gap-3">
-            <div className="h-3 w-3 rounded-full" style={{ backgroundColor: habit.color }} />
-            <div className="flex-1">
+          <div className="flex items-start gap-3">
+            <div className="mt-1.5 h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: habit.color }} />
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-slate-800 dark:text-slate-100">{habit.name}</span>
+                <span className="truncate font-medium text-slate-800 dark:text-slate-100">{habit.name}</span>
                 {isBad && (
                   <span
-                    className="cursor-help text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    className="shrink-0 cursor-help text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                     title="For bad habits, the streak counts days you DIDN'T do it. Logging a bad habit means logging that you did the bad thing. The goal is to keep the streak growing."
                     aria-label="About bad habit streaks"
                   >ⓘ</span>
                 )}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">{habitTargetLabel(habit)}</span>
                 {isTickMode && (
                   <span
                     className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
                     title="Tick mode: one log per day"
                   >tick</span>
                 )}
-                {!isBad && (
-                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">{habitTargetLabel(habit)}</span>
+                {restDay && (
+                  <span className="rounded-full bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 dark:bg-slate-800 dark:text-slate-500" title="Not scheduled today — no streak penalty for skipping.">Rest day</span>
+                )}
+                {!restDay && completeToday && !isBad && (
+                  <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">Done today</span>
+                )}
+                {milestone !== undefined && streak > 0 && (
+                  <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" title={`Streak milestone: ${milestone} days`}>🏅 {milestone}d</span>
                 )}
               </div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-slate-500">
-                {isWeekly
-                  ? (streak > 0
-                      ? `✓ ${streak} week${streak === 1 ? '' : 's'} in a row`
-                      : `✓ ${weekCount} / ${(target.period === 'week' ? target.perWeek : 0)} this week`)
-                  : streakLabel}
-                {!isWeekly && <span className="mx-1">·</span>}
-                {!isWeekly && <span>{daysLogged} {isBad ? 'lapses' : 'days logged'}</span>}
-                {!isWeekly && !isBad && streak > 0 && STREAK_MILESTONES.filter((m) => streak >= m).map((m) => (
-                  <span key={m} className="mx-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">{m}d</span>
-                ))}
-              </div>
             </div>
-            {isWeekly && (
-              <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', completeToday ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300')}>
-                {weekCount} / {target.period === 'week' ? target.perWeek : 0}
-              </span>
-            )}
-            {!isTickMode && !isWeekly && todayCount > 0 && (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium dark:bg-slate-700">{todayCount} today</span>
-            )}
-            {restDay && (
-              <span className="rounded-full bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 dark:bg-slate-800 dark:text-slate-500" title="Not scheduled today — no streak penalty for skipping.">Rest day</span>
-            )}
-            {/* Kebab menu */}
-            <div className="relative" ref={menuRef}>
-              <button
-                type="button"
-                aria-label="Habit actions"
-                aria-haspopup="menu"
-                aria-expanded={isMenuOpen}
-                onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : habit.id) }}
-                className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <circle cx="3" cy="8" r="1.5" />
-                  <circle cx="8" cy="8" r="1.5" />
-                  <circle cx="13" cy="8" r="1.5" />
-                </svg>
-              </button>
-              {isMenuOpen && (
-                <div
-                  role="menu"
-                  className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                    onClick={() => { setOpenMenuId(null); setFinishConfirm(habit.id) }}
-                  >Mark as Done</button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                    onClick={() => { setOpenMenuId(null); setArchiveConfirm(habit.id) }}
-                  >Pause</button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                    onClick={() => { setOpenMenuId(null); openEditHabit(habit) }}
-                  >Edit</button>
-                  <div className="my-1 border-t border-slate-200 dark:border-slate-700" />
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                    onClick={() => { setOpenMenuId(null); setResetConfirm(habit.id) }}
-                  >Reset Data</button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                    onClick={() => { setOpenMenuId(null); setDeleteConfirm(habit.id) }}
-                  >Delete</button>
+            <div className="flex shrink-0 items-center gap-1">
+              <div className="text-right">
+                <div className={cn('text-base font-semibold leading-none', streak > 0 ? 'text-slate-800 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500')}>
+                  {streak > 0 ? `${streak}` : '—'}
                 </div>
-              )}
+                <div className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  {isWeekly ? (streak === 1 ? 'week' : 'weeks') : (streak === 1 ? 'day' : 'days')}
+                </div>
+              </div>
+              {/* Kebab menu */}
+              <div className="relative" ref={menuRef}>
+                <button
+                  type="button"
+                  aria-label="Habit actions"
+                  aria-haspopup="menu"
+                  aria-expanded={isMenuOpen}
+                  onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : habit.id) }}
+                  className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <circle cx="3" cy="8" r="1.5" />
+                    <circle cx="8" cy="8" r="1.5" />
+                    <circle cx="13" cy="8" r="1.5" />
+                  </svg>
+                </button>
+                {isMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                      onClick={() => { setOpenMenuId(null); setFinishConfirm(habit.id) }}
+                    >Mark as Done</button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                      onClick={() => { setOpenMenuId(null); setArchiveConfirm(habit.id) }}
+                    >Pause</button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                      onClick={() => { setOpenMenuId(null); openEditHabit(habit) }}
+                    >Edit</button>
+                    <div className="my-1 border-t border-slate-200 dark:border-slate-700" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
+                      onClick={() => { setOpenMenuId(null); setResetConfirm(habit.id) }}
+                    >Reset Data</button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-1.5 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                      onClick={() => { setOpenMenuId(null); setDeleteConfirm(habit.id) }}
+                    >Delete</button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        <div className="mt-2 flex items-center justify-between">
-          <div className="flex gap-1">
-            {last7.map((d) => (
+
+          {/* Progress + consistency strip */}
+          <div className="mt-3 space-y-2">
+            <div className="flex items-baseline justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span className="min-w-0 truncate">
+                {isWeekly
+                  ? `${weekCount} of ${target.period === 'week' ? target.perWeek : 0} this week`
+                  : (isBad
+                      ? (streak > 0 ? 'Avoiding — keep it going' : 'No active streak')
+                      : `${todayCount} of ${target.period === 'day' ? target.perDay : 1} today`)}
+              </span>
+              <span className="shrink-0 tabular-nums">
+                {isWeekly
+                  ? `${Math.min(100, Math.round((weekCount / Math.max(1, target.period === 'week' ? target.perWeek : 1)) * 100))}%`
+                  : `${daysLogged} ${isBad ? (daysLogged === 1 ? 'lapse' : 'lapses') : (daysLogged === 1 ? 'day' : 'days')}`}
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700" role="progressbar" aria-valuemin={0} aria-valuemax={isWeekly ? (target.period === 'week' ? target.perWeek : 1) : (target.period === 'day' ? target.perDay : 1)} aria-valuenow={isWeekly ? weekCount : todayCount}>
               <div
-                key={d.date}
-                className={cn(
-                  'h-2.5 w-2.5 rounded-full',
-                  d.missedOnRest && 'border border-slate-300 dark:border-slate-600',
-                  !d.hasLog && !d.isForgiven && !d.missedOnRest && 'bg-slate-200 dark:bg-slate-700',
-                  d.isForgiven && 'opacity-50'
-                )}
-                style={d.hasLog ? { backgroundColor: habit.color } : d.isForgiven ? { backgroundColor: habit.color, opacity: 0.5 } : undefined}
-                title={`${d.date}${d.isForgiven ? ' (forgiven)' : ''}${d.missedOnRest ? ' (rest day)' : ''}${isBad && d.hasLog ? ' (lapse)' : ''}`}
+                className="h-full rounded-full transition-[width] duration-300"
+                style={{
+                  width: `${Math.min(100, Math.round(((isWeekly ? weekCount : todayCount) / Math.max(1, isWeekly ? (target.period === 'week' ? target.perWeek : 1) : (target.period === 'day' ? target.perDay : 1))) * 100))}%`,
+                  backgroundColor: habit.color,
+                }}
               />
-            ))}
+            </div>
+            <div className="flex items-center gap-1" aria-label="Last 14 days">
+              {last14.map((d) => (
+                <div
+                  key={d.date}
+                  className={cn(
+                    'h-2.5 flex-1 rounded-full',
+                    d.missedOnRest && 'border border-slate-300 dark:border-slate-600',
+                    !d.hasLog && !d.isForgiven && !d.missedOnRest && 'bg-slate-200 dark:bg-slate-700',
+                    d.isForgiven && 'opacity-50'
+                  )}
+                  style={d.hasLog ? { backgroundColor: habit.color } : d.isForgiven ? { backgroundColor: habit.color, opacity: 0.5 } : undefined}
+                  title={`${d.date}${d.isForgiven ? ' (forgiven)' : ''}${d.missedOnRest ? ' (rest day)' : ''}${isBad && d.hasLog ? ' (lapse)' : ''}`}
+                />
+              ))}
+            </div>
           </div>
-          <div className="flex items-center gap-1">
+
+          {/* Actions */}
+          <div className="mt-3 flex items-center gap-2">
             {isTickMode ? (
               <>
                 <button
@@ -658,7 +680,7 @@ export default function HabitsPage() {
                     ? (isTickedToday ? 'Lapsed today. Click to mark avoided.' : 'Avoided today. Click to mark lapsed.')
                     : (isTickedToday ? 'Done today. Click to unmark.' : 'Not done today. Click to mark done.')}
                   className={cn(
-                    'flex min-h-8 min-w-[76px] items-center justify-center rounded border-2 px-2 text-xs font-semibold transition-colors',
+                    'flex min-h-8 flex-1 items-center justify-center rounded border-2 px-2 text-xs font-semibold transition-colors',
                     isBad
                       ? isTickedToday
                         ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/30 dark:text-red-300'
@@ -675,25 +697,21 @@ export default function HabitsPage() {
                     ? (isTickedToday ? '✕ Lapsed' : '✓ Avoided')
                     : (isTickedToday ? '✓ Done' : 'Not yet')}
                 </button>
-                <span className="text-xs text-slate-400 dark:text-slate-500 select-none">
-                  {isBad ? 'Click to change' : (isTickedToday ? 'Done' : 'Not yet')}
-                </span>
-                <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
+                <Button variant="secondary" size="sm" className="shrink-0" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
                   Log Past
                 </Button>
               </>
             ) : (
               <>
-                <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}>
+                <Button variant="primary" size="sm" className="flex-1" onClick={(e) => { e.stopPropagation(); void quickLogToday(habit.id) }}>
                   {isBad ? 'Mark lapse' : 'Quick Log'}
                 </Button>
-                <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
+                <Button variant="secondary" size="sm" className="shrink-0" onClick={(e) => { e.stopPropagation(); setSelectedId(habit.id); openAddLog() }}>
                   {isBad ? 'Log lapse' : 'Log with note'}
                 </Button>
               </>
             )}
           </div>
-        </div>
 
         {/*
         // Archived per v0.21.0 CHANGELOG: "Habit archiving replaced with manual 'Mark as done' flow (user decides, not automatic at N days)"
@@ -777,12 +795,12 @@ export default function HabitsPage() {
 
       <Collapsible id="good-habits" title="Good Habits" count={goodHabits.length} defaultOpen={true} accent="#22c55e">
         {goodHabits.length === 0 ? <EmptyState title="No good habits" description="Track positive habits you want to build." /> : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{goodHabits.map((h) => <HabitCard key={h.id} habit={h} />)}</div>
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">{goodHabits.map((h) => <HabitCard key={h.id} habit={h} />)}</div>
         )}
       </Collapsible>
       <Collapsible id="bad-habits" title="Bad Habits" count={badHabits.length} defaultOpen={true} accent="#ef4444">
         {badHabits.length === 0 ? <EmptyState title="No bad habits" description="Track habits you want to avoid." /> : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{badHabits.map((h) => <HabitCard key={h.id} habit={h} />)}</div>
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">{badHabits.map((h) => <HabitCard key={h.id} habit={h} />)}</div>
         )}
       </Collapsible>
       {potentialHabits.length > 0 && (
@@ -790,7 +808,7 @@ export default function HabitsPage() {
           <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             On the wishlist — pick these up when you've got room.
           </p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {potentialHabits.map((h) => (
               <Card key={h.id} className="opacity-80">
                 <div className="flex items-center gap-3">
@@ -813,7 +831,7 @@ export default function HabitsPage() {
 
       {archivedHabits.length > 0 && (
         <Collapsible id="archived-habits" title={`Archived Habits`} count={archivedHabits.length} defaultOpen={false} accent="#64748b">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {archivedHabits.map((h) => (
               <Card key={h.id} className="opacity-75">
                 <div className="flex items-center justify-between">
@@ -831,7 +849,7 @@ export default function HabitsPage() {
           <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             Habits you no longer need to track, kept for reference.
           </p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {finishedHabits.map((h) => (
               <Card key={h.id} className="opacity-80">
                 <div className="flex items-center justify-between gap-2">

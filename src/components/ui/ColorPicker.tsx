@@ -77,6 +77,8 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
           type="color"
           value={value}
           onChange={handleCustom}
+          aria-label="Custom colour"
+          title="Custom colour"
           className="h-8 w-8 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-600"
         />
         <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{value}</span>

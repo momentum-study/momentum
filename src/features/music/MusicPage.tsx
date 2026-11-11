@@ -129,7 +129,7 @@ export default function MusicPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Music</h1>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Music</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Save YouTube playlists and play them on repeat while you study.
           </p>

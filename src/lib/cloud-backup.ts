@@ -48,14 +48,22 @@ const SYNC_TABLES: TableKey[] = [
   'musicPlaylists',
 ]
 
+/** Local calendar date key 'YYYY-MM-DD'.
+ * MUST be local, not `toISOString().slice(0,10)`: that is UTC, so for any
+ * timezone ahead of UTC the "today" key rolls over mid-afternoon, skipping a
+ * day's snapshot and shifting the retention cutoff (spec §10.80). */
+function localDateKey(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function todayKey(): string {
-  return new Date().toISOString().slice(0, 10) // 'YYYY-MM-DD'
+  return localDateKey()
 }
 
 function dateNDaysAgo(n: number): string {
   const d = new Date()
   d.setDate(d.getDate() - n)
-  return d.toISOString().slice(0, 10)
+  return localDateKey(d)
 }
 
 export interface BackupMeta {

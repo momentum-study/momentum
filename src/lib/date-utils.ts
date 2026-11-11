@@ -55,3 +55,25 @@ export function toLogicalDateString(
     return ''
   }
 }
+/**
+ * Sum `durationMinutes` for records whose logical local day falls inside the
+ * inclusive [startDateKey, endDateKey] window.
+ *
+ * Compares LOGICAL LOCAL dates (`toLogicalDateString`), never raw ISO strings.
+ * An ISO string begins with its UTC date, so `startAt >= "2026-11-05T00:00:00"`
+ * silently drops every session that occurred before ~11:00 local in UTC+11 —
+ * real study time vanishing from Dashboard week/last-week stats (spec §10.75).
+ */
+export function sumMinutesInDateRange<T extends { startAt: string; durationMinutes: number }>(
+  items: readonly T[],
+  startDateKey: string,
+  endDateKey: string,
+  dayStartHour: number | null | undefined,
+): number {
+  let total = 0
+  for (const item of items) {
+    const day = toLogicalDateString(item.startAt, dayStartHour)
+    if (day && day >= startDateKey && day <= endDateKey) total += item.durationMinutes
+  }
+  return total
+}

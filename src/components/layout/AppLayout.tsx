@@ -432,6 +432,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+      {/* Keyboard users must be able to jump past the nav (spec §7). */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[60] focus:rounded focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-700 focus:shadow-lg dark:focus:bg-slate-800 dark:focus:text-primary-300"
+      >
+        Skip to content
+      </a>
       <SyncBanner />
       <DevBanner />
       <div className="flex flex-1 overflow-hidden">
@@ -587,7 +594,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </button>
           )}
         </header>
-        <main className="app-main flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main id="main-content" tabIndex={-1} className="app-main flex-1 overflow-y-auto p-4 md:p-6 focus:outline-none">{children}</main>
       </div>
     </div>
       <UndoToast />

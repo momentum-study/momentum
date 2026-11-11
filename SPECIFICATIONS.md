@@ -708,10 +708,31 @@ Dedupe: all notification firings are tracked in localStorage by date key. The st
 
 ---
 
-### 10.74 Weekly habit targets — rolling window, never calendar-week-aligned (§6.5)
-- **Rule (implemented)**: a weekly habit target counts unique logged days inside a **rolling 7-day window ending today** (`rollingWeekCount`). A habit is due today until the window already contains `targetPerWeek` logged days.
-- **Stall trap**: "align it to the calendar week using `weekStartsOn`, like Dashboard's calendar week mode" → no. Calendar alignment creates the Monday-spam problem: a 3×/week habit ticked off on Monday counts the week "done" by Monday night and punishes a Sunday catch-up; a rolling window keeps a sliding due/until-done state. Also never require "exactly" the target — over-completing inside the window must not make the following days appear un-done.
-- Related: §10.45's "today not yet logged never breaks the chain" rule MUST carry over to weekly habits — "not yet complete this week" is not a broken week until the window fully ends without meeting the target.
+### 10.75 Dashboard week totals — compare logical local dates, not ISO strings
+- **Symptom**: in a timezone ahead of UTC, the Dashboard "Last 7 days" / calendar-week total omitted sessions from the first several local hours of a day. A 09:00 local session serialises as the previous UTC date (for example `2026-11-04T22:00:00Z` in UTC+11), so `session.startAt >= '2026-11-05T00:00:00'` silently dropped it.
+- **Fix**: `sumMinutesInDateRange()` in `date-utils.ts` converts every `startAt` through `toLogicalDateString()` (including the configured `dayStartHour`) before inclusive date-key comparison. Dashboard current-week and last-week totals use it. Regression tests cover UTC-offset rollover, inclusive endpoints, logical day boundaries, invalid timestamps, and empty ranges.
+- **Stall trap**: "ISO strings sort chronologically, so string comparison is safe" → only when both operands represent the same timezone convention. Stored timestamps are UTC; dashboard boundaries are local/logical dates. Compare normalized date keys.
+
+### 10.76 Invalid interactive/table DOM nesting
+- **Symptom**: Subjects emitted edit/delete `<button>` controls nested inside the card's navigation `<button>`; Marks wrapped `<tr>` rows in `ContextMenu`'s `<div>` directly under `<tbody>`. React logged `validateDOMNesting` warnings, and keyboard/assistive-technology semantics were invalid.
+- **Fix**: subject card now has sibling navigation and action controls; Marks rows are plain `<tr>` elements with their existing KebabMenu actions. Route sweep now produces zero nesting warnings.
+- **Stall trap**: "the browser renders it, so leave it" → invalid nesting causes inconsistent activation and accessibility-tree behaviour even when pixels look correct.
+
+### 10.77 Sync advisory shown to signed-out users
+- **Symptom**: every local/offline user saw a persistent "disable ad-blockers" banner even though sync is disabled until sign-in. It added noise to every page and falsely implied a current failure.
+- **Fix**: SyncBanner only shows the standing advisory once a user is signed in; actual sync failure events remain visible regardless of auth state.
+
+### 10.78 Modal body could scroll its close button away
+- **Symptom**: tall forms (notably Add Habit) made the native dialog itself scroll, moving the title and Close button offscreen on short viewports. The form was technically scrollable but not obviously dismissible.
+- **Fix**: Modal is a viewport-capped flex-like shell with an independently scrolling body; title/Close stay visible while the submit action remains reachable. Verified at 600px viewport height.
+
+### 10.79 HoverCard escaped narrow dashboard widgets
+- **Symptom**: the HoverCard trigger's `inline-block` wrapper could exceed its flex parent; long checklist/session labels escaped the widget (and right-edge popovers rendered offscreen).
+- **Fix**: wrapper is `min-w-0 max-w-full`; popover flips left when right space is insufficient and clamps to the viewport.
+
+### 10.80 Cloud backup keys must use local calendar dates
+- **Symptom**: cloud backup `todayKey()` and retention cutoff used `toISOString().slice(0, 10)` (UTC), so users ahead of UTC could skip a daily backup or prune against the wrong local day.
+- **Fix**: `cloud-backup.ts` uses a local `YYYY-MM-DD` formatter for backup document keys and retention dates.
 
 ## 11. Regression Checklist — MUST pass before deployment
 
@@ -981,3 +1002,5 @@ Every instance MUST document significant logic pitfalls and durable user decisio
 **SPEC_VERSION: 68** — 2026-11-10 Flexible habits IMPLEMENTED: added `Habit.targetPeriod ('day'|'week')`, `targetPerWeek`, `scheduledDays` (Dexie v19 migration normalizes existing rows); new shared library `src/lib/habit-goals.ts` owning `habitTarget` / `habitScheduledOn` / `habitIsCompleteToday` (daily count, tick, weekly rolling-window) and `habitStreak` (forward-simulated: freeze rule for daily good habits, contiguous accept-except-current-week week-streaks, lapse-by-lapse bad habits) + `rollingWeekCount` + `habitTargetLabel`; HabitsPage rebuilt on it (target label chips, rest-day cards, weekly `n / m` progress, scheduled-day picker in the add/edit modal, rest-day-aware card dots and heatmap cells, per-shape streak copy); notification-scheduler habit reminders now gate on `habitScheduledOn` + `habitIsCompleteToday`; 23 unit tests in `habit-goals.test.ts` (299 total pass, tsc + build clean). §6.5/§4.1/§10.74/§15 updated to match code.
 
 **SPEC_VERSION: 69** — 2026-11-10 Habit card layout rebuilt after the flexible-habits release came out squished at laptop widths: grid is now 2 columns from `md` (3 only at `2xl`, 1 on mobile) instead of 3-across at `lg`; each card is a three-block stack (header with chips + top-right streak count → progress block with `N of M` line, colour-matched progress bar and a fluid 14-day strip → actions with a flex-1 primary button); card padding `p-5`. Verified at 1280px (496×187 cards, zero overflow), 390px mobile (single 358px column, no horizontal scroll), dark mode, and Quick Log updating `0 of 3 → 1 of 3` / 0% → 33% with the bar filling. 299 tests, tsc, build clean.
+
+**SPEC_VERSION: 70** — 2026-11-10 General UI/UX and correctness audit: fixed Dashboard week/last-week totals dropping local-morning sessions in UTC+ timezones by adding `sumMinutesInDateRange()` with logical-date normalization; fixed invalid nested buttons on Subjects and invalid `<div>` wrappers inside Marks `<tbody>`; stopped the signed-out SyncBanner ad-block advisory; made Modal bodies independently scroll while keeping title/Close visible; clamped/flipped HoverCards at narrow/right-edge layouts; added skip-to-content landmark and labels for toggles, colour picker, and marks filter; fixed cloud-backup keys/retention dates to use local calendar dates. Added 5 regression tests; 304 tests pass.

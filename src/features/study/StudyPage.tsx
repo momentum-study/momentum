@@ -136,7 +136,7 @@ export default function StudyPage() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Study Areas</h1>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Study Areas</h2>
           <p className="text-slate-600 dark:text-slate-400">Conceptual topics to master with spaced repetition</p>
         </div>
         <div className="flex gap-3">

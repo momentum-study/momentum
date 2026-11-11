@@ -8,7 +8,6 @@ import { filterActive } from '../../lib/filterActive'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
-import { ContextMenu } from '../../components/ui/ContextMenu'
 import { KebabMenu } from '../../components/ui/KebabMenu'
 import { Modal } from '../../components/ui/Modal'
 import { PageSpinner } from '../../components/ui/Spinner'
@@ -414,7 +413,7 @@ export default function MarksPage() {
               + New year
             </button>
           </div>
-          <input className="input text-sm" placeholder="Filter by name..." value={filterName} onChange={(e) => setFilterName(e.target.value)} />
+          <input className="input text-sm" placeholder="Filter by name..." aria-label="Filter marks by name" value={filterName} onChange={(e) => setFilterName(e.target.value)} />
           {hiddenNonAcademicCount > 0 && (
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {hiddenNonAcademicCount} mark{hiddenNonAcademicCount !== 1 ? 's' : ''} on non-academic focus areas hidden.
@@ -506,12 +505,8 @@ export default function MarksPage() {
                 const avgGrade = avgPct != null ? pctToGrade(avgPct) : null
                 const vsAvg = hasAvg ? pct - (avgPct as number) : null
                 return (
-                  <ContextMenu key={m.id} items={[
-                    { label: 'Edit', action: () => openEdit(m) },
-                    { label: 'Delete', action: () => setDeleting(m.id), danger: true },
-                  ]}>
-                    <tr className="border-b border-slate-100 dark:border-slate-700/50">
-                      <td className="py-2.5 pr-2">
+                  <tr key={m.id} className="border-b border-slate-100 dark:border-slate-700/50">
+                    <td className="py-2.5 pr-2">
                         <Checkbox
                           checked={selectedMarkIds.has(m.id)}
                           onChange={() => setSelectedMarkIds((prev) => {
@@ -553,7 +548,6 @@ export default function MarksPage() {
                         />
                       </td>
                     </tr>
-                  </ContextMenu>
                 )
               })}
             </tbody>

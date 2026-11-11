@@ -20,7 +20,7 @@ import { db } from '../../db/app-db'
 import type { Settings } from '../../lib/settings-store'
 
 
-function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
     <button
       onClick={() => onChange(!value)}
@@ -29,6 +29,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
       }`}
       role="switch"
       aria-checked={value}
+      aria-label={label}
     >
       <span
         className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
@@ -576,16 +577,16 @@ export default function SettingsPage() {
               <CardTitle>Appearance</CardTitle>
             </CardHeader>
             <SettingsField label="Dark Mode">
-              <Toggle value={settings.darkMode} onChange={(v) => update({ darkMode: v })} />
+              <Toggle label="Dark Mode" value={settings.darkMode} onChange={(v) => update({ darkMode: v })} />
             </SettingsField>
             <SettingsField label="Compact Mode">
-              <Toggle value={compactEnabled} onChange={() => toggleCompact()} />
+              <Toggle label="Compact Mode" value={compactEnabled} onChange={() => toggleCompact()} />
             </SettingsField>
             <SettingsField label="High Contrast">
-              <Toggle value={hcEnabled} onChange={() => toggleHC()} />
+              <Toggle label="High Contrast" value={hcEnabled} onChange={() => toggleHC()} />
             </SettingsField>
             <SettingsField label="Dev Build (Preview Mode)">
-              <Toggle value={!!settings.devMode} onChange={(v) => update({ devMode: v })} />
+              <Toggle label="Dev Build (Preview Mode)" value={!!settings.devMode} onChange={(v) => update({ devMode: v })} />
             </SettingsField>
           </Card>
 
@@ -647,7 +648,7 @@ export default function SettingsPage() {
               <CardTitle>Notifications</CardTitle>
             </CardHeader>
             <SettingsField label="Play sound on timer end">
-              <Toggle value={settings.soundEnabled} onChange={(v) => update({ soundEnabled: v })} />
+              <Toggle label="Play sound on timer end" value={settings.soundEnabled} onChange={(v) => update({ soundEnabled: v })} />
             </SettingsField>
             <SettingsField label="Desktop notifications">
               <Button variant="secondary" size="sm" onClick={async () => {
@@ -694,7 +695,7 @@ export default function SettingsPage() {
             <CardTitle>Auto-Log Routines</CardTitle>
           </CardHeader>
           <SettingsField label="Auto-log routine sessions">
-            <Toggle value={settings.autoLogEnabled} onChange={(v) => update({ autoLogEnabled: v })} />
+            <Toggle label="Auto-log routine sessions" value={settings.autoLogEnabled} onChange={(v) => update({ autoLogEnabled: v })} />
           </SettingsField>
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
             When enabled, routines with "Auto-log" turned on will create placeholder sessions on their scheduled days. You confirm or skip each one from the Dashboard.
@@ -707,7 +708,7 @@ export default function SettingsPage() {
           </CardHeader>
           <div className="divide-y divide-slate-100 dark:divide-slate-700">
             <SettingsField label="Show Pomodoro mode">
-              <Toggle value={settings.pomodoroEnabled} onChange={(v) => update({ pomodoroEnabled: v })} />
+              <Toggle label="Show Pomodoro mode" value={settings.pomodoroEnabled} onChange={(v) => update({ pomodoroEnabled: v })} />
             </SettingsField>
             <SettingsField label="Focus minutes">
               <NumberInput value={settings.pomodoroFocusMinutes} onChange={(v) => update({ pomodoroFocusMinutes: v })} min={1} />

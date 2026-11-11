@@ -55,7 +55,10 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
         }
       }}
       className={cn(
+        // Cap the dialog to the viewport and let ONLY the body scroll, so the
+        // title and close button never scroll out of reach (spec §10.78).
         'w-full max-w-lg rounded-lg border border-slate-200 bg-white p-0 shadow-lg backdrop:bg-black/40',
+        'max-h-[calc(100dvh-2rem)] overflow-hidden',
         'dark:border-slate-700 dark:bg-slate-800',
         className
       )}
@@ -77,7 +80,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       }}
     >
       {title && (
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
           <h2 id="modal-title" className="text-base font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
           <button
             type="button"
@@ -91,7 +94,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
           </button>
         </div>
       )}
-      <div className="p-4">{children}</div>
+      <div className={cn('overflow-y-auto p-4', title ? 'max-h-[calc(100dvh-7rem)]' : 'max-h-[calc(100dvh-2rem)]')}>{children}</div>
     </dialog>
   )
 }

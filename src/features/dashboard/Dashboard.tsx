@@ -25,6 +25,7 @@ import { useStreakPreviewDates } from '../../lib/streak-preview'
 import { db } from '../../db/app-db'
 import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakDayForSession, revertStreakDayForSession, recomputeStreakDaysForDates } from '../../lib/routine-tracker'
 import { sessionIdFor } from '../../lib/timer-persistence'
+import { sumMinutesInDateRange } from '../../lib/date-utils'
 import { getDueCount } from '../../lib/fsrs-scheduler'
 import { useSessionSync } from '../../lib/use-session-sync'
 import type { Session, DayOfWeek, Activity, ActivityLog, Project } from '../../domain/types'
@@ -1146,11 +1147,10 @@ export default function Dashboard() {
                     const start = settings.dashboardWeekMode === 'calendar'
                       ? startOfWeek(now, { weekStartsOn: settings.weekStartsOn })
                       : subDays(now, 6)
+                    // Local logical dates, never raw ISO strings (§10.75).
                     const startStr = format(start, 'yyyy-MM-dd')
-                    const weekMins = academicSessions
-                      .filter((s) => s.startAt >= startStr + 'T00:00:00')
-                      .reduce((sum, s) => sum + s.durationMinutes, 0)
-                    return formatMinutes(weekMins)
+                    const endStr = format(now, 'yyyy-MM-dd')
+                    return formatMinutes(sumMinutesInDateRange(academicSessions, startStr, endStr, settings.dayStartHour))
                   })()}
                 </div>
                 <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
@@ -1163,9 +1163,12 @@ export default function Dashboard() {
                     if (settings.dashboardWeekMode === 'calendar') {
                       const lastWeekStart = subDays(start, 7)
                       const lastWeekEnd = subDays(start, 1)
-                      const lastWeekMins = academicSessions
-                        .filter((s) => s.startAt >= format(lastWeekStart, 'yyyy-MM-dd') + 'T00:00:00' && s.startAt <= format(lastWeekEnd, 'yyyy-MM-dd') + 'T23:59:59')
-                        .reduce((sum, s) => sum + s.durationMinutes, 0)
+                      const lastWeekMins = sumMinutesInDateRange(
+                        academicSessions,
+                        format(lastWeekStart, 'yyyy-MM-dd'),
+                        format(lastWeekEnd, 'yyyy-MM-dd'),
+                        settings.dayStartHour,
+                      )
                       return (
                         <>
                           {label} · <span className="opacity-80">Last week: {formatMinutes(lastWeekMins)}</span>

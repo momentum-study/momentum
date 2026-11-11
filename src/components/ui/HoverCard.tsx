@@ -19,7 +19,17 @@ export function HoverCard({ content, children, delay = 300, className }: HoverCa
     timerRef.current = window.setTimeout(() => {
       const rect = triggerRef.current?.getBoundingClientRect()
       if (rect) {
-        setPosition({ x: rect.right + 8, y: rect.top })
+        // The card is min-w-[200px]/max-w-[300px]; flipping to the left of the
+        // trigger and clamping to the viewport keeps it on screen when the
+        // trigger sits near the right edge (spec §10.79).
+        const CARD_W = 300
+        const GAP = 8
+        const spaceRight = window.innerWidth - rect.right - GAP
+        const x = spaceRight >= 200
+          ? rect.right + GAP
+          : Math.max(GAP, rect.left - GAP - CARD_W)
+        const y = Math.min(Math.max(GAP, rect.top), Math.max(GAP, window.innerHeight - 180))
+        setPosition({ x, y })
       }
       setVisible(true)
     }, delay)
@@ -30,8 +40,10 @@ export function HoverCard({ content, children, delay = 300, className }: HoverCa
     setVisible(false)
   }
 
+  // `min-w-0` lets the wrapper shrink inside a flex row so the child's
+  // `truncate` actually applies instead of overflowing the card (§10.79).
   return (
-    <div ref={triggerRef} className="relative inline-block" onMouseEnter={show} onMouseLeave={hide}>
+    <div ref={triggerRef} className="relative inline-block min-w-0 max-w-full" onMouseEnter={show} onMouseLeave={hide}>
       {children}
       {visible && (
         <div

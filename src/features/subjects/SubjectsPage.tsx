@@ -443,54 +443,59 @@ export default function SubjectsPage() {
                   { label: 'Delete', action: () => setDeleteSubject(subject), danger: true },
                 ]}>
                   <Card className="!p-2.5">
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/subjects/${subject.id}`)}
-                      className="flex w-full items-center gap-2.5 text-left"
-                    >
-                      <div
-                        className="h-3 w-3 shrink-0 rounded-full"
-                        title={colorName(subject.color || DEFAULT_COLOR)}
-                        style={{ backgroundColor: subject.color || DEFAULT_COLOR }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="truncate font-medium text-slate-800 dark:text-slate-100">
-                            {subject.name}
-                          </span>
-                          <span className="shrink-0 text-xs text-slate-400">
-                            {data.categories.find((c) => c.id === subject.categoryId)?.name ?? 'Uncategorized'}
-                          </span>
-                        </div>
-                        {subject.routine && subject.routine.length > 0 && (
-                          <div className="text-[11px] text-slate-400">
-                            {subject.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}
-                          </div>
-                        )}
-                      </div>
-                      {stats && (
-                        <div className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                            {formatMinutes(stats.today)}
-                          </span>
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                            {formatMinutes(stats.week)}
-                          </span>
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                            {formatMinutes(stats.total)}
-                          </span>
-                          {stats.childIds.length > 0 && (
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
-                              {stats.childIds.length} sub
+                    <div className="flex w-full items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/subjects/${subject.id}`)}
+                        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                      >
+                        <div
+                          className="h-3 w-3 shrink-0 rounded-full"
+                          title={colorName(subject.color || DEFAULT_COLOR)}
+                          style={{ backgroundColor: subject.color || DEFAULT_COLOR }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-2">
+                            <span className="truncate font-medium text-slate-800 dark:text-slate-100">
+                              {subject.name}
                             </span>
+                            <span className="shrink-0 text-xs text-slate-400">
+                              {data.categories.find((c) => c.id === subject.categoryId)?.name ?? 'Uncategorized'}
+                            </span>
+                          </div>
+                          {subject.routine && subject.routine.length > 0 && (
+                            <div className="text-[11px] text-slate-400">
+                              {subject.routine.map((d) => DAYS_OF_WEEK[d]).join(', ')}
+                            </div>
                           )}
                         </div>
-                      )}
-                      <div className="flex shrink-0 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        {stats && (
+                          <div className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                              {formatMinutes(stats.today)}
+                            </span>
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                              {formatMinutes(stats.week)}
+                            </span>
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                              {formatMinutes(stats.total)}
+                            </span>
+                            {stats.childIds.length > 0 && (
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-700 dark:text-slate-300">
+                                {stats.childIds.length} sub
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </button>
+                      {/* Sibling, never nested inside the navigate button — a
+                          <button> inside a <button> is invalid HTML and breaks
+                          keyboard/AT semantics (spec §10.76). */}
+                      <div className="flex shrink-0 gap-0.5">
                         <Button variant="ghost" size="sm" onClick={() => handleOpenModal(subject)} aria-label={`Edit ${subject.name}`}>✎</Button>
                         <Button variant="ghost" size="sm" onClick={() => setDeleteSubject(subject)} aria-label={`Delete ${subject.name}`}>🗑</Button>
                       </div>
-                    </button>
+                    </div>
                   </Card>
                 </ContextMenu>
                 {children.length > 0 && (

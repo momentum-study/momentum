@@ -1,11 +1,22 @@
 import { useEffect, useState } from 'react'
 import { SYNC_FAILURE_EVENT } from '../../lib/sync-status'
+import { useAuth } from '../../app/auth-provider'
 
 const DISMISS_KEY = 'momentum-sync-banner-dismissed'
 
+/**
+ * Surfaces sync failures (quota, ad-blocker interference) reported by
+ * `data-sync.ts` via `syncStatus.notifyFailure`.
+ *
+ * The standing "disable your ad-blocker" advisory is only shown to signed-in
+ * users: sync does not run at all when signed out, so warning a first-time
+ * visitor about a Brave Shields ad-blocker they may not even have is a false
+ * alarm — and it sat above every page until dismissed (spec §10.77).
+ */
 export function SyncBanner() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [adBlockDismissed, setAdBlockDismissed] = useState(false)
+  const { user, isLoading } = useAuth()
 
   useEffect(() => {
     setAdBlockDismissed(localStorage.getItem(DISMISS_KEY) === '1')
@@ -17,9 +28,13 @@ export function SyncBanner() {
     return () => window.removeEventListener(SYNC_FAILURE_EVENT, onSyncFailure)
   }, [])
 
-  const showAdBlockWarning = !adBlockDismissed
+  // A real failure is always worth showing. The speculative ad-block advisory
+  // only makes sense once the user is signed in and sync is actually running.
+  const showAdBlockWarning = !adBlockDismissed && !!user
 
   if (!errorMessage && !showAdBlockWarning) return null
+  // Don't flash the advisory during the initial auth check.
+  if (!errorMessage && isLoading) return null
 
   const isError = !!errorMessage
 
@@ -31,7 +46,7 @@ export function SyncBanner() {
     }`}>
       <div className="mx-auto flex max-w-7xl items-start justify-between gap-3">
         <p>
-          {errorMessage || "To keep sync between devices working reliably, please disable ad-blockers (including Brave Shields) for this site."}
+          {errorMessage || 'Sync is paused. If you use an ad-blocker (including Brave Shields), allow this site so sync keeps working.'}
         </p>
         <button
           type="button"

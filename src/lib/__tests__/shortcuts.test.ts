@@ -188,11 +188,19 @@ describe('Subjects shortcut coverage', () => {
 })
 
 describe('Habits shortcut coverage', () => {
-  for (const id of ['habit-add', 'habit-toggle', 'habit-archive', 'habit-up', 'habit-down']) {
+  for (const id of ['habit-add', 'habit-toggle', 'habit-pause', 'habit-up', 'habit-down']) {
     it(`includes ${id}`, () => {
       expect(SHORTCUTS.find(s => s.id === id)).toBeDefined()
     })
   }
+  it('describes the A shortcut as Pause → Potential, never Archive', () => {
+    const pause = SHORTCUTS.find(s => s.id === 'habit-pause')
+    expect(pause?.keys).toBe('A')
+    // Pausing moves a habit to Potential Habits; archiving is a separate state
+    // (§6.5). A registry label saying "Archive" misdescribes the action.
+    expect(pause?.label.toLowerCase()).not.toContain('archive')
+    expect(pause?.description?.toLowerCase()).toContain('potential')
+  })
   it('includes habit position shortcuts 1-7', () => {
     for (let i = 1; i <= 7; i++) {
       expect(SHORTCUTS.find(s => s.id === `habit-${i}`)).toBeDefined()
@@ -258,7 +266,7 @@ describe('AppLayout shortcut dispatch (event simulation)', () => {
       'momentum:subjects-open',
       'momentum:habits-add',
       'momentum:habits-toggle-today',
-      'momentum:habits-archive',
+      'momentum:habits-pause',
       'momentum:habits-prev',
       'momentum:habits-next',
       'momentum:habits-select',
@@ -291,7 +299,7 @@ describe('AppLayout shortcut dispatch (event simulation)', () => {
       'momentum:dashboard-calendar-today', 'momentum:subjects-add',
       'momentum:subjects-edit', 'momentum:subjects-delete',
       'momentum:subjects-prev', 'momentum:subjects-next', 'momentum:subjects-open',
-      'momentum:habits-add', 'momentum:habits-toggle-today', 'momentum:habits-archive',
+      'momentum:habits-add', 'momentum:habits-toggle-today', 'momentum:habits-pause',
       'momentum:habits-prev', 'momentum:habits-next', 'momentum:habits-select',
       'momentum:marks-add', 'momentum:marks-delete', 'momentum:marks-prev',
       'momentum:marks-next', 'momentum:marks-edit', 'momentum:calendar-add',
@@ -353,13 +361,13 @@ describe('AppLayout shortcut dispatch (event simulation)', () => {
   it('habits events fire', () => {
     window.dispatchEvent(new CustomEvent('momentum:habits-add'))
     window.dispatchEvent(new CustomEvent('momentum:habits-toggle-today'))
-    window.dispatchEvent(new CustomEvent('momentum:habits-archive'))
+    window.dispatchEvent(new CustomEvent('momentum:habits-pause'))
     window.dispatchEvent(new CustomEvent('momentum:habits-prev'))
     window.dispatchEvent(new CustomEvent('momentum:habits-next'))
     window.dispatchEvent(new CustomEvent('momentum:habits-select', { detail: 2 }))
     expect(dispatched.find(d => d.name === 'momentum:habits-add')).toBeDefined()
     expect(dispatched.find(d => d.name === 'momentum:habits-toggle-today')).toBeDefined()
-    expect(dispatched.find(d => d.name === 'momentum:habits-archive')).toBeDefined()
+    expect(dispatched.find(d => d.name === 'momentum:habits-pause')).toBeDefined()
     expect(dispatched.find(d => d.name === 'momentum:habits-prev')).toBeDefined()
     expect(dispatched.find(d => d.name === 'momentum:habits-next')).toBeDefined()
     const selectEvt = dispatched.find(d => d.name === 'momentum:habits-select')

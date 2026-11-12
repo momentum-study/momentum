@@ -234,6 +234,17 @@ export default function ReportsPage() {
       .sort((a, b) => b.weightPct - a.weightPct)
   }, [data.marks, data.subjects, data.categories, scope])
 
+  // ── Habits Summary ──
+  // Paused habits (`status: 'potential'`) are parked, not tracked, so they are
+  // excluded — same rule as AI Review and the habit reminder scheduler (§6.5).
+  const habitsSummary = useMemo(() => {
+    const recentCutoff = Date.now() - 7 * 86_400_000
+    return data.habits.filter((h) =>
+      !h.archivedAt && !h.finishedAt && !h.deletedAt && h.status !== 'potential' &&
+      (data.habitLogs.some((l) => l.habitId === h.id) || new Date(h.createdAt).getTime() > recentCutoff)
+    )
+  }, [data.habits, data.habitLogs])
+
   // ── Study Distribution by Day of Week ──
   const dayDistribution = useMemo(() => {
     const acc = new Array(7).fill(0)
@@ -624,7 +635,7 @@ export default function ReportsPage() {
             <CardTitle>Habits Summary</CardTitle>
           </CardHeader>
           <div className="space-y-3">
-            {data.habits.filter(h => !h.archivedAt && (data.habitLogs.some(l => l.habitId === h.id) || (Date.now() - new Date(h.createdAt).getTime()) < 7 * 86400000)).map(habit => {
+            {habitsSummary.map(habit => {
               const logs = data.habitLogs.filter(l => l.habitId === habit.id)
               const uniqueDays = new Set(logs.map(l => l.date)).size
               const recentLogs = logs.filter(l => {

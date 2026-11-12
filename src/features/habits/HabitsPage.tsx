@@ -76,7 +76,7 @@ export default function HabitsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
-  const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null)
+  const [pauseConfirm, setPauseConfirm] = useState<string | null>(null)
   const [finishConfirm, setFinishConfirm] = useState<string | null>(null)
   const [resetConfirm, setResetConfirm] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
@@ -380,7 +380,7 @@ export default function HabitsPage() {
       // means "I may come back to this".
       await db.habits.update(id, { status: 'potential', archivedAt: null, updatedAt: isoNow() })
       if (selectedId === id) setSelectedId(null)
-      setArchiveConfirm(null)
+      setPauseConfirm(null)
       mutate(prev => ({ ...prev, habits: prev.habits.map(h => h.id === id ? { ...h, status: 'potential', archivedAt: null, updatedAt: isoNow() } : h) }))
     } catch (e) { console.error('Failed to pause habit', e) }
   }
@@ -516,7 +516,7 @@ export default function HabitsPage() {
       <ContextMenu
         items={[
           { label: 'Mark as Done', action: () => setFinishConfirm(habit.id) },
-          { label: 'Pause', action: () => setArchiveConfirm(habit.id) },
+          { label: 'Pause', action: () => setPauseConfirm(habit.id) },
           { label: 'Edit', action: () => openEditHabit(habit) },
           { label: 'Reset Data', action: () => setResetConfirm(habit.id) },
           { label: 'Delete', action: () => setDeleteConfirm(habit.id), danger: true },
@@ -599,7 +599,7 @@ export default function HabitsPage() {
                       type="button"
                       role="menuitem"
                       className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700"
-                      onClick={() => { setOpenMenuId(null); setArchiveConfirm(habit.id) }}
+                      onClick={() => { setOpenMenuId(null); setPauseConfirm(habit.id) }}
                     >Pause</button>
                     <button
                       type="button"
@@ -747,14 +747,14 @@ export default function HabitsPage() {
     return () => window.removeEventListener('momentum:habits-toggle-today', onToggleToday)
   }, [selectedIndex, currentHabits])
 
-  // A — Archive selected
+  // A — Pause selected (moves it to Potential Habits, not Archived)
   useEffect(() => {
-    function onArchive() {
+    function onPause() {
       const habit = currentHabits[selectedIndex]
       if (habit) pauseHabitFn(habit.id)
     }
-    window.addEventListener('momentum:habits-archive', onArchive)
-    return () => window.removeEventListener('momentum:habits-archive', onArchive)
+    window.addEventListener('momentum:habits-pause', onPause)
+    return () => window.removeEventListener('momentum:habits-pause', onPause)
   }, [selectedIndex, currentHabits])
 
   // ↑ / ↓ — Navigate list
@@ -1141,14 +1141,14 @@ export default function HabitsPage() {
           </div>
         </div>
       </Modal>
-      <Modal open={archiveConfirm !== null} onClose={() => setArchiveConfirm(null)} title="Pause Habit?">
+      <Modal open={pauseConfirm !== null} onClose={() => setPauseConfirm(null)} title="Pause Habit?">
         <div className="space-y-3">
           <p className="text-sm text-slate-600 dark:text-slate-400">
             Pause this habit? It will move to Potential Habits, keep all data, and stay available to resume later.
           </p>
           <div className="flex gap-2">
-            <Button variant="secondary" className="flex-1" onClick={() => setArchiveConfirm(null)}>Cancel</Button>
-            <Button variant="primary" className="flex-1" onClick={() => archiveConfirm && pauseHabitFn(archiveConfirm)}>Move to Potential</Button>
+            <Button variant="secondary" className="flex-1" onClick={() => setPauseConfirm(null)}>Cancel</Button>
+            <Button variant="primary" className="flex-1" onClick={() => pauseConfirm && pauseHabitFn(pauseConfirm)}>Move to Potential</Button>
           </div>
         </div>
       </Modal>

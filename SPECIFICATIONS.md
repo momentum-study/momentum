@@ -171,8 +171,9 @@ Use these; do not hand-roll `!s.deletedAt` everywhere (though inline is acceptab
 
 ### 4.5 Routine + streak tracking (`src/lib/routine-tracker.ts`)
 
-- `updateRoutineLogsForSession(session)` — auto-matches routines for the session's day+subject+project. **Only tags `routineId` when `session.source === 'autoRoutine'`** (H1). Explicit `session.routineId` is always logged toward.
-- `revertRoutineLogsForSession(session)` — subtract on delete.
+- `routinesForSession(session, allRoutines, sessionDow)` — **the single** decision about which routines a session's minutes belong to, used by BOTH update and revert so the two can never diverge (§10.81): explicit `session.routineId` → exactly that routine (including `source: 'activity'`, which schedule mark-done and catch-up set deliberately); `source: 'autoRoutine'` → `autoMatchedRoutines()` (day + subject-or-any + project-or-any); anything else (manual, timer without a pick, quickLog, activity without a pick) → nothing.
+- `updateRoutineLogsForSession(session)` — credits the routines from `routinesForSession`, creating the log if absent. **Only tags `routineId` when `session.source === 'autoRoutine'`** (H1).
+- `revertRoutineLogsForSession(session)` — subtracts from the same `routinesForSession` set on delete/edit. MUST stay a mirror of the credit path (§10.81); contract pinned by `src/lib/__tests__/routine-tracker.test.ts`.
 - `updateStreakDayForSession(session)` / `revertStreakDayForSession(session)` — recompute the StreakDay for the session's date from academic minutes vs `dailyTargetMinutes`.
 - `recomputeStreakDaysForDates(dateKeys)` — bulk recompute after cascade soft-deletes.
 
@@ -272,6 +273,8 @@ Streaks must simulate forward, like the study streak (`use-streak.ts`) — never
 #### Lifecycle & limit
 
 States: **active**, **potential** (parked on the wishlist via "Pause"), **finished** (`finishedAt` — graduated, shown in a "Finished" section, excluded from the limit), **archived** (`archivedAt`, historically ended). Promote/Discard/Pause/Resume flows unchanged from the previous behaviour.
+
+**"Pause" writes `status: 'potential'` and clears `archivedAt` — never `archivedAt` alone.** `HabitsPage.pauseHabitFn` is the only writer; every entry point (kebab menu, context menu, the `A` keyboard shortcut via `momentum:habits-pause`) routes through it, so a paused habit lands in **Potential Habits** with Promote/Edit/Delete and keeps all its logs. Potential habits are excluded from the active grid, `maxActiveHabits` counting, reminders (`notification-scheduler`), the AI Review prompt, and the Reports Habits Summary — a parked habit is not a tracked habit. Archived (`archivedAt`) is a separate, historical state with its own Restore action, and no user flow sets it any more.
 
 - **`maxActiveHabits`** (setting, default 3) still guides the number of **active** habits. When adding a new active habit beyond the limit, the confirm copy now names the oldest active habit and suggests pausing/finishing it ("You have 3 active habits — Consider pausing X"). Weekly habits count toward the limit just like daily habits — the limit is about focus, not difficulty.
 
@@ -734,6 +737,12 @@ Dedupe: all notification firings are tracked in localStorage by date key. The st
 - **Symptom**: cloud backup `todayKey()` and retention cutoff used `toISOString().slice(0, 10)` (UTC), so users ahead of UTC could skip a daily backup or prune against the wrong local day.
 - **Fix**: `cloud-backup.ts` uses a local `YYYY-MM-DD` formatter for backup document keys and retention dates.
 
+### 10.81 Routine revert drifted from routine credit — FIXED
+- **Symptom**: deleting or editing a plain session (timer/manual/quickLog with no routine picked) silently **un-completed** a routine the user had ticked off: the completed routine log dropped by the session's minutes and flipped `completed` back to false. Undo did not restore it.
+- **Root cause**: `updateRoutineLogsForSession` (credit) and `revertRoutineLogsForSession` (subtract) each carried their own copy of the "which routines does this session belong to" predicate. Only the credit side was narrowed to `source === 'autoRoutine'` when §10.63 was fixed; the revert side kept the old auto-match fallback, so sessions that added nothing subtracted everything.
+- **Fix**: one `routinesForSession()` decision in `routine-tracker.ts` is now shared by both directions (and the auto-match body is a second helper, `autoMatchedRoutines()`, used by both the tagging path and the shared decision). `src/lib/__tests__/routine-tracker.test.ts` pins the contract: an update → revert round trip MUST restore the prior `actualMinutes`/`completed` for every source, and revert MUST NOT touch a routine the session never picked.
+- **Stall trap**: "the revert path is obviously symmetric, I only changed one side" → it was not symmetric; a guard added to the credit path does nothing for the subtract path. Any change to one direction MUST be expressed in `routinesForSession` so both move together. Also do NOT "fix" a corrupted log by re-adding minutes on edit — the log is derived, and a drift bug shows up as *missing* minutes after a delete, not an inflated total.
+
 ## 11. Regression Checklist — MUST pass before deployment
 
 1. **Timer background persistence** — start timer, switch tabs/windows, wait ≥10s, return. Elapsed MUST reflect real wall-clock time, not paused.
@@ -1004,3 +1013,8 @@ Every instance MUST document significant logic pitfalls and durable user decisio
 **SPEC_VERSION: 69** — 2026-11-10 Habit card layout rebuilt after the flexible-habits release came out squished at laptop widths: grid is now 2 columns from `md` (3 only at `2xl`, 1 on mobile) instead of 3-across at `lg`; each card is a three-block stack (header with chips + top-right streak count → progress block with `N of M` line, colour-matched progress bar and a fluid 14-day strip → actions with a flex-1 primary button); card padding `p-5`. Verified at 1280px (496×187 cards, zero overflow), 390px mobile (single 358px column, no horizontal scroll), dark mode, and Quick Log updating `0 of 3 → 1 of 3` / 0% → 33% with the bar filling. 299 tests, tsc, build clean.
 
 **SPEC_VERSION: 70** — 2026-11-10 General UI/UX and correctness audit: fixed Dashboard week/last-week totals dropping local-morning sessions in UTC+ timezones by adding `sumMinutesInDateRange()` with logical-date normalization; fixed invalid nested buttons on Subjects and invalid `<div>` wrappers inside Marks `<tbody>`; stopped the signed-out SyncBanner ad-block advisory; made Modal bodies independently scroll while keeping title/Close visible; clamped/flipped HoverCards at narrow/right-edge layouts; added skip-to-content landmark and labels for toggles, colour picker, and marks filter; fixed cloud-backup keys/retention dates to use local calendar dates. Added 5 regression tests; 304 tests pass.
+
+**SPEC_VERSION: 71** — 2026-11-12 Session-delete routine drift + habit-pause copy (app v0.26.14):
+- **Routine log revert bug fixed** (§10.81): `revertRoutineLogsForSession` carried its own copy of the routine-matching predicate that had never received the §10.63 narrowing, so deleting or editing a timer/manual/quickLog session with no routine picked subtracted minutes from — and un-completed — a routine the user had ticked off. Both directions now derive from one `routinesForSession()` decision (`autoMatchedRoutines()` holds the shared auto-match body). New `src/lib/__tests__/routine-tracker.test.ts` (19 tests, fake-indexeddb) pins the contract: revert never touches a routine the session did not pick, and an update → revert round trip restores the prior `actualMinutes`/`completed` for every source. Six of those tests fail against the pre-fix revert.
+- **Habit pause labels aligned** (§6.5): the `A` shortcut was still registered as `habit-archive` / "Archive Habit" while it performed a pause. Renamed to `habit-pause` / "Pause Habit" (dispatching `momentum:habits-pause`), and the page's `archiveConfirm` state became `pauseConfirm`. Pausing writes `status: 'potential'` and clears `archivedAt`.
+- **Reports Habits Summary** now excludes `status === 'potential'` and finished habits, matching AI Review and the reminder scheduler — a parked habit is no longer reported as tracked.

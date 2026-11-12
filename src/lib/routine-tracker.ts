@@ -3,7 +3,7 @@
 import { v4 as uuid } from 'uuid'
 import { matchesAnySubject } from './subject-mode'
 import { db } from '../db/app-db'
-import type { Session, RoutineLog, StreakDay, DayOfWeek } from '../domain/types'
+import type { Session, Routine, RoutineLog, StreakDay, DayOfWeek } from '../domain/types'
 import { getSessionScope, isoNow, sessionLocalDate } from './utils'
 import { loadSettings } from './settings-store'
 
@@ -21,6 +21,39 @@ function dayQueryBounds(dateKey: string, dayStartHour: number): { start: string;
 }
 
 /**
+ * Which routines a session's minutes belong to. THE single decision shared by
+ * `updateRoutineLogsForSession` (add) and `revertRoutineLogsForSession`
+ * (subtract) — the two MUST agree or deleting a session will corrupt a log it
+ * never contributed to (§10.81):
+ * - Explicit `routineId` (timer dropdown): logs toward exactly that routine,
+ *   including when `source === 'activity'` (schedule mark-done and catch-up set
+ *   both deliberately).
+ * - `autoRoutine`: auto-matched routines scheduled for this day + subject +
+ *   project-or-any.
+ * - Everything else (manual, timer without a routine pick, quickLog, activity
+ *   without a routine): nothing. Attending an activity is not the same as
+ *   completing the study block it happens to share a subject with (§10.63).
+ */
+/** Routines auto-matched by day + subject (or any-subject) + project-or-any. */
+function autoMatchedRoutines(session: Session, allRoutines: Routine[], sessionDow: DayOfWeek): Routine[] {
+  return allRoutines.filter((r) => {
+    if (r.deletedAt) return false
+    if (!r.dayMinutes[sessionDow] || r.dayMinutes[sessionDow]! <= 0) return false
+    if (!matchesAnySubject(r.subjectId) && r.subjectId !== session.subjectId) return false
+    if (r.projectId && r.projectId !== session.projectId) return false
+    return true
+  })
+}
+
+function routinesForSession(session: Session, allRoutines: Routine[], sessionDow: DayOfWeek): Routine[] {
+  if (session.routineId) {
+    return allRoutines.filter((r) => r.id === session.routineId && !r.deletedAt)
+  }
+  if (session.source !== 'autoRoutine') return []
+  return autoMatchedRoutines(session, allRoutines, sessionDow)
+}
+
+/**
  * For the given session, find all matching routines (today's day + same subject
  * + same project-or-any) and update today's RoutineLog for each by adding the
  * session's minutes. Creates the log if it doesn't exist yet.
@@ -33,34 +66,16 @@ export async function updateRoutineLogsForSession(session: Session): Promise<voi
   const sessionDow = new Date(session.startAt).getDay() as DayOfWeek
 
   const allRoutines = await db.routines.toArray()
-  // Auto-match routines scheduled for this day + subject/project.
-  const autoMatch = allRoutines.filter((r) => {
-    if (r.deletedAt) return false
-    if (!r.dayMinutes[sessionDow] || r.dayMinutes[sessionDow]! <= 0) return false
-    if (!matchesAnySubject(r.subjectId) && r.subjectId !== session.subjectId) return false
-    if (r.projectId && r.projectId !== session.projectId) return false
-    return true
-  })
+  const autoMatch = autoMatchedRoutines(session, allRoutines, sessionDow)
   // Only tag auto-routine sessions — manually created sessions should not
   // be silently assigned to a routine.
   if (autoMatch.length > 0 && !session.routineId && session.source === 'autoRoutine') {
     await db.sessions.update(session.id, { routineId: autoMatch[0].id, updatedAt: isoNow() })
   }
 
-  // When the session explicitly picked a routine (e.g. via the study timer
-  // dropdown), log ONLY toward that one. This prevents double-counting when
-  // auto-match (including any-subject routines) would also match the session.
-  // Auto-match otherwise applies only to autoRoutine sessions: manual,
-  // timer, quickLog, and activity sessions must never tick a routine toward
-  // completion — attending an activity is not the same as completing the
-  // study block it happens to share a subject with.
-  const toLog = session.source === 'activity' && !session.routineId
-    ? []
-    : session.routineId
-      ? allRoutines.filter((r) => r.id === session.routineId && !r.deletedAt)
-      : session.source === 'autoRoutine'
-        ? autoMatch
-        : []
+  // The shared decision (§10.81): explicit routineId wins, auto-match applies
+  // only to autoRoutine sessions, everything else logs nothing.
+  const toLog = routinesForSession(session, allRoutines, sessionDow)
 
   const logs = await db.routineLogs.toArray()
   for (const routine of toLog) {
@@ -97,17 +112,8 @@ export async function revertRoutineLogsForSession(session: Session): Promise<voi
   const sessionDate = sessionLocalDate(session.startAt)
   const sessionDow = new Date(session.startAt).getDay() as DayOfWeek
   const allRoutines = await db.routines.toArray()
-  const matching = session.source === 'activity' && !session.routineId
-    ? []
-    : session.routineId
-      ? allRoutines.filter((r) => r.id === session.routineId && !r.deletedAt)
-      : allRoutines.filter((r) => {
-          if (r.deletedAt) return false
-          if (!r.dayMinutes[sessionDow] || r.dayMinutes[sessionDow]! <= 0) return false
-          if (!matchesAnySubject(r.subjectId) && r.subjectId !== session.subjectId) return false
-          if (r.projectId && r.projectId !== session.projectId) return false
-          return true
-        })
+  // MUST mirror `updateRoutineLogsForSession` — see routinesForSession (§10.81).
+  const matching = routinesForSession(session, allRoutines, sessionDow)
   if (matching.length === 0) return
   const logs = await db.routineLogs.toArray()
   for (const routine of matching) {

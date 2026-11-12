@@ -1,6 +1,16 @@
 # Changelog
 
 All notable changes to Momentum are documented here. Each entry corresponds to a git tag (`v*`) pushed to the canonical `org` remote before deployment.
+
+## [v0.26.14] — 2026-11-12
+
+### Bug fixes
+- **Deleting a session no longer un-completes a routine.** `revertRoutineLogsForSession` kept its own copy of the routine-matching rule, which never received the §10.63 narrowing: deleting or editing a plain timer/manual/quick-log session (one that never picked a routine) subtracted its minutes from a same-subject routine log and flipped `completed` back to false. Both directions now share one `routinesForSession()` decision. Covered by 19 new tests in `routine-tracker.test.ts`; six of them fail against the old revert.
+- **Reports "Habits Summary" ignores paused habits.** Habits parked in Potential (and finished habits) are no longer reported as tracked, matching AI Review and the reminder scheduler.
+
+### Copy
+- **The `A` habit shortcut is now "Pause Habit".** It always performed a pause — moving the habit to Potential Habits — while the registry still said "Archive Habit". The id is `habit-pause`, dispatching `momentum:habits-pause`.
+
 ## [v0.26.12] — 2026-11-07
 
 ### Day boundary

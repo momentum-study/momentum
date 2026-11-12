@@ -291,8 +291,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
         case 'habit-toggle':
           window.dispatchEvent(new CustomEvent('momentum:habits-toggle-today'))
           break
-        case 'habit-archive':
-          window.dispatchEvent(new CustomEvent('momentum:habits-archive'))
+        case 'habit-pause':
+          window.dispatchEvent(new CustomEvent('momentum:habits-pause'))
           break
         case 'habit-up':
           window.dispatchEvent(new CustomEvent('momentum:habits-prev'))

@@ -70,7 +70,7 @@ export const SHORTCUTS: Shortcut[] = [
   // ── Habits ──
   { id: 'habit-add', label: 'Add Habit', keys: 'N', category: 'habits', description: 'Add a new habit', suppressInInput: true, routes: ['/habits'] },
   { id: 'habit-toggle', label: 'Toggle Today', keys: 'Space', category: 'habits', description: 'Toggle today\'s check-in', suppressInInput: true, routes: ['/habits'] },
-  { id: 'habit-archive', label: 'Archive Habit', keys: 'A', category: 'habits', description: 'Archive selected habit', suppressInInput: true, routes: ['/habits'] },
+  { id: 'habit-pause', label: 'Pause Habit', keys: 'A', category: 'habits', description: 'Move the selected habit to Potential Habits', suppressInInput: true, routes: ['/habits'] },
   { id: 'habit-up', label: 'Previous Habit', keys: '↑', category: 'habits', description: 'Navigate to previous habit', suppressInInput: true, routes: ['/habits'] },
   { id: 'habit-down', label: 'Next Habit', keys: '↓', category: 'habits', description: 'Navigate to next habit', suppressInInput: true, routes: ['/habits'] },
   { id: 'habit-1', label: 'Select Habit 1', keys: '1', category: 'habits', description: 'Select first habit', suppressInInput: true, routes: ['/habits'] },

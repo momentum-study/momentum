@@ -14,7 +14,7 @@ import type { Settings } from '../../lib/settings-store'
 import { useSessionSync } from '../../lib/use-session-sync'
 import { updateRoutineLogsForSession, updateStreakDayForSession } from '../../lib/routine-tracker'
 import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, loadPendingSession, clearPendingSession, sessionIdFor, splitSessionAtMidnight, setLastNote, getLastNote, SLEEP_GAP_MS } from '../../lib/timer-persistence'
-import { loadGroup as loadCurrentSessionGroup, saveGroup as saveCurrentSessionGroup, isGroupFresh as isCurrentSessionFresh, finalizedSeconds, bumpLastSegment, pushSegment, GROUP_GAP_MS, type CurrentSessionGroup } from '../../lib/current-session'
+import { loadGroup as loadCurrentSessionGroup, saveGroup as saveCurrentSessionGroup, isGroupFresh as isCurrentSessionFresh, finalizedSeconds, bumpLastSegment, pushSegment, GROUP_EDITED_EVENT, GROUP_GAP_MS, type CurrentSessionGroup } from '../../lib/current-session'
 import { FocusTagSelector, type FocusTag } from '../ui/FocusTagSelector'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
 import { groupService } from '../../lib/group-service'
@@ -984,6 +984,15 @@ export function PomodoroTimer() {
     window.addEventListener('momentum:discard-session', onDiscardSession)
     return () => window.removeEventListener('momentum:discard-session', onDiscardSession)
   }, [simpleStartedAt, simplePausedOffset, pomStartedAt])
+  // A saved session was edited elsewhere (Dashboard / Focus Area page); the
+  // edit already updated the stored group, so just re-read it.
+  useEffect(() => {
+    function onSessionEdited() {
+      setSessionGroup(loadCurrentSessionGroup())
+    }
+    window.addEventListener(GROUP_EDITED_EVENT, onSessionEdited)
+    return () => window.removeEventListener(GROUP_EDITED_EVENT, onSessionEdited)
+  }, [])
 
   // Listen for keyboard shortcuts from Dashboard
   useEffect(() => {
@@ -1646,15 +1655,28 @@ export function PomodoroTimer() {
     setPomPhase('focus')
     setPomCycles(0)
     setSafetyMessage('')
-    setShowDiscardConfirm(false)
     clearPendingSession()
     clearStreakPreviewDates()
-    clearTimerState()
-    setTimerFocusTag(null)
-    setTimerNotes('')
-    setTimerRoutineId('')
-    localStorage.removeItem('momentum-timer-notes')
+    // Discarding elapsed time must not discard the user's selected routine or
+    // note. Persist both into fresh idle timer state so they survive a reload;
+    // the UI state resets below for the current view.
+    const stored = loadTimerState()
+    if (stored) {
+      saveTimerState({
+        ...stored,
+        startedAt: null,
+        phaseRemaining: stored.mode === 'pomodoro' ? getPhaseDuration('focus', stored.config) : null,
+        phase: 'focus',
+        cyclesCompleted: 0,
+        simplePausedOffset: 0,
+        notes: timerNotes,
+        routineId: timerRoutineId || null,
+      })
+    } else {
+      clearTimerState()
+    }
     updateSessionGroup(() => null)
+    setShowDiscardConfirm(false)
   }
 
   const currentSeconds = mode === 'simple' ? simpleSeconds : pomSeconds

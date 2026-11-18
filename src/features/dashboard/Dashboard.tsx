@@ -25,6 +25,7 @@ import { useStreakPreviewDates } from '../../lib/streak-preview'
 import { db } from '../../db/app-db'
 import { updateRoutineLogsForSession, revertRoutineLogsForSession, updateStreakDayForSession, revertStreakDayForSession, recomputeStreakDaysForDates } from '../../lib/routine-tracker'
 import { sessionIdFor } from '../../lib/timer-persistence'
+import { applySessionEditToGroup } from '../../lib/current-session'
 import { sumMinutesInDateRange } from '../../lib/date-utils'
 import { getDueCount } from '../../lib/fsrs-scheduler'
 import { useSessionSync } from '../../lib/use-session-sync'
@@ -924,6 +925,7 @@ export default function Dashboard() {
       sessions: prev.sessions.map(s => s.id === editLog.id ? { ...s, ...updated } : s),
       streakDays: freshStreakDays,
     }))
+    applySessionEditToGroup(editLog, newSession as Session)
     setEditLog(null)
     push({
       description: `Edited session`,
@@ -936,6 +938,7 @@ export default function Dashboard() {
         ])
         const undoStreakDays = await db.streakDays.toArray()
         mutate(prev => ({ ...prev, sessions: prev.sessions.map(s => s.id === editLog.id ? { ...s, startAt: prevSession.startAt, endAt: prevSession.endAt, durationMinutes: prevSession.durationMinutes, durationSeconds: prevSession.durationSeconds, subjectId: prevSession.subjectId, updatedAt: prevSession.updatedAt } : s), streakDays: undoStreakDays }))
+        applySessionEditToGroup(newSession, prevSession)
       },
       redo: async () => {
         await db.sessions.update(editLog.id, updated)
@@ -946,6 +949,7 @@ export default function Dashboard() {
         ])
         const redoStreakDays = await db.streakDays.toArray()
         mutate(prev => ({ ...prev, sessions: prev.sessions.map(s => s.id === editLog.id ? { ...s, ...updated } : s), streakDays: redoStreakDays }))
+        applySessionEditToGroup(prevSession, newSession)
       },
     })
   }
@@ -2257,6 +2261,7 @@ export default function Dashboard() {
             sessions: prev.sessions.map(s => s.id === viewSession.id ? updatedSession : s),
             streakDays: freshStreakDays,
           }))
+          applySessionEditToGroup(viewSession, updatedSession)
         }}
         subjectName={viewSession ? data.subjects.find((s) => s.id === viewSession.subjectId)?.name : undefined}
         projectName={viewSession?.projectId ? data.projects.find((p) => p.id === viewSession.projectId)?.name : undefined}

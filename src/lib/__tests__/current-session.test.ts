@@ -7,6 +7,8 @@ import {
   bumpLastSegment,
   pushSegment,
   GROUP_GAP_MS,
+  adjustGroupForEditedSession,
+  applySessionEditToGroup,
   type CurrentSessionGroup,
 } from '../current-session'
 
@@ -176,6 +178,71 @@ describe('pushSegment', () => {
       active: false,
     }
     expect(pushSegment(g, 'math')).toBe(g)
+  })
+})
+
+describe('adjustGroupForEditedSession', () => {
+  const group: CurrentSessionGroup = {
+    startedAt: 1_000,
+    segments: [{ subjectId: 'math', seconds: 1_800 }, { subjectId: 'eng', seconds: 600 }],
+    lastEndAt: 9_000,
+    active: false,
+  }
+
+  it('changes duration without changing subject or merge-window metadata', () => {
+    const next = adjustGroupForEditedSession(group, {
+      sessionStartMs: 2_000,
+      oldSubjectId: 'math',
+      oldSeconds: 600,
+      newSubjectId: 'math',
+      newSeconds: 900,
+    })
+    expect(next.segments).toEqual([{ subjectId: 'math', seconds: 2_100 }, { subjectId: 'eng', seconds: 600 }])
+    expect(next.lastEndAt).toBe(group.lastEndAt)
+    expect(next.active).toBe(group.active)
+  })
+
+  it('moves edited time between subjects', () => {
+    const next = adjustGroupForEditedSession(group, {
+      sessionStartMs: 2_000,
+      oldSubjectId: 'math',
+      oldSeconds: 600,
+      newSubjectId: 'eng',
+      newSeconds: 300,
+    })
+    expect(next.segments).toEqual([{ subjectId: 'math', seconds: 1_200 }, { subjectId: 'eng', seconds: 900 }])
+  })
+
+  it('accepts a first session whose start is slightly before group start', () => {
+    const next = adjustGroupForEditedSession(group, {
+      sessionStartMs: 997,
+      oldSubjectId: 'math',
+      oldSeconds: 600,
+      newSubjectId: 'math',
+      newSeconds: 900,
+    })
+    expect(next.segments[0].seconds).toBe(2_100)
+  })
+
+  it('ignores a session that predates the current group beyond tolerance', () => {
+    expect(adjustGroupForEditedSession(group, {
+      sessionStartMs: -5_001,
+      oldSubjectId: 'math',
+      oldSeconds: 600,
+      newSubjectId: 'math',
+      newSeconds: 900,
+    })).toBe(group)
+  })
+
+  it('persists and broadcasts an applied edit', () => {
+    saveGroup(group)
+    const dispatch = vi.spyOn(window, 'dispatchEvent')
+    applySessionEditToGroup(
+      { startAt: '1970-01-01T00:00:02.000Z', subjectId: 'math', durationMinutes: 10 },
+      { startAt: '1970-01-01T00:00:02.000Z', subjectId: 'math', durationMinutes: 15 },
+    )
+    expect(loadGroup()?.segments[0].seconds).toBe(2_100)
+    expect(dispatch).toHaveBeenCalled()
   })
 })
 

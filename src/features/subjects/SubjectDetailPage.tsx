@@ -4,6 +4,7 @@ import { format, subDays } from 'date-fns'
 import { useData } from '../../app/providers'
 import { db } from '../../db/app-db'
 import { cn, formatMinutes, isoNow, toLocalDateString, getChildSubjects, softDelete } from '../../lib/utils'
+import { applySessionEditToGroup } from '../../lib/current-session'
 import { revertRoutineLogsForSession, updateRoutineLogsForSession, revertStreakDayForSession, recomputeStreakDaysForDates } from '../../lib/routine-tracker'
 import { loadSettings } from '../../lib/settings-store'
 import { useUndo } from '../../lib/use-undo'
@@ -699,6 +700,7 @@ export default function SubjectDetailPage() {
             updateRoutineLogsForSession(updatedSession),
             recomputeStreakDaysForDates(Array.from(new Set([oldDate, newDate])).filter(Boolean)),
           ])
+          applySessionEditToGroup(viewSession, updatedSession)
           await loadData()
         }}
       />

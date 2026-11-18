@@ -304,6 +304,8 @@ Academic/General sections. Add/Edit modal with name, scope, ColorPicker. Shows s
   - **Switch to Pomodoro**: when running in Simple mode, a "Switch → 🍅" button appears (when Pomodoro is enabled). Clicking it computes the elapsed time, walks the Pomodoro cycle saving any completed focus blocks as sessions, and enters the current phase at the correct offset — as if Pomodoro had been running from the start. The timer's current-session group is preserved.
   - **Switch to Simple** (v0.26.10): while the timer is active in Pomodoro mode a matching "Switch → Simple" button appears. `computeSimpleSwitchState` preserves the current focus phase's elapsed study time (running = wall-clock elapsed capped at the focus duration; paused = goal − remaining; breaks = 0) and backdates the simple `startedAt` so Save accounting and Today totals carry the time over unchanged.
   - **Focus tags**: optional `focused | distracted | group | revision`.
+  - **Current Session tracker** (v0.26.15): `current-session.ts` folds consecutive runs (within 5 min) and subject changes into one "Current Session" total persisted in localStorage. Edits to saved sessions update the group: `applySessionEditToGroup()` adjusts stored segments by old→new duration/subject and dispatches `momentum:current-session-edit`, which the mounted timer widget uses to re-read the group. Edits to sessions starting more than 5 s before the group began are ignored.
+  - **Discard keeps routine + note** (v0.26.15): `discardSession()` discards only the elapsed time. The selected routine and note are re-persisted into idle timer state so they survive a reload and are not cleared from the UI (§10.51 supersedes the old discard-reset behaviour).
 
 ### 6.9 Schedule — `src/features/schedule/SchedulePage.tsx`
 Combines **Routines** (self-directed study blocks) and **Activities** (recurring external commitments) into one page with Today tab + Weekly Plan grid. Routine cards, activity cards, catch-up detection (`findMissedDate`), weekly plan grid, cell edit modal, routine/activity edit modals.
@@ -614,13 +616,18 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 ### 10.50 Timer subject switch carries old notes — FIXED
 **Symptom**: changing the subject while the timer is running leaves the previous subject's text in the "What are you working on?" box.
 **Root cause**: `changeSubject` saved the old session correctly but reused the old `timerNotes` value when creating the new subject's persisted timer state. React state updates are asynchronous, so calling `setTimerNotes` alone was insufficient.
-**Fix applied**: `changeSubject` now loads the new subject's scoped last note with `getLastNote(newSubjectId)`, updates the visible notes state, and writes that same value directly into both simple and pomodoro persisted timer states.
 **Stall trap**: resetting only the React state leaves a reload path carrying the old value; the persisted `notes` field must be updated in the same subject-switch operation.
+**Fix applied**: `changeSubject` now loads the new subject's scoped last note with `getLastNote(newSubjectId)`, updates the visible notes state, and writes that same value directly into both simple and pomodoro persisted timer states.
+### 10.51 PomodoroTimer discard behavior — FIXED (v0.26.15)
+**Symptom**: discarding a session also cleared the user’s selected routine and note.
+**Root cause**: `discardSession()` previously cleared `timerNotes('')`, `setTimerRoutineId('')`, and deleted the persisted `momentum-timer-notes` key.
+**Fix applied**: `discardSession()` now discards only the elapsed time. The selected routine and note are re-persisted into idle timer state so they survive a reload and are not cleared from the UI. Existing saved timer state (when available) is rewritten with the kept notes and routine; otherwise the group is simply cleared.
 
-### 10.51 PomodoroTimer state bleed on subject switch / stop / discard — FIXED
-**Symptom**: switching subjects while the timer is running leaves the old subject's focusTag and routineId on the new session; stopping or discarding a session also leaks these fields into the next session.
-**Root cause**: `timerFocusTag` and `timerRoutineId` were never reset when calling `changeSubject`, `stopSimple`, `stopPomodoro`, `discardSession`, or `resetPomodoro`.
-**Fix applied**: all five functions now reset `timerRoutineId('')` and `timerFocusTag(null)`.
+**SPEC_VERSION: 72** — 2026-11-18 Session edit syncs Current Session + discard keeps routine/note (app v0.26.15):
+  - **Current Session group tracks manual edits** (§6.8): new `applySessionEditToGroup(before, after)` in `current-session.ts` adjusts the edited session's old duration from the old subject's segment and adds the new duration to the new subject's segment, persists to localStorage, then dispatches `momentum:current-session-edit` for the mounted timer widget to re-read. Sessions that started more than 5 s before the group began are ignored.
+  - **Edit paths wired**: Dashboard `saveEditLog` (+ undo/redo), Dashboard `SessionDetailsModal`, and `SubjectDetailPage` `SessionDetailsModal` all call `applySessionEditToGroup`.
+  - **Discard keeps routine + note** (§10.51): `discardSession()` no longer blanks `timerNotes`/`timerRoutineId` or deletes the legacy `momentum-timer-notes` key. Idle timer state is rewritten with kept `notes` and `routineId` so they survive reload.
+  - **Tests**: regression coverage was added to `current-session.test.ts` for duration changes, subject changes, pre-group sessions, tolerance, persistence and event notification.
 
 ### 10.52 focusTag not persisted / restored on reload — FIXED
 **Symptom**: if the user selected a focusTag and then the page was reloaded while the timer was running, the focusTag was lost.

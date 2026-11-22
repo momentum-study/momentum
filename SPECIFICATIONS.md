@@ -623,11 +623,11 @@ These are the recurring failure modes. Read before editing. **If you hit one, yo
 **Root cause**: `discardSession()` previously cleared `timerNotes('')`, `setTimerRoutineId('')`, and deleted the persisted `momentum-timer-notes` key.
 **Fix applied**: `discardSession()` now discards only the elapsed time. The selected routine and note are re-persisted into idle timer state so they survive a reload and are not cleared from the UI. Existing saved timer state (when available) is rewritten with the kept notes and routine; otherwise the group is simply cleared.
 
-**SPEC_VERSION: 72** — 2026-11-18 Session edit syncs Current Session + discard keeps routine/note (app v0.26.15):
-  - **Current Session group tracks manual edits** (§6.8): new `applySessionEditToGroup(before, after)` in `current-session.ts` adjusts the edited session's old duration from the old subject's segment and adds the new duration to the new subject's segment, persists to localStorage, then dispatches `momentum:current-session-edit` for the mounted timer widget to re-read. Sessions that started more than 5 s before the group began are ignored.
-  - **Edit paths wired**: Dashboard `saveEditLog` (+ undo/redo), Dashboard `SessionDetailsModal`, and `SubjectDetailPage` `SessionDetailsModal` all call `applySessionEditToGroup`.
-  - **Discard keeps routine + note** (§10.51): `discardSession()` no longer blanks `timerNotes`/`timerRoutineId` or deletes the legacy `momentum-timer-notes` key. Idle timer state is rewritten with kept `notes` and `routineId` so they survive reload.
-  - **Tests**: regression coverage was added to `current-session.test.ts` for duration changes, subject changes, pre-group sessions, tolerance, persistence and event notification.
+**SPEC_VERSION: 73** — 2026-11-22 First-load performance and deferred cloud/music startup (app v0.26.16):
+  - **Local-first boot** (§6.1): IndexedDB data loads before cloud synchronization or backup, and independent tables are read concurrently so Firestore latency cannot block the dashboard.
+  - **Deferred Firebase**: the Firebase SDK is lazy-loaded only when an existing cloud session or cloud feature requires it; signed-out boot no longer preloads the Firebase chunk.
+  - **Deferred music engine**: the YouTube IFrame API and player are initialized only after music interaction.
+  - **Verification**: TypeScript, 329 Vitest tests, production build, and live-browser checks pass.
 
 ### 10.52 focusTag not persisted / restored on reload — FIXED
 **Symptom**: if the user selected a focusTag and then the page was reloaded while the timer was running, the focusTag was lost.

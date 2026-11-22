@@ -1,9 +1,11 @@
 // Hook for auto-syncing study sessions to Firestore cloud.
 // Called from PomodoroTimer and Dashboard after saving a session locally.
 // No-ops when Firebase is not configured or the user is not signed in.
+//
+// The cloud SDK is loaded on demand: this hook is imported by the boot path
+// (Dashboard, timer widgets), and statically importing the Firebase SDK
+// there would add ~470 kB to the first-load bundle.
 import { useAuth } from '../app/auth-provider'
-import { syncService } from './sync-service'
-import { groupService } from './group-service'
 import type { SyncedSession } from '../domain/cloud-types'
 
 interface LocalSession {
@@ -30,9 +32,11 @@ export function useSessionSync() {
       endAt: session.endAt,
       createdAt: session.createdAt,
     }
-    syncService.enqueueUpsert(synced)
-    // Flush in the background — don't block the UI
-    void syncService.flush()
+    void import('./sync-service').then(({ syncService }) => {
+      syncService.enqueueUpsert(synced)
+      // Flush in the background — don't block the UI
+      void syncService.flush()
+    })
   }
 
   /** Sync a session deletion to the cloud. */
@@ -47,6 +51,10 @@ export function useSessionSync() {
       startAt: '',
       createdAt: '',
     }
+    const [{ syncService }, { groupService }] = await Promise.all([
+      import('./sync-service'),
+      import('./group-service'),
+    ])
     syncService.enqueueDelete(stub)
     await syncService.flush()
 

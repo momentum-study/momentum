@@ -17,8 +17,6 @@ import { clearTimerState, loadTimerState, saveTimerState, savePendingSession, lo
 import { loadGroup as loadCurrentSessionGroup, saveGroup as saveCurrentSessionGroup, isGroupFresh as isCurrentSessionFresh, finalizedSeconds, bumpLastSegment, pushSegment, GROUP_EDITED_EVENT, GROUP_GAP_MS, type CurrentSessionGroup } from '../../lib/current-session'
 import { FocusTagSelector, type FocusTag } from '../ui/FocusTagSelector'
 import type { PersistedTimerState, PendingSession } from '../../lib/timer-persistence'
-import { groupService } from '../../lib/group-service'
-import { pushSettings } from '../../lib/settings-sync'
 import { sendNotification, requestNotificationPermission } from '../../lib/notification-service'
 import { useTimerTabLock } from '../../lib/use-timer-tab-lock'
 import { clearStreakPreviewDates, setTodayPreview } from '../../lib/streak-preview'
@@ -969,8 +967,20 @@ export function PomodoroTimer() {
     if (!uid) return
     const name = localStorage.getItem('momentum-cloud-name') ?? 'Anonymous'
     const subjectName = data.subjects.find((s) => s.id === subjectId)?.name ?? 'Unknown'
-    groupService.updatePresence(uid, name, subjectName).catch(() => {})
-    return () => { groupService.clearPresence(uid).catch(() => {}) }
+    let cancelled = false
+    let clearPresence: (() => void) | undefined
+    void import('../../lib/group-service').then(({ groupService }) => {
+      // The import may resolve after this effect was torn down (timer stopped
+      // or subject switched). Writing presence then would leak a "running"
+      // status nobody ever clears, so bail out instead.
+      if (cancelled) return
+      groupService.updatePresence(uid, name, subjectName).catch(() => {})
+      clearPresence = () => { void groupService.clearPresence(uid).catch(() => {}) }
+    })
+    return () => {
+      cancelled = true
+      clearPresence?.()
+    }
   }, [isRunning, subjectId, data.subjects])
 
   // Timer continues running in background via wall-clock computation.
@@ -1054,7 +1064,7 @@ export function PomodoroTimer() {
     if (uid) {
       const dashboardWidgets = JSON.parse(localStorage.getItem('momentum-dashboard-widgets') ?? '[]')
       const navPrefs = JSON.parse(localStorage.getItem('momentum-nav-prefs') ?? '{}')
-      void pushSettings(uid, full, dashboardWidgets, navPrefs)
+      void import('../../lib/settings-sync').then(({ pushSettings }) => pushSettings(uid, full, dashboardWidgets, navPrefs))
     }
   }
 

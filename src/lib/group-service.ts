@@ -12,7 +12,7 @@ import {
   runTransaction,
   onSnapshot,
 } from 'firebase/firestore'
-import { db, isFirebaseConfigured } from './firebase'
+import { db, isFirebaseConfigured } from './firebase-runtime'
 import { isoNow } from './utils'
 import type { Group, GroupMember, GroupPresence } from '../domain/cloud-types'
 import type { PersistedTimerState } from './timer-persistence'

@@ -14,7 +14,7 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { recordWrites, hasBudgetFor } from './write-budget'
-import { db, isFirebaseConfigured } from './firebase'
+import { db, isFirebaseConfigured } from './firebase-runtime'
 import { isoNow } from './utils'
 import type { SyncedSession } from '../domain/cloud-types'
 

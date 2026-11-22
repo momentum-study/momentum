@@ -2,7 +2,7 @@
 // When signed in, every save also writes to Firestore.
 // On sign-in, pull cloud prefs and apply to localStorage if present.
 import { doc, getDoc, setDoc } from 'firebase/firestore'
-import { db as firestore, isFirebaseConfigured } from './firebase'
+import { db as firestore, isFirebaseConfigured } from './firebase-runtime'
 import { isoNow } from './utils'
 import type { Settings } from './settings-store'
 

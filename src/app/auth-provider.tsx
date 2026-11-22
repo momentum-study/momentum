@@ -10,22 +10,12 @@ import {
   useRef,
   type ReactNode,
 } from 'react'
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut as firebaseSignOut,
-  type User,
-} from 'firebase/auth'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
-import { auth, db, googleProvider, isFirebaseConfigured } from '../lib/firebase'
+import type { User } from 'firebase/auth'
 import { isoNow } from '../lib/utils'
 import type { UserProfile } from '../domain/cloud-types'
-import { syncService } from '../lib/sync-service'
 import { db as localDb } from '../db/app-db'
-import { pullSettings } from '../lib/settings-sync'
 import { loadSettings } from '../lib/settings-store'
-import { pullAllData } from '../lib/data-sync'
-import { subscribeToUserData, installSyncHooks, uninstallSyncHooks } from '../lib/data-sync'
+import { isFirebaseConfigured, getFirebase } from '../lib/firebase'
 interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
@@ -45,129 +35,154 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const unsubSyncRef = useRef<(() => void) | null>(null)
 
 
-  // Subscribe to auth state changes
+  // Watch auth only when there is something to watch. Loading the Firebase
+  // SDK costs ~470 kB, so a signed-out visitor must never trigger it. The
+  // stored uid is the marker for "this browser has a cloud session".
+  const [watchAuth, setWatchAuth] = useState<boolean>(() => {
+    if (typeof localStorage === 'undefined') return false
+    return localStorage.getItem('momentum-cloud-uid') !== null
+  })
+
+  // A sign-in in another tab writes the uid to localStorage; the `storage`
+  // event fires in this tab. Reacting to it keeps the cross-tab behaviour
+  // the unconditional auth subscription used to provide.
   useEffect(() => {
-    if (!isFirebaseConfigured || !auth) {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== 'momentum-cloud-uid') return
+      setWatchAuth(e.newValue !== null)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+  useEffect(() => {
+    if (!isFirebaseConfigured || !watchAuth) {
       setIsLoading(false)
       return
     }
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setUser(u)
-      if (u) {
-        localStorage.setItem('momentum-cloud-uid', u.uid)
-        localStorage.setItem('momentum-cloud-name', u.displayName ?? u.email?.split('@')[0] ?? 'Anonymous')
-      } else {
-        localStorage.removeItem('momentum-cloud-uid')
-        localStorage.removeItem('momentum-cloud-name')
+    let cancelled = false
+    let unsubAuth: (() => void) | null = null
+    void getFirebase().then(async (runtime) => {
+      if (cancelled || !runtime) {
+        setIsLoading(false)
+        return
       }
-      // Real-time sync: subscribe to cloud changes for this user
-      if (unsubSyncRef.current) { unsubSyncRef.current(); unsubSyncRef.current = null }
-      if (u) {
-        unsubSyncRef.current = subscribeToUserData(u.uid)
-        installSyncHooks(u.uid)
-      }
-      if (!u) {
-        uninstallSyncHooks()
-      }
-      if (u && db) {
-        try {
-          const ref = doc(db, 'users', u.uid)
-          const snap = await getDoc(ref)
-          if (snap.exists()) {
-            setProfile(snap.data() as UserProfile)
-            // Pull settings from cloud — apply directly to localStorage (no reload)
-            const cloudPrefs = await pullSettings(u.uid)
-            if (cloudPrefs) {
-              // Don't clobber local settings that are newer than the cloud copy.
-              // loadSettings() returns localStorage merged with defaults; settingsUpdatedAt
-              // is '' when never saved locally.
-              const localSettings = loadSettings()
-              const localUpdatedAt = localSettings.settingsUpdatedAt
-              if (localUpdatedAt && new Date(localUpdatedAt).getTime() >= new Date(cloudPrefs.updatedAt).getTime()) {
-                // Local is newer or equal — keep local values
-              } else {
-                localStorage.setItem('momentum-settings', JSON.stringify(cloudPrefs.settings))
-                localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(cloudPrefs.dashboardWidgets))
-                localStorage.setItem('momentum-nav-prefs', JSON.stringify(cloudPrefs.navPrefs))
-              }
-            }
-            // Pull all user data from cloud, then refresh UI
-            await pullAllData(u.uid)
-            window.dispatchEvent(new CustomEvent('momentum-data-synced'))
-          } else {
-            // First sign-in — create a profile doc
-            const now = isoNow()
-            const newProfile: UserProfile = {
-              uid: u.uid,
-              displayName: u.displayName ?? u.email?.split('@')[0] ?? 'Anonymous',
-              photoURL: u.photoURL ?? null,
-              createdAt: now,
-              updatedAt: now,
-              lastActiveAt: now,
-            }
-            await setDoc(ref, newProfile)
-            setProfile(newProfile)
-
-            // Bulk sync existing sessions — capped to avoid draining quota on first sign-in.
-            // Sessions older than BOOTSTRAP_SESSION_LIMIT are skipped; user can re-trigger from
-            // Settings if needed (future: add "Force full sync" button).
-            const BOOTSTRAP_SESSION_LIMIT = 200
-            const allLocalSessions = await localDb.sessions.toArray()
-            const toSync = allLocalSessions.slice(-BOOTSTRAP_SESSION_LIMIT) // most recent N
-            for (const s of toSync) {
-              const subjectName = (await localDb.subjects.get(s.subjectId))?.name ?? 'Unknown Subject'
-              syncService.enqueueUpsert({
-                id: s.id,
-                uid: u.uid,
-                subjectName,
-                minutes: s.durationMinutes,
-                startAt: s.startAt,
-                endAt: s.endAt,
-                createdAt: s.createdAt,
-              })
-            }
-            if (allLocalSessions.length > BOOTSTRAP_SESSION_LIMIT) {
-              console.warn(`[Auth] Bootstrap synced ${BOOTSTRAP_SESSION_LIMIT} of ${allLocalSessions.length} sessions to stay under quota`)
-            }
-            void syncService.flush()
-          }
-        } catch (e) {
-          console.error('Error loading user data:', e)
+      const { auth, db, authApi, firestoreApi } = runtime
+      unsubAuth = authApi.onAuthStateChanged(auth, async (u: User | null) => {
+        setUser(u)
+        if (u) {
+          localStorage.setItem('momentum-cloud-uid', u.uid)
+          localStorage.setItem('momentum-cloud-name', u.displayName ?? u.email?.split('@')[0] ?? 'Anonymous')
+        } else {
+          localStorage.removeItem('momentum-cloud-uid')
+          localStorage.removeItem('momentum-cloud-name')
         }
-      } else {
-        setProfile(null)
-      }
+        if (unsubSyncRef.current) { unsubSyncRef.current(); unsubSyncRef.current = null }
+        if (u) {
+          const sync = await import('../lib/data-sync')
+          unsubSyncRef.current = sync.subscribeToUserData(u.uid)
+          sync.installSyncHooks(u.uid)
+        } else {
+          const sync = await import('../lib/data-sync')
+          sync.uninstallSyncHooks()
+        }
+        if (u) {
+          try {
+            const ref = firestoreApi.doc(db, 'users', u.uid)
+            const snap = await firestoreApi.getDoc(ref)
+            if (snap.exists()) {
+              setProfile(snap.data() as UserProfile)
+              // Pull settings from cloud — apply directly to localStorage (no reload)
+              const { pullSettings } = await import('../lib/settings-sync')
+              const cloudPrefs = await pullSettings(u.uid)
+              if (cloudPrefs) {
+                // Don't clobber local settings that are newer than the cloud copy.
+                // loadSettings() returns localStorage merged with defaults; settingsUpdatedAt
+                // is '' when never saved locally.
+                const localSettings = loadSettings()
+                const localUpdatedAt = localSettings.settingsUpdatedAt
+                if (!localUpdatedAt || new Date(localUpdatedAt).getTime() < new Date(cloudPrefs.updatedAt).getTime()) {
+                  localStorage.setItem('momentum-settings', JSON.stringify(cloudPrefs.settings))
+                  localStorage.setItem('momentum-dashboard-widgets', JSON.stringify(cloudPrefs.dashboardWidgets))
+                  localStorage.setItem('momentum-nav-prefs', JSON.stringify(cloudPrefs.navPrefs))
+                }
+              }
+              // Pull all user data from cloud, then refresh UI
+              const sync = await import('../lib/data-sync')
+              await sync.pullAllData(u.uid)
+              window.dispatchEvent(new CustomEvent('momentum-data-synced'))
+            } else {
+              const now = isoNow()
+              const newProfile: UserProfile = {
+                uid: u.uid,
+                displayName: u.displayName ?? u.email?.split('@')[0] ?? 'Anonymous',
+                photoURL: u.photoURL ?? null,
+                createdAt: now,
+                updatedAt: now,
+                lastActiveAt: now,
+              }
+              await firestoreApi.setDoc(ref, newProfile)
+              setProfile(newProfile)
+              const { syncService } = await import('../lib/sync-service')
+              const allLocalSessions = await localDb.sessions.toArray()
+              const toSync = allLocalSessions.slice(-200)
+              const subjects = await localDb.subjects.toArray()
+              const subjectNames = new Map(subjects.map((s) => [s.id, s.name]))
+              for (const s of toSync) {
+                syncService.enqueueUpsert({
+                  id: s.id, uid: u.uid, subjectName: subjectNames.get(s.subjectId) ?? 'Unknown Subject',
+                  minutes: s.durationMinutes, startAt: s.startAt, endAt: s.endAt, createdAt: s.createdAt,
+                })
+              }
+              void syncService.flush()
+            }
+          } catch (e) {
+            console.error('Error loading user data:', e)
+          }
+        } else {
+          setProfile(null)
+        }
+        setIsLoading(false)
+      })
+    }).catch((e) => {
+      console.error('Firebase initialisation failed:', e)
       setIsLoading(false)
     })
     return () => {
-      unsub()
+      cancelled = true
+      unsubAuth?.()
       if (unsubSyncRef.current) unsubSyncRef.current()
     }
-  }, [])
-
+  }, [watchAuth])
   const signIn = useCallback(async () => {
-    if (!auth) {
-      throw new Error('Firebase is not configured. Set credentials in src/lib/firebase.ts')
+    const runtime = await getFirebase()
+    if (!runtime) {
+      throw new Error('Firebase is not configured. Set credentials in src/lib/firebase-config.ts')
     }
+    const { auth, authApi } = runtime
     try {
-      await signInWithPopup(auth, googleProvider)
+      await authApi.signInWithPopup(auth, new authApi.GoogleAuthProvider())
+      // Start watching auth state so the session is picked up (and the
+      // uid persisted) without a page reload.
+      setWatchAuth(true)
     } catch (e) {
       console.error('Sign-in failed:', e)
       throw e
     }
   }, [])
-
   const signOut = useCallback(async () => {
-    if (!auth) return
-    await firebaseSignOut(auth)
+    const runtime = await getFirebase()
+    if (!runtime) return
+    await runtime.authApi.signOut(runtime.auth)
+    setWatchAuth(false)
   }, [])
-
   const updateProfile = useCallback(
     async (patch: Partial<Pick<UserProfile, 'displayName'>>) => {
-      if (!user || !db) return
-      const ref = doc(db, 'users', user.uid)
+      const runtime = await getFirebase()
+      if (!user || !runtime) return
+      const { db, firestoreApi } = runtime
+      const ref = firestoreApi.doc(db, 'users', user.uid)
       const now = isoNow()
-      await setDoc(
+      await firestoreApi.setDoc(
         ref,
         { ...patch, updatedAt: now, lastActiveAt: now },
         { merge: true }

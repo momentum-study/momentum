@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { db } from '../db/app-db'
-import { pullAllData, flushPendingDirtyTables } from '../lib/data-sync'
 
 import type {
   Activity,
@@ -96,24 +95,50 @@ async function safeQuery<T>(table: any, order?: { key: string; reverse?: boolean
 }
 
 async function loadAllData(): Promise<AppData> {
+  // IndexedDB reads are independent. Start them together so the first paint
+  // is gated by one transaction round-trip rather than every table in series.
+  const [
+    categories,
+    subjects,
+    projects,
+    sessions,
+    progressLogs,
+    marks,
+    assignments,
+    habits,
+    habitLogs,
+    streakDays,
+    routines,
+    routineLogs,
+    activities,
+    activityLogs,
+    studyAreas,
+    studyReviews,
+    musicPlaylists,
+  ] = await Promise.all([
+    safeQuery(db.categories, { key: 'name' }),
+    safeQuery(db.subjects, { key: 'name' }),
+    safeQuery(db.projects, { key: 'name' }),
+    safeQuery(db.sessions, { key: 'startAt', reverse: true }),
+    safeQuery(db.progressLogs, { key: 'loggedAt', reverse: true }),
+    safeQuery(db.marks, { key: 'date', reverse: true }),
+    safeQuery(db.assignments),
+    safeQuery(db.habits),
+    safeQuery(db.habitLogs),
+    safeQuery(db.streakDays),
+    safeQuery(db.routines, { key: 'name' }),
+    safeQuery(db.routineLogs, { key: 'date', reverse: true }),
+    safeQuery(db.activities, { key: 'name' }),
+    safeQuery(db.activityLogs, { key: 'createdAt', reverse: true }),
+    safeQuery(db.studyAreas, { key: 'name' }),
+    safeQuery(db.studyReviews, { key: 'reviewedAt', reverse: true }),
+    safeQuery(db.musicPlaylists, { key: 'name' }),
+  ])
+
   const data: any = {
-    categories: await safeQuery(db.categories, { key: 'name' }),
-    subjects: await safeQuery(db.subjects, { key: 'name' }),
-    projects: await safeQuery(db.projects, { key: 'name' }),
-    sessions: await safeQuery(db.sessions, { key: 'startAt', reverse: true }),
-    progressLogs: await safeQuery(db.progressLogs, { key: 'loggedAt', reverse: true }),
-    marks: await safeQuery(db.marks, { key: 'date', reverse: true }),
-    assignments: await safeQuery(db.assignments),
-    habits: await safeQuery(db.habits),
-    habitLogs: await safeQuery(db.habitLogs),
-    streakDays: await safeQuery(db.streakDays),
-    routines: await safeQuery(db.routines, { key: 'name' }),
-    routineLogs: await safeQuery(db.routineLogs, { key: 'date', reverse: true }),
-    activities: await safeQuery(db.activities, { key: 'name' }),
-    activityLogs: await safeQuery(db.activityLogs, { key: 'createdAt', reverse: true }),
-    studyAreas: await safeQuery(db.studyAreas, { key: 'name' }),
-    studyReviews: await safeQuery(db.studyReviews, { key: 'reviewedAt', reverse: true }),
-    musicPlaylists: await safeQuery(db.musicPlaylists, { key: 'name' }),
+    categories, subjects, projects, sessions, progressLogs, marks,
+    assignments, habits, habitLogs, streakDays, routines, routineLogs,
+    activities, activityLogs, studyAreas, studyReviews, musicPlaylists,
   }
 
   return {
@@ -153,32 +178,53 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const mutate = useCallback((updater: (prev: AppData) => AppData) => {
     setData((prev) => updater(prev))
   }, [])
-  // On mount: pull cloud data first (if signed in), then load
+  // Local data is the source of truth for the first paint. The cloud pull
+  // runs afterwards and refreshes the UI when it finishes; a slow or
+  // offline Firestore request must never hold the app behind a spinner,
+  // and its SDK download must never compete with the boot bundle.
   useEffect(() => {
+    let cancelled = false
     async function init() {
       pullInProgress.current = true
-      const timeout = setTimeout(() => {
-        if (pullInProgress.current) {
-          pullInProgress.current = false
-          void loadData()
-        }
-      }, 10_000)
+      const localLoad = loadAllData()
+        .then((localData) => {
+          setData(localData)
+          setIsInitialLoad(false)
+        })
+        .catch(() => setIsInitialLoad(false))
+      await localLoad
+      if (cancelled) return
+
+      // Nothing to sync without a cloud session — and importing the sync
+      // module here would pull the Firebase SDK into a signed-out visit.
+      const uid = localStorage.getItem('momentum-cloud-uid')
+      if (!uid) {
+        pullInProgress.current = false
+        return
+      }
+
       try {
-        const uid = localStorage.getItem('momentum-cloud-uid')
-        if (uid) {
-          await pullAllData(uid)
-          try {
-            const { ensureDailyBackup } = await import('../lib/cloud-backup')
-            await ensureDailyBackup(uid)
-          } catch (e) {}
-        }
+        const sync = await import('../lib/data-sync')
+        await sync.pullAllData(uid)
+        // Backups are maintenance work, not boot work. Do not make the
+        // first paint wait for a second full local-table scan and upload.
+        void import('../lib/cloud-backup')
+          .then(({ ensureDailyBackup }) => ensureDailyBackup(uid))
+          .catch(() => {})
+      } catch (e) {
+        console.warn('Cloud pull failed:', e)
       } finally {
-        clearTimeout(timeout)
         pullInProgress.current = false
       }
-      await loadData()
+      // Dispatched after the pull gate opens — loadData() ignores requests
+      // while a pull is in flight, so an earlier event would be dropped and
+      // the records Firestore just merged would never reach the UI.
+      if (!cancelled) {
+        window.dispatchEvent(new CustomEvent('momentum-data-synced'))
+      }
     }
     void init()
+    return () => { cancelled = true }
   }, [loadData])
   useEffect(() => {
     function onSynced() { void loadData() }
@@ -186,8 +232,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('momentum-data-synced', onSynced)
   }, [loadData])
   // M8: flush dirty sync tables that were persisted from a previous session.
-  // Moved into useEffect to keep side-effects off the render path.
-  useEffect(() => { void flushPendingDirtyTables() }, [])
+  // Moved into useEffect to keep side-effects off the render path. Only
+  // signed-in browsers can have dirty tables, and importing the sync module
+  // would pull in the Firebase SDK.
+  useEffect(() => {
+    if (!localStorage.getItem('momentum-cloud-uid')) return
+    void import('../lib/data-sync')
+      .then((sync) => sync.flushPendingDirtyTables())
+      .catch(() => {})
+  }, [])
   const actions = useMemo(
     () => ({ loadData, mutate, scope, rangePreset, setScope, setRangePreset, isLoading: isInitialLoad }),
     [loadData, mutate, scope, rangePreset, setScope, setRangePreset, isInitialLoad],

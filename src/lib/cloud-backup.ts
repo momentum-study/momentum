@@ -18,7 +18,7 @@ import {
   query,
   limit as firestoreLimit,
 } from 'firebase/firestore'
-import { db as firestore, isFirebaseConfigured } from './firebase'
+import { db as firestore, isFirebaseConfigured } from './firebase-runtime'
 import { db as localDb } from '../db/app-db'
 import { isoNow } from './utils'
 import type { AppData } from '../app/providers'

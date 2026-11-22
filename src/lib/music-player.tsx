@@ -196,6 +196,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const playerRef = useRef<YTPlayer | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const [engineRequested, setEngineRequested] = useState(false)
   const [engineReady, setEngineReady] = useState(false)
   const [engineFailed, setEngineFailed] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -304,10 +305,22 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   // Clear the stall watchdog on unmount.
   useEffect(() => () => clearStallTimer(), [clearStallTimer])
 
-  // Create the player once, on mount. Let the IFrame API create the iframe
-  // from the container; passing a hand-created blank iframe prevents the API
-  // from reliably attaching its command and state channel.
+  // Persist the exact playback position while playing. YouTube keeps playing
+  // after a page unload in some browser/tab configurations, but restoring
+  // the last observed position is close enough for "continue listening".
+  const persistPlaybackPosition = useCallback((player: YTPlayer, playlistId: string) => {
+    const index = player.getPlaylistIndex?.() ?? 0
+    if (index < 0) return
+    const seconds = Math.floor(player.getCurrentTime?.() ?? 0)
+    if (!(seconds >= 0) || Number.isNaN(seconds)) return
+    savePosition(playlistId, { trackIndex: index, trackSeconds: seconds })
+  }, [])
+
+  // Create the player once, when the user asks for it. YouTube is not part
+  // of the study app's boot path: the engine (and its network script) is
+  // loaded only after the user opens Music or presses the dock play button.
   useEffect(() => {
+    if (!engineRequested) return
     let cancelled = false
     void loadYouTubeApi()
       .then((YT) => {
@@ -364,14 +377,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
               }
             },
             onError: (event) => {
-              if (cancelled) return
-              if (!SKIP_ERROR_CODES.includes(event.data)) return
+              if (cancelled || !SKIP_ERROR_CODES.includes(event.data)) return
               clearStallTimer()
               setStalled(false)
               consecutiveErrors.current += 1
               const count = event.target.getPlaylist?.()?.length ?? null
-              const max = count ?? 100
-              if (consecutiveErrors.current >= max) {
+              if (consecutiveErrors.current >= (count ?? 100)) {
                 wantPlayRef.current = false
                 setSkipping(false)
                 setIsPlaying(false)
@@ -393,18 +404,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       playerRef.current?.destroy()
       playerRef.current = null
     }
-  }, [clearStallTimer, armStallTimer])
-
-  // Persist the exact playback position while playing. YouTube keeps playing
-  // after a page unload in some browser/tab configurations, but restoring
-  // the last observed position is close enough for "continue listening".
-  const persistPlaybackPosition = useCallback((player: YTPlayer, playlistId: string) => {
-    const index = player.getPlaylistIndex?.() ?? 0
-    if (index < 0) return
-    const seconds = Math.floor(player.getCurrentTime?.() ?? 0)
-    if (!(seconds >= 0) || Number.isNaN(seconds)) return
-    savePosition(playlistId, { trackIndex: index, trackSeconds: seconds })
-  }, [])
+  }, [engineRequested, clearStallTimer, armStallTimer, persistPlaybackPosition])
 
   // While-playing position save, throttled to once every 10 seconds so the
   // localStorage write rate stays negligible (one ~60-byte entry).
@@ -450,11 +450,15 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(id)
   }, [isPlaying, tryNudge, persistPlaybackPosition])
 
+  const requestEngine = useCallback(() => {
+    setEngineRequested(true)
+  }, [])
+
   const playPlaylist = useCallback((playlistId: string) => {
     const row = playlists.find((p) => p.id === playlistId && !p.deletedAt)
     if (!row) return
+    requestEngine()
     wantPlayRef.current = true
-    activePlaylistIdRef.current = playlistId
     setActivePlaylistId(playlistId)
     const saved = loadPosition(playlistId)
     setTrackIndex(saved.trackIndex)
@@ -487,7 +491,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     player.setShuffle(shuffle)
     player.playVideo()
     armStallTimer(player)
-  }, [playlists, engineReady, engineFailed, clearStallTimer, armStallTimer, shuffle])
+  }, [playlists, engineReady, engineFailed, clearStallTimer, armStallTimer, shuffle, requestEngine])
 
   // Flush a play request that arrived before the engine was ready.
   useEffect(() => {
